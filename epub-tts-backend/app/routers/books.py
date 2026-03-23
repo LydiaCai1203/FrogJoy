@@ -163,6 +163,31 @@ async def get_book(
         "toc": toc
     }
 
+@router.get("/{book_id}/chapters")
+async def get_chapter(
+    book_id: str,
+    href: str,
+    user_id: Optional[str] = Depends(get_optional_user)
+):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, is_public FROM books WHERE id = ?", (book_id,))
+        book_row = cursor.fetchone()
+    
+    if not book_row:
+        raise HTTPException(status_code=404, detail="Book not found")
+    
+    if not book_row["is_public"] and book_row["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    try:
+        chapter_content = BookService.get_chapter_content(book_id, href)
+        return chapter_content
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get chapter: {str(e)}")
+
 @router.delete("/{book_id}")
 async def delete_book(
     book_id: str,
