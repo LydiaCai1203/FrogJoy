@@ -81,7 +81,7 @@ async def list_books(user_id: Optional[str] = Depends(get_optional_user)):
                 SELECT id, title, creator, cover_url, is_public, user_id, created_at, last_opened_at
                 FROM books
                 WHERE user_id = ? OR is_public = 1
-                ORDER BY last_opened_at DESC NULL LAST, created_at DESC
+                ORDER BY CASE WHEN last_opened_at IS NULL THEN 1 ELSE 0 END, last_opened_at DESC
             """, (user_id,))
         else:
             cursor.execute("""
