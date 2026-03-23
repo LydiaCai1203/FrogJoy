@@ -8,3 +8,6 @@ aiofiles>=23.2.1
 pydantic>=2.6.0
 pydantic-settings>=2.2.0
 langdetect>=1.0.9
+passlib[bcrypt]>=1.7.4
+bcrypt<4.1
+python-jose[cryptography]>=3.3.0

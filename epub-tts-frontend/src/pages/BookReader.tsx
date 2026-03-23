@@ -17,10 +17,12 @@ import { translator, type TranslatorConfig, DEFAULT_CONFIG } from "@/lib/transla
 import { TTSService } from "@/api/services";
 import { TasksPanel } from "@/components/player/TasksPanel";
 import { API_BASE, API_URL } from "@/config";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function BookReader() {
   const { bookId } = useParams<{ bookId: string }>();
   const [, navigate] = useLocation();
+  const { token } = useAuth();
   
   // Book State
   const [metadata, setMetadata] = useState<any>({});
@@ -69,7 +71,11 @@ export default function BookReader() {
     }
     
     setIsLoading(true);
-    fetch(`${API_URL}/books/${bookId}`)
+    const headers: HeadersInit = {};
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    fetch(`${API_URL}/books/${bookId}`, { headers })
       .then(res => {
         if (!res.ok) throw new Error("Failed to load book");
         return res.json();

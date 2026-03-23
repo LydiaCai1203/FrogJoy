@@ -5,18 +5,23 @@ import type { IBookService, ITTSService, TTSOptions, TTSResponse, ChapterContent
 import { API_BASE, API_URL } from "@/config";
 
 export class BookService implements IBookService {
+  private getAuthHeaders(): HeadersInit {
+    const token = localStorage.getItem("auth_token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
   async uploadBook(file: File): Promise<{ bookId: string; metadata: BookMetadata; toc: NavItem[]; coverUrl?: string }> {
     const formData = new FormData();
     formData.append("file", file);
 
     const response = await fetch(`${API_URL}/books`, {
       method: "POST",
+      headers: this.getAuthHeaders(),
       body: formData,
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: "Upload failed" }));
-      throw new Error(error.detail || "Upload failed");
+      throw new Error("Upload failed");
     }
 
     const data = await response.json();
@@ -30,7 +35,8 @@ export class BookService implements IBookService {
 
   async getChapter(bookId: string, href: string): Promise<ChapterContent> {
     const response = await fetch(
-      `${API_URL}/books/${bookId}/chapters?href=${encodeURIComponent(href)}`
+      `${API_URL}/books/${bookId}/chapters?href=${encodeURIComponent(href)}`,
+      { headers: this.getAuthHeaders() }
     );
 
     if (!response.ok) {
@@ -144,8 +150,7 @@ export class TTSService implements ITTSService {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: "TTS failed" }));
-      throw new Error(error.detail || "TTS failed");
+      throw new Error("TTS failed");
     }
 
     const data = await response.json();

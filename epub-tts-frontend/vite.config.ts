@@ -21,6 +21,7 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 8888,
+    allowedHosts: ["31f5bafc11ab.monkeycode-ai.online", "964b6a9a7fd2.monkeycode-ai.online", "f1dbf6842685.monkeycode-ai.online", "76c1555b51bb.monkeycode-ai.online"],
   },
   preview: {
     host: "0.0.0.0",

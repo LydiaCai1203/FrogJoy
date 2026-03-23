@@ -2,9 +2,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.api import router
+from app.routers.auth import router as auth_router
+from app.routers.books import router as books_router
+from app.models.database import init_db
 import os
 
 app = FastAPI(title="EPUB-TTS Backend", version="1.0.0")
+
+# Initialize database
+init_db()
 
 # CORS Configuration
 origins = [
@@ -33,6 +39,8 @@ app.mount("/images", StaticFiles(directory="data/images"), name="images")
 
 # Include API Router
 app.include_router(router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
+app.include_router(books_router, prefix="/api")
 
 @app.get("/")
 async def root():
