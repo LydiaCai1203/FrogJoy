@@ -3,10 +3,13 @@ import { useLocation } from "wouter";
 import { UploadZone } from "@/components/player/UploadZone";
 import { useUploadBook } from "@/hooks/use-book";
 import { Button } from "@/components/ui/button";
-import { Loader2, Book, Trash2, BrainCircuit, Github } from "lucide-react";
+import { Loader2, Book, Trash2, BrainCircuit, Github, User, LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { API_BASE, API_URL } from "@/config";
 import { TasksPanel } from "@/components/player/TasksPanel";
+import { useAuth } from "@/contexts/AuthContext";
+import { LoginForm } from "@/components/auth/LoginForm";
+import { RegisterForm } from "@/components/auth/RegisterForm";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,6 +20,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface BookInfo {
   id: string;
@@ -24,25 +34,34 @@ interface BookInfo {
   author?: string;
   coverUrl?: string;
   lastOpened?: string;
+  isPublic?: boolean;
+  userId?: string;
 }
 
 export default function Home() {
   const [, navigate] = useLocation();
+  const { user, token, logout, isLoading: isAuthLoading } = useAuth();
   const [books, setBooks] = useState<BookInfo[]>([]);
   const [isLoadingBooks, setIsLoadingBooks] = useState(true);
   const [deleteBookId, setDeleteBookId] = useState<string | null>(null);
+  const [showLogin, setShowLogin] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
   
   const uploadMutation = useUploadBook();
 
   // 加载书架
   useEffect(() => {
     loadBooks();
-  }, []);
+  }, [token]);
 
   const loadBooks = async () => {
     setIsLoadingBooks(true);
     try {
-      const res = await fetch(`${API_URL}/books`);
+      const headers: HeadersInit = {};
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      const res = await fetch(`${API_URL}/books`, { headers });
       if (!res.ok) throw new Error("Failed to load books");
       const data = await res.json();
       setBooks(data.map((book: any) => ({
@@ -53,6 +72,8 @@ export default function Home() {
           ? (book.coverUrl.startsWith('http') ? book.coverUrl : `${API_BASE}${book.coverUrl}`)
           : undefined,
         lastOpened: book.lastOpenedAt,
+        isPublic: book.isPublic,
+        userId: book.userId,
       })));
     } catch (error) {
       console.error("Failed to load books:", error);
@@ -62,6 +83,11 @@ export default function Home() {
   };
 
   const handleFileSelect = (file: File) => {
+    if (!token) {
+      toast.error("请先登录以上传书籍");
+      setShowLogin(true);
+      return;
+    }
     toast.promise(uploadMutation.mutateAsync(file), {
       loading: '正在上传并解析书籍...',
       success: (data) => {
@@ -77,11 +103,14 @@ export default function Home() {
   };
 
   const handleDeleteBook = async () => {
-    if (!deleteBookId) return;
+    if (!deleteBookId || !token) return;
     
     try {
       const res = await fetch(`${API_URL}/books/${deleteBookId}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
       });
       if (!res.ok) throw new Error("Failed to delete book");
       
@@ -93,6 +122,11 @@ export default function Home() {
     } finally {
       setDeleteBookId(null);
     }
+  };
+
+  const handleLogout = () => {
+    logout();
+    toast.success("已退出登录");
   };
 
   return (
@@ -109,6 +143,40 @@ export default function Home() {
           
           <div className="flex items-center gap-2">
             <TasksPanel />
+            
+            {!isAuthLoading && (
+              <>
+                {user ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon">
+                        <User className="w-5 h-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <div className="px-2 py-1.5 text-sm font-medium">
+                        {user.email}
+                      </div>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleLogout}>
+                        <LogOut className="mr-2 h-4 w-4" />
+                        退出登录
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => setShowLogin(true)}>
+                      登录
+                    </Button>
+                    <Button variant="default" size="sm" onClick={() => setShowRegister(true)}>
+                      注册
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+            
             <Button
               variant="ghost"
               size="icon"
@@ -142,7 +210,7 @@ export default function Home() {
         <section className="mt-12 max-w-2xl mx-auto">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-display font-bold tracking-wide text-foreground">
-              我的书架
+              {user ? "我的书架" : "公共书籍"}
             </h2>
             <span className="text-xs font-mono text-muted-foreground">
               {books.length} 本书
@@ -156,7 +224,9 @@ export default function Home() {
           ) : books.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <Book className="w-12 h-12 mx-auto mb-4 opacity-30" />
-              <p className="text-sm font-mono">书架空空如也，上传你的第一本书吧</p>
+              <p className="text-sm font-mono">
+                {user ? "书架空空如也，上传你的第一本书吧" : "暂无公共书籍"}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
@@ -191,17 +261,19 @@ export default function Home() {
                     </p>
                   </div>
                   
-                  {/* 删除按钮 */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteBookId(book.id);
-                    }}
-                    className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-destructive rounded-sm opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="删除"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-white" />
-                  </button>
+                  {/* 删除按钮 - 仅显示自己的书籍 */}
+                  {user && book.userId === user.id && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteBookId(book.id);
+                      }}
+                      className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-destructive rounded-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="删除"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-white" />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -226,6 +298,24 @@ export default function Home() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Auth Dialogs */}
+      <LoginForm 
+        open={showLogin} 
+        onOpenChange={setShowLogin}
+        onSwitchToRegister={() => {
+          setShowLogin(false);
+          setShowRegister(true);
+        }}
+      />
+      <RegisterForm 
+        open={showRegister} 
+        onOpenChange={setShowRegister}
+        onSwitchToLogin={() => {
+          setShowRegister(false);
+          setShowLogin(true);
+        }}
+      />
     </div>
   );
 }
