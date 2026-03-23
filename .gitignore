@@ -1,0 +1,52 @@
+# ========== 通用 ==========
+.DS_Store
+*.log
+*.tmp
+*.temp
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ========== 前端 (React/Vite) ==========
+epub-tts-frontend/node_modules/
+epub-tts-frontend/dist/
+epub-tts-frontend/build/
+epub-tts-frontend/.env
+epub-tts-frontend/.env.local
+epub-tts-frontend/.env.*.local
+epub-tts-frontend/*.local
+
+# ========== 后端 (Python/FastAPI) ==========
+# 虚拟环境
+epub-tts-backend/venv/
+epub-tts-backend/.venv/
+epub-tts-backend/env/
+
+# 环境变量
+epub-tts-backend/.env
+epub-tts-backend/.env.local
+
+# Python 缓存
+epub-tts-backend/__pycache__/
+epub-tts-backend/**/__pycache__/
+epub-tts-backend/*.pyc
+epub-tts-backend/**/*.pyc
+*.pyo
+*.pyd
+.Python
+
+# 数据目录（包含上传的书籍、音频缓存等）
+epub-tts-backend/data/
+
+# ========== 其他 ==========
+# 测试覆盖率
+.coverage
+htmlcov/
+.pytest_cache/
+
+# 打包
+*.egg-info/
+dist/
+build/
+
