@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 import shutil
 import json
@@ -106,6 +107,28 @@ class BookService:
             book = epub.read_epub(path)
             toc = []
 
+            # 收集 EPUB 中明确标记为封面/纯导航的文件（不应出现在章节列表）
+            # 以及 guide 里各文件对应的标题（用于 spine fallback 时提供可读标签）
+            nav_hrefs = set()      # 应当跳过的文件（封面等无内容页）
+            guide_titles = {}      # href → guide title，spine fallback 时用
+            try:
+                # EPUB3: manifest item 有 properties="nav"（纯导航文档，无阅读内容）
+                for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+                    props = getattr(item, 'properties', '') or ''
+                    if 'nav' in props.lower():
+                        nav_hrefs.add(item.get_name())
+                # EPUB2: guide 里的 cover / title-page 跳过；toc 保留但记录其标题
+                for guide_item in getattr(book, 'guide', []) or []:
+                    guide_type = (guide_item.get('type') or '').lower()
+                    href = guide_item.get('href', '').split('#')[0]
+                    title = guide_item.get('title', '')
+                    if href:
+                        guide_titles[href] = title
+                    if guide_type in ('cover', 'title-page'):
+                        nav_hrefs.add(href)
+            except Exception:
+                pass
+
             # Recursive function to parse TOC
             def parse_nav_map(nav_point):
                 try:
@@ -198,6 +221,9 @@ class BookService:
                         if item and item.get_type() == ebooklib.ITEM_DOCUMENT:
                             item_name = item.get_name()
                             if item_name:
+                                if item_name in nav_hrefs or any(skip in item_name.lower() for skip in ['cover', 'titlepage', 'toc', 'nav']):
+                                    continue
+
                                 label = None
                                 try:
                                     item_content = item.get_content()
@@ -206,10 +232,14 @@ class BookService:
                                     print(f"Warning: Failed to get content for title extraction: {e}")
 
                                 if not label:
+                                    # 优先用 guide 里记录的标题（如 "Table of Contents"）
+                                    label = guide_titles.get(item_name) or None
+
+                                if not label:
                                     label = os.path.basename(item_name)
                                     label = label.replace('.html', '').replace('.xhtml', '').replace('.htm', '')
 
-                                    if not label or label.isdigit() or ('part' in label.lower() and 'split' in label.lower()):
+                                    if not label or label.isdigit() or re.match(r'^(part|split|chapter|chap|section|seg)[\d_\-]*$', label.lower()):
                                         label = f"第 {chapter_num} 章"
                                     else:
                                         label = label.replace('_', ' ').replace('-', ' ')
@@ -258,7 +288,7 @@ class BookService:
                                         label = os.path.basename(item_name)
                                         label = label.replace('.html', '').replace('.xhtml', '').replace('.htm', '')
 
-                                        if not label or label.isdigit() or ('part' in label.lower() and 'split' in label.lower()):
+                                        if not label or label.isdigit() or re.match(r'^(part|split|chapter|chap|section|seg)[\d_\-]*$', label.lower()):
                                             label = f"第 {chapter_num} 章"
                                         else:
                                             label = label.replace('_', ' ').replace('-', ' ')

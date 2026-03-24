@@ -79,15 +79,25 @@ export function Sidebar({
     }
   };
 
+  const countItems = (items: NavItem[]): number =>
+    items.reduce((sum, item) => sum + 1 + countItems(item.subitems ?? []), 0);
+
   // Flatten TOC for simplicity if needed, but recursive is better
-  const renderItem = (item: NavItem, depth = 0) => (
+  const renderItem = (item: NavItem, depth = 0) => {
+    // 有 anchor 时精确匹配；无 anchor 时匹配文件名（兼容父章节高亮）
+    const currentBase = currentChapterHref.split('#')[0];
+    const itemBase = item.href.split('#')[0];
+    const isActive = currentChapterHref.includes('#')
+      ? currentChapterHref === item.href
+      : currentBase === itemBase;
+
+    return (
     <div key={item.id} className="w-full">
       <button
         onClick={() => onSelectChapter(item.href)}
         className={cn(
           "w-full text-left px-3 py-2 text-sm font-mono transition-colors border-l-2 hover:bg-primary/5 hover:text-primary",
-          // Compare clean hrefs (remove anchors)
-          currentChapterHref.split('#')[0] === item.href.split('#')[0]
+          isActive
             ? "border-primary text-primary bg-primary/10"
             : "border-transparent text-muted-foreground"
         )}
@@ -97,7 +107,7 @@ export function Sidebar({
       </button>
       {item.subitems?.map(sub => renderItem(sub, depth + 1))}
     </div>
-  );
+  );};
 
   return (
     <div className="h-full flex flex-col bg-card/50 border-r border-border backdrop-blur-md">
@@ -124,7 +134,7 @@ export function Sidebar({
         </div>
         <div className="flex items-center justify-between text-xs text-muted-foreground font-mono uppercase">
            <span>目录</span>
-           <span>{toc.length} 章节</span>
+           <span>{countItems(toc)} 章节</span>
         </div>
         
         {/* 下载整本书按钮 */}
