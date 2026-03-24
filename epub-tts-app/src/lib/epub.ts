@@ -40,15 +40,17 @@ export class EpubParser {
 
   async getChapterText(href: string): Promise<string> {
     if (!this.book) throw new Error("Book not loaded");
-    // Load the spine item
-    const item = this.book.spine.get(href);
+    // Strip fragment identifier before spine lookup.
+    // Some EPUBs (e.g. Kindle-converted) use body element IDs as anchors:
+    //   text/part0005.html#4OIQ0-d9df104f453340d5931ece5bfb2bd23d
+    // spine.get() matches by file path only, so the fragment must be removed.
+    const cleanHref = href.split('#')[0];
+    const item = this.book.spine.get(cleanHref) || this.book.spine.get(href);
     if (!item) return "";
-    
-    // We need to load the document to extract text
     // @ts-ignore - load method exists but types might be tricky
     const doc = await item.load(this.book.load.bind(this.book));
-    // Extract text content cleanly
-    return doc.body.innerText || doc.body.textContent || "";
+    // textContent works on unpainted documents; innerText requires layout
+    return doc.body?.textContent?.trim() || "";
   }
   
   destroy() {

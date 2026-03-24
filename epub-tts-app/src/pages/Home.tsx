@@ -213,11 +213,28 @@ export default function Home() {
 
     setAnalyzedChapters(results);
     setIsAnalyzing(false);
-    
+
+    // Filter toc to only chapters with extractable text content.
+    // Removes image-only pages, HTML TOC pages, and other non-content spine items
+    // that some EPUBs (e.g. Kindle-converted) include in their navigation.
+    const filterToc = (items: NavItem[]): NavItem[] =>
+      items.reduce((acc, item) => {
+        const subitems = item.subitems ? filterToc(item.subitems) : undefined;
+        if (results[item.href]?.length > 0 || subitems?.length) {
+          acc.push({ ...item, subitems });
+        }
+        return acc;
+      }, [] as NavItem[]);
+
+    const filteredToc = filterToc(tocItems);
+    if (filteredToc.length > 0 && filteredToc.length < processingList.length) {
+      setToc(filteredToc);
+    }
+
     // Check saved progress
     const saved = localStorage.getItem(key);
     let restored = false;
-    
+
     if (saved) {
       try {
         const { href, index } = JSON.parse(saved);
@@ -231,9 +248,13 @@ export default function Home() {
       }
     }
 
-    if (!restored && processingList.length > 0) {
-      handleSelectChapter(processingList[0].href, results);
-      toast.success("Analysis Complete");
+    if (!restored) {
+      // Start from first chapter that actually has content
+      const firstValid = processingList.find(item => results[item.href]?.length > 0);
+      if (firstValid) {
+        handleSelectChapter(firstValid.href, results);
+        toast.success("Analysis Complete");
+      }
     }
   };
 
