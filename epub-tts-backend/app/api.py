@@ -302,7 +302,7 @@ async def download_book_audio(book_id: str, request: BookDownloadRequest, user_i
     os.makedirs(audio_dir, exist_ok=True)
 
     # Check for resumable task
-    existing_tasks = task_manager.get_all_tasks()
+    existing_tasks = task_manager.get_all_tasks(user_id)
     resumable_task = None
     for task in existing_tasks:
         if (task.get("type") == "book_audio" and
