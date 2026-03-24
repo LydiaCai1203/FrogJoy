@@ -218,7 +218,7 @@ export function Controls({
                 <Settings2 className="w-5 h-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="bottom" className="h-[70vh] max-h-[70vh] rounded-t-xl px-4">
+            <SheetContent side="bottom" className="h-[70vh] max-h-[70vh] rounded-t-xl px-4 z-[200]">
               <SheetHeader className="border-b border-border pb-3 mb-4 flex-shrink-0">
                 <SheetTitle className="flex items-center gap-2">
                   <Settings2 className="w-5 h-5 text-primary" />
@@ -311,7 +311,7 @@ export function Controls({
               </Button>
             </PopoverTrigger>
             <PopoverContent 
-              className="w-80 p-0 border border-primary/20 bg-card/95 backdrop-blur-xl shadow-[0_0_30px_rgba(0,0,0,0.5)] rounded-none max-h-[70vh] overflow-y-auto" 
+              className="w-80 p-0 border border-primary/20 bg-card/95 backdrop-blur-xl shadow-[0_0_30px_rgba(0,0,0,0.5)] rounded-none max-h-[70vh] overflow-y-auto z-[200]" 
               side="top" 
               align="end"
               sideOffset={8}
