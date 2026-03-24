@@ -39,6 +39,7 @@ export default function BookReader() {
   const [isPlaying, setIsPlaying] = useState(false);
   const isPlayingRef = useRef(false);
   const playingSentenceRef = useRef<number>(-1);
+  const currentChapterHrefRef = useRef<string | null>(null); // 用于追踪当前播放的章节
   const [voice, setVoice] = useState<string | null>(null);
   const [speed, setSpeed] = useState(1.0);
   const [emotion, setEmotion] = useState<"neutral" | "warm" | "excited" | "serious" | "suspense">("neutral");
@@ -289,12 +290,22 @@ export default function BookReader() {
 
   // TTS Loop
   useEffect(() => {
+    // 章节切换时立即停止播放，避免播放旧章节内容
     if (!isPlaying) {
       ttsService.stop();
       playingSentenceRef.current = -1;
       return;
     }
 
+    // 防止章节切换后状态未同步时播放错误内容
+    // 检查当前 ref 记录的章节是否与 currentChapterHref 匹配
+    if (currentChapterHrefRef.current !== currentChapterHref) {
+      currentChapterHrefRef.current = currentChapterHref;
+      playingSentenceRef.current = -1;
+      setWordTimestamps([]);
+      setCurrentTime(0);
+    }
+    
     if (currentSentenceIndex >= displayedSentences.length) {
       setIsPlaying(false);
       playingSentenceRef.current = -1;
@@ -373,6 +384,11 @@ export default function BookReader() {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/d66f05a9-12a5-4788-bac8-35940a51b987',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BookReader.tsx:356',message:'Chapter reset useEffect triggered',data:{currentChapterHref,displayedSentencesLength:displayedSentences.length,currentSentenceIndexBefore:currentSentenceIndex,voice},timestamp:Date.now(),runId:'debug',hypothesisId:'A'})}).catch(()=>{});
     // #endregion
+    // 先停止当前播放
+    ttsService.stop();
+    // 更新章节 ref
+    currentChapterHrefRef.current = currentChapterHref;
+    // 重置所有状态
     setCurrentSentenceIndex(0);
     setIsPlaying(false);
     playingSentenceRef.current = -1;
