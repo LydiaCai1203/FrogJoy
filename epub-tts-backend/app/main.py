@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api import router
 from app.routers.auth import router as auth_router
 from app.routers.books import router as books_router
+from app.routers.files import router as files_router
 from app.models.database import init_db
 import os
 
@@ -28,19 +29,17 @@ app.add_middleware(
 )
 
 # Ensure data directories exist
-os.makedirs("data/uploads", exist_ok=True)
-os.makedirs("data/audio", exist_ok=True)
+os.makedirs("data/users", exist_ok=True)
 os.makedirs("data/images", exist_ok=True)
 
-# Mount static files for audio playback and images
-app.mount("/audio", StaticFiles(directory="data/audio"), name="audio")
-app.mount("/covers", StaticFiles(directory="data/uploads"), name="covers")
+# Mount static files for images (kept as-is)
 app.mount("/images", StaticFiles(directory="data/images"), name="images")
 
-# Include API Router
+# Include API Routers
 app.include_router(router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(books_router, prefix="/api")
+app.include_router(files_router, prefix="/api")
 
 @app.get("/")
 async def root():

@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # 创建数据目录
-RUN mkdir -p data/uploads data/audio data/images
+RUN mkdir -p data/users data/images
 
 # 暴露端口
 EXPOSE 8000

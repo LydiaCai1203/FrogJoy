@@ -270,7 +270,12 @@ export default function BookReader() {
     try {
       await fetch(`${API_URL}/tts/prefetch`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(localStorage.getItem("auth_token")
+            ? { Authorization: `Bearer ${localStorage.getItem("auth_token")}` }
+            : {}),
+        },
         body: JSON.stringify({
           book_id: bookId,
           chapter_href: currentChapterHref,
