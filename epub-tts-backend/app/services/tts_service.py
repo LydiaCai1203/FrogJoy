@@ -34,9 +34,20 @@ class AudioCache:
             json.dump(index, f, ensure_ascii=False, indent=2)
     
     @staticmethod
-    def generate_cache_key(text: str, voice: str, rate: float, pitch: float) -> str:
+    def generate_cache_key(text: str, voice: str, rate: float, pitch: float,
+                           book_id: str = None, chapter_href: str = None, 
+                           paragraph_index: int = None) -> str:
         """生成缓存键（基于文本和参数的哈希）"""
-        content = f"{text}|{voice}|{rate}|{pitch}"
+        # 如果提供了段落信息，将其纳入缓存键以避免不同段落文本相同导致的冲突
+        parts = [text, voice, str(rate), str(pitch)]
+        if book_id:
+            parts.append(book_id)
+        if chapter_href:
+            parts.append(chapter_href)
+        if paragraph_index is not None:
+            parts.append(str(paragraph_index))
+        
+        content = "|".join(parts)
         return hashlib.sha256(content.encode('utf-8')).hexdigest()[:16]
     
     @staticmethod
@@ -200,9 +211,9 @@ class AudioMemoryCache:
             if cached:
                 continue  # 已缓存，跳过
             
-            # 检查磁盘缓存
+            # 检查磁盘缓存（包含段落信息以避免不同段落文本相同导致的冲突）
             text = sentences[idx]
-            cache_key = AudioCache.generate_cache_key(text, voice, rate, pitch)
+            cache_key = AudioCache.generate_cache_key(text, voice, rate, pitch, book_id, chapter_href, idx)
             disk_cached = AudioCache.get_cached_entry(cache_key)
             
             if disk_cached:
@@ -222,7 +233,7 @@ class AudioMemoryCache:
             async def generate_and_cache(idx: int, text: str):
                 try:
                     # 直接生成音频，不通过 generate_audio（避免循环）
-                    cache_key = AudioCache.generate_cache_key(text, voice, rate, pitch)
+                    cache_key = AudioCache.generate_cache_key(text, voice, rate, pitch, book_id, chapter_href, idx)
                     filename = f"{cache_key}.mp3"
                     filepath = os.path.join(AUDIO_DIR, filename)
                     
@@ -367,8 +378,8 @@ class TTSService:
                 print(f"[TTS] Memory cache hit: paragraph {paragraph_index}")
                 return memory_cached
         
-        # 2. 检查磁盘缓存
-        cache_key = AudioCache.generate_cache_key(text, voice, rate, pitch)
+        # 2. 检查磁盘缓存（包含段落信息以避免不同段落文本相同导致的冲突）
+        cache_key = AudioCache.generate_cache_key(text, voice, rate, pitch, book_id, chapter_href, paragraph_index)
         cached_entry = AudioCache.get_cached_entry(cache_key)
         
         if cached_entry:
@@ -649,8 +660,8 @@ class TTSService:
                 # 使用缓存的音频
                 audio_files.append(cached_map[idx]['filepath'])
             else:
-                # 生成新音频
-                cache_key = AudioCache.generate_cache_key(text, voice, rate, pitch)
+                # 生成新音频（包含段落信息以避免不同段落文本相同导致的冲突）
+                cache_key = AudioCache.generate_cache_key(text, voice, rate, pitch, book_id, chapter_href, idx)
                 filename_mp3 = f"{cache_key}.mp3"
                 filepath = os.path.join(AUDIO_DIR, filename_mp3)
                 
