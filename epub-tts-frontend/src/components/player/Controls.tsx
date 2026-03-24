@@ -109,7 +109,12 @@ export function Controls({
       // 使用智能下载接口：复用已缓存的段落
       const response = await fetch(`${API_URL}/tts/download/chapter`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(localStorage.getItem("auth_token")
+            ? { Authorization: `Bearer ${localStorage.getItem("auth_token")}` }
+            : {}),
+        },
         body: JSON.stringify({
           book_id: bookId,
           chapter_href: chapterHref,

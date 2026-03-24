@@ -18,6 +18,5 @@ build/
 *.log
 test_*.py
 *.mp3
-data/audio/*
-!data/audio/.gitkeep
+data/users/*
 

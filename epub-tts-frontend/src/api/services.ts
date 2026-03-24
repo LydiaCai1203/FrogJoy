@@ -50,6 +50,13 @@ export class BookService implements IBookService {
 export class TTSService implements ITTSService {
   // 复用同一个 Audio 元素，避免移动端浏览器阻止新建 Audio
   private audio: HTMLAudioElement;
+
+  private getAuthHeaders(): HeadersInit {
+    const token = localStorage.getItem("auth_token");
+    return token
+      ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
+      : { "Content-Type": "application/json" };
+  }
   private currentResolve: (() => void) | null = null;
   private currentReject: ((e: Error) => void) | null = null;
   private timeUpdateCallback: ((time: number) => void) | null = null;
@@ -133,9 +140,7 @@ export class TTSService implements ITTSService {
 
     const response = await fetch(`${API_URL}/tts/speak`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: this.getAuthHeaders(),
       body: JSON.stringify({
         text,
         voice: options?.voice || "en-US-ChristopherNeural",
