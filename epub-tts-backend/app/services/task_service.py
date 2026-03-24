@@ -54,7 +54,7 @@ class TaskManager:
         with open(TASKS_FILE, 'w', encoding='utf-8') as f:
             json.dump({"tasks": self._tasks}, f, ensure_ascii=False, indent=2)
     
-    def create_task(self, task_type: str, params: Dict[str, Any], title: str = "") -> str:
+    def create_task(self, task_type: str, params: Dict[str, Any], title: str = "", user_id: str = "") -> str:
         """创建新任务"""
         task_id = str(uuid.uuid4())[:8]
         self._tasks[task_id] = {
@@ -67,6 +67,7 @@ class TaskManager:
             "progressText": "等待开始...",
             "result": None,
             "error": None,
+            "user_id": user_id,
             "createdAt": datetime.now().isoformat(),
             "startedAt": None,
             "completedAt": None
@@ -78,9 +79,11 @@ class TaskManager:
         """获取任务信息"""
         return self._tasks.get(task_id)
     
-    def get_all_tasks(self) -> List[Dict]:
-        """获取所有任务（按创建时间倒序）"""
+    def get_all_tasks(self, user_id: str = None) -> List[Dict]:
+        """获取所有任务（按创建时间倒序），如果指定 user_id 则只返回该用户的任务"""
         tasks = list(self._tasks.values())
+        if user_id is not None:
+            tasks = [t for t in tasks if t.get("user_id") == user_id]
         tasks.sort(key=lambda x: x.get("createdAt", ""), reverse=True)
         return tasks
     

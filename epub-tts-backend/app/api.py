@@ -348,7 +348,8 @@ async def download_book_audio(book_id: str, request: BookDownloadRequest, user_i
                 "output_filepath": output_filepath,
                 "processed_chapters": 0
             },
-            title=f"生成《{book_title}》音频"
+            title=f"生成《{book_title}》音频",
+            user_id=user_id
         )
         is_resume = False
 
@@ -535,7 +536,8 @@ async def download_book_audio_zip(book_id: str, request: BookDownloadZipRequest,
             "output_filepath": output_filepath,
             "temp_dir": temp_dir
         },
-        title=f"生成《{book_title}》音频（ZIP）"
+        title=f"生成《{book_title}》音频（ZIP）",
+        user_id=user_id
     )
 
     async def generate_book_audio_zip_task():
@@ -666,8 +668,8 @@ async def download_book_audio_zip(book_id: str, request: BookDownloadZipRequest,
 
 # --- 任务管理 Routes ---
 @router.get("/tasks")
-async def list_tasks():
-    return task_manager.get_all_tasks()
+async def list_tasks(user_id: str = Depends(get_current_user)):
+    return task_manager.get_all_tasks(user_id)
 
 @router.get("/tasks/{task_id}")
 async def get_task(task_id: str):
