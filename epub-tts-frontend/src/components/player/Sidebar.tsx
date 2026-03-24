@@ -42,9 +42,13 @@ export function Sidebar({
         ? `${API_BASE}/books/${bookId}/download-audio-zip`
         : `${API_BASE}/books/${bookId}/download-audio`;
       
+      const token = localStorage.getItem("auth_token");
       const response = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` })
+        },
         body: JSON.stringify({
           voice: selectedVoice,
           rate: speed,
