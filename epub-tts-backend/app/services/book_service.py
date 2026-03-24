@@ -257,9 +257,9 @@ class BookService:
 
                 if spine_items:
                     original_toc_count = len(toc) if toc else 0
-                    if should_use_spine or len(spine_items) > max(original_toc_count, 2):
+                    if should_use_spine:
                         toc = spine_items
-                        print(f"Using spine: {len(spine_items)} chapters (replaced {original_toc_count} TOC items, should_use_spine={should_use_spine})")
+                        print(f"Using spine: {len(spine_items)} chapters (replaced {original_toc_count} TOC items)")
                     else:
                         print(f"Keeping TOC ({original_toc_count} items), spine has {len(spine_items)} items")
             except Exception as e:
