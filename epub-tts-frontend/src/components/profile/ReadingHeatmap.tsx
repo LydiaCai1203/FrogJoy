@@ -34,10 +34,9 @@ export function ReadingHeatmap({ data }: Props) {
       lookup[entry.date] = entry.seconds;
     }
 
-    // Start from 364 days ago, aligned to Sunday
-    const startDate = new Date(today);
-    startDate.setDate(startDate.getDate() - 364);
-    // Align to previous Sunday
+    // Start from Jan 1 of current year, aligned to previous Sunday
+    const yearStart = new Date(today.getFullYear(), 0, 1);
+    const startDate = new Date(yearStart);
     startDate.setDate(startDate.getDate() - startDate.getDay());
 
     const weeks: Array<Array<{ date: string; seconds: number; isCurrentMonth: boolean }>> = [];

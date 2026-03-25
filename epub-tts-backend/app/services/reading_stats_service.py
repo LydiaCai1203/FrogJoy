@@ -11,33 +11,30 @@ class ReadingStatsService:
     def heartbeat(user_id: str, book_id: str, seconds: int) -> None:
         today = date.today().isoformat()
         record_id = str(uuid.uuid4())
-        db = next(get_db())
-        try:
-            stmt = pg_insert(ReadingStat).values(
-                id=record_id,
-                user_id=user_id,
-                book_id=book_id,
-                date=today,
-                duration_seconds=seconds,
-            ).on_conflict_do_update(
-                constraint="uq_reading_stats_user_book_date",
-                set_={
-                    "duration_seconds": ReadingStat.duration_seconds + seconds,
-                    "updated_at": func.now(),
-                },
-            )
-            db.execute(stmt)
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
+        with get_db() as db:
+            try:
+                stmt = pg_insert(ReadingStat).values(
+                    id=record_id,
+                    user_id=user_id,
+                    book_id=book_id,
+                    date=today,
+                    duration_seconds=seconds,
+                ).on_conflict_do_update(
+                    constraint="uq_reading_stats_user_book_date",
+                    set_={
+                        "duration_seconds": ReadingStat.duration_seconds + seconds,
+                        "updated_at": func.now(),
+                    },
+                )
+                db.execute(stmt)
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
 
     @staticmethod
     def get_heatmap(user_id: str, year: int) -> list:
-        db = next(get_db())
-        try:
+        with get_db() as db:
             rows = (
                 db.query(ReadingStat.date, func.sum(ReadingStat.duration_seconds).label("seconds"))
                 .filter(ReadingStat.user_id == user_id, ReadingStat.date.like(f"{year}-%"))
@@ -46,13 +43,10 @@ class ReadingStatsService:
                 .all()
             )
             return [{"date": r.date, "seconds": r.seconds} for r in rows]
-        finally:
-            db.close()
 
     @staticmethod
     def get_book_stats(user_id: str) -> list:
-        db = next(get_db())
-        try:
+        with get_db() as db:
             rows = (
                 db.query(
                     ReadingStat.book_id,
@@ -77,13 +71,10 @@ class ReadingStatsService:
                 }
                 for r in rows
             ]
-        finally:
-            db.close()
 
     @staticmethod
     def get_summary(user_id: str) -> dict:
-        db = next(get_db())
-        try:
+        with get_db() as db:
             total_seconds = (
                 db.query(func.sum(ReadingStat.duration_seconds))
                 .filter(ReadingStat.user_id == user_id)
@@ -116,5 +107,3 @@ class ReadingStatsService:
                 "books_count": books_count,
                 "streak_days": streak_days,
             }
-        finally:
-            db.close()

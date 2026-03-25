@@ -20,11 +20,8 @@ router = APIRouter()
 
 def _get_book_owner(book_id: str, current_user_id: str) -> str:
     """Look up the owner user_id for a book, with access control."""
-    db = next(get_db())
-    try:
+    with get_db() as db:
         book = db.query(Book).filter(Book.id == book_id).first()
-    finally:
-        db.close()
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     if not book.is_public and book.user_id != current_user_id:
@@ -296,11 +293,8 @@ async def download_book_audio(book_id: str, request: BookDownloadRequest, user_i
         raise HTTPException(status_code=404, detail="Book not found")
 
     # Get book title from DB
-    db = next(get_db())
-    try:
+    with get_db() as db:
         book_row = db.query(Book).filter(Book.id == book_id).first()
-    finally:
-        db.close()
     book_title = book_row.title if book_row else "book"
 
     audio_dir = settings.get_audio_dir(user_id, book_id)
@@ -513,11 +507,8 @@ async def download_book_audio_zip(book_id: str, request: BookDownloadZipRequest,
         raise HTTPException(status_code=404, detail="Book not found")
 
     # Get book title from DB
-    db = next(get_db())
-    try:
+    with get_db() as db:
         book_row = db.query(Book).filter(Book.id == book_id).first()
-    finally:
-        db.close()
     book_title = book_row.title if book_row else "book"
 
     audio_dir = settings.get_audio_dir(user_id, book_id)

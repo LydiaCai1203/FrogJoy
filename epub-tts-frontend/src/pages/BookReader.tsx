@@ -202,7 +202,7 @@ export default function BookReader() {
 
   // 防抖保存阅读进度（跳过初始章节加载，避免覆盖已有进度）
   useEffect(() => {
-    if (!bookId || !currentChapterHref) return;
+    if (!bookId || !currentChapterHref || !token) return;
     // 第一次 currentChapterHref 从 null 变为初始章节时跳过
     if (skipInitialSaveRef.current) {
       skipInitialSaveRef.current = false;
@@ -217,7 +217,7 @@ export default function BookReader() {
     }, 3000);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, currentChapterHref, currentSentenceIndex]);
+  }, [bookId, currentChapterHref, currentSentenceIndex, token]);
 
   // Sync translator config
   useEffect(() => {

@@ -25,8 +25,7 @@ def _highlight_to_dict(h: Highlight) -> dict:
 class HighlightService:
     @staticmethod
     def list_by_chapter(book_id: str, chapter_href: str, user_id: str) -> list[dict]:
-        db = next(get_db())
-        try:
+        with get_db() as db:
             rows = (
                 db.query(Highlight)
                 .filter_by(book_id=book_id, chapter_href=chapter_href, user_id=user_id)
@@ -34,13 +33,10 @@ class HighlightService:
                 .all()
             )
             return [_highlight_to_dict(r) for r in rows]
-        finally:
-            db.close()
 
     @staticmethod
     def list_by_book(book_id: str, user_id: str) -> list[dict]:
-        db = next(get_db())
-        try:
+        with get_db() as db:
             rows = (
                 db.query(Highlight)
                 .filter_by(book_id=book_id, user_id=user_id)
@@ -48,8 +44,6 @@ class HighlightService:
                 .all()
             )
             return [_highlight_to_dict(r) for r in rows]
-        finally:
-            db.close()
 
     @staticmethod
     def create(
@@ -65,75 +59,68 @@ class HighlightService:
         note: str | None,
     ) -> dict:
         highlight_id = str(uuid.uuid4())
-        db = next(get_db())
-        try:
-            h = Highlight(
-                id=highlight_id,
-                user_id=user_id,
-                book_id=book_id,
-                chapter_href=chapter_href,
-                paragraph_index=paragraph_index,
-                end_paragraph_index=end_paragraph_index,
-                start_offset=start_offset,
-                end_offset=end_offset,
-                selected_text=selected_text,
-                color=color,
-                note=note,
-            )
-            db.add(h)
-            db.commit()
-            db.refresh(h)
-            return _highlight_to_dict(h)
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
+        with get_db() as db:
+            try:
+                h = Highlight(
+                    id=highlight_id,
+                    user_id=user_id,
+                    book_id=book_id,
+                    chapter_href=chapter_href,
+                    paragraph_index=paragraph_index,
+                    end_paragraph_index=end_paragraph_index,
+                    start_offset=start_offset,
+                    end_offset=end_offset,
+                    selected_text=selected_text,
+                    color=color,
+                    note=note,
+                )
+                db.add(h)
+                db.commit()
+                db.refresh(h)
+                return _highlight_to_dict(h)
+            except Exception:
+                db.rollback()
+                raise
 
     @staticmethod
     def update(highlight_id: str, user_id: str, color: str | None = None, note: str | None = None) -> dict:
-        db = next(get_db())
-        try:
-            h = db.query(Highlight).filter_by(id=highlight_id).first()
-            if not h or h.user_id != user_id:
-                return None
+        with get_db() as db:
+            try:
+                h = db.query(Highlight).filter_by(id=highlight_id).first()
+                if not h or h.user_id != user_id:
+                    return None
 
-            if color is not None:
-                h.color = color
-            if note is not None:
-                h.note = note
-            if color is not None or note is not None:
-                h.updated_at = func.now()
+                if color is not None:
+                    h.color = color
+                if note is not None:
+                    h.note = note
+                if color is not None or note is not None:
+                    h.updated_at = func.now()
 
-            db.commit()
-            db.refresh(h)
-            return _highlight_to_dict(h)
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
+                db.commit()
+                db.refresh(h)
+                return _highlight_to_dict(h)
+            except Exception:
+                db.rollback()
+                raise
 
     @staticmethod
     def delete(highlight_id: str, user_id: str) -> bool:
-        db = next(get_db())
-        try:
-            h = db.query(Highlight).filter_by(id=highlight_id).first()
-            if not h or h.user_id != user_id:
-                return False
-            db.delete(h)
-            db.commit()
-            return True
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
+        with get_db() as db:
+            try:
+                h = db.query(Highlight).filter_by(id=highlight_id).first()
+                if not h or h.user_id != user_id:
+                    return False
+                db.delete(h)
+                db.commit()
+                return True
+            except Exception:
+                db.rollback()
+                raise
 
     @staticmethod
     def search(book_id: str, user_id: str, query: str) -> list[dict]:
-        db = next(get_db())
-        try:
+        with get_db() as db:
             pattern = f"%{query}%"
             rows = (
                 db.query(Highlight)
@@ -146,5 +133,3 @@ class HighlightService:
                 .all()
             )
             return [_highlight_to_dict(r) for r in rows]
-        finally:
-            db.close()

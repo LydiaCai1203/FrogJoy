@@ -43,24 +43,22 @@ async def upload_book(
 
         cover_url = meta_info["coverUrl"]
 
-        db = next(get_db())
-        try:
-            book = Book(
-                id=book_id,
-                user_id=user_id,
-                title=meta_info["metadata"].get("title", "Unknown"),
-                creator=meta_info["metadata"].get("creator", "Unknown"),
-                cover_url=cover_url,
-                file_path=file_path,
-                is_public=False,
-            )
-            db.add(book)
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
+        with get_db() as db:
+            try:
+                book = Book(
+                    id=book_id,
+                    user_id=user_id,
+                    title=meta_info["metadata"].get("title", "Unknown"),
+                    creator=meta_info["metadata"].get("creator", "Unknown"),
+                    cover_url=cover_url,
+                    file_path=file_path,
+                    is_public=False,
+                )
+                db.add(book)
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
 
         return {
             "bookId": book_id,
@@ -83,8 +81,7 @@ async def upload_book(
 
 @router.get("")
 async def list_books(user_id: Optional[str] = Depends(get_optional_user)):
-    db = next(get_db())
-    try:
+    with get_db() as db:
         query = db.query(Book)
 
         if user_id:
@@ -111,39 +108,35 @@ async def list_books(user_id: Optional[str] = Depends(get_optional_user)):
             })
 
         return books
-    finally:
-        db.close()
 
 @router.get("/{book_id}")
 async def get_book(
     book_id: str,
     user_id: Optional[str] = Depends(get_optional_user)
 ):
-    db = next(get_db())
-    try:
-        book_row = db.query(Book).filter(Book.id == book_id).first()
+    with get_db() as db:
+        try:
+            book_row = db.query(Book).filter(Book.id == book_id).first()
 
-        if not book_row:
-            raise HTTPException(status_code=404, detail="Book not found")
+            if not book_row:
+                raise HTTPException(status_code=404, detail="Book not found")
 
-        if not book_row.is_public and book_row.user_id != user_id:
-            raise HTTPException(status_code=403, detail="Access denied")
+            if not book_row.is_public and book_row.user_id != user_id:
+                raise HTTPException(status_code=403, detail="Access denied")
 
-        owner_id = book_row.user_id
+            owner_id = book_row.user_id
 
-        book_path = BookService.get_book_path(owner_id, book_id)
-        if not os.path.exists(book_path):
-            raise HTTPException(status_code=404, detail="Book file not found")
+            book_path = BookService.get_book_path(owner_id, book_id)
+            if not os.path.exists(book_path):
+                raise HTTPException(status_code=404, detail="Book file not found")
 
-        book_row.last_opened_at = func.now()
-        db.commit()
-    except HTTPException:
-        raise
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
+            book_row.last_opened_at = func.now()
+            db.commit()
+        except HTTPException:
+            raise
+        except Exception:
+            db.rollback()
+            raise
 
     try:
         meta_info = BookService.parse_metadata(book_id, owner_id)
@@ -180,8 +173,7 @@ async def get_chapter(
     href: str,
     user_id: Optional[str] = Depends(get_optional_user)
 ):
-    db = next(get_db())
-    try:
+    with get_db() as db:
         book_row = db.query(Book).filter(Book.id == book_id).first()
 
         if not book_row:
@@ -191,8 +183,6 @@ async def get_chapter(
             raise HTTPException(status_code=403, detail="Access denied")
 
         owner_id = book_row.user_id
-    finally:
-        db.close()
 
     try:
         chapter_content = BookService.get_chapter_content(book_id, href, owner_id)
@@ -207,34 +197,32 @@ async def delete_book(
     book_id: str,
     user_id: str = Depends(get_current_user)
 ):
-    db = next(get_db())
-    try:
-        book_row = db.query(Book).filter(Book.id == book_id).first()
+    with get_db() as db:
+        try:
+            book_row = db.query(Book).filter(Book.id == book_id).first()
 
-        if not book_row:
-            raise HTTPException(status_code=404, detail="Book not found")
+            if not book_row:
+                raise HTTPException(status_code=404, detail="Book not found")
 
-        if book_row.user_id != user_id:
-            raise HTTPException(status_code=403, detail="You can only delete your own books")
+            if book_row.user_id != user_id:
+                raise HTTPException(status_code=403, detail="You can only delete your own books")
 
-        # Remove the entire per-book directory
-        book_dir = settings.get_user_book_dir(user_id, book_id)
-        if os.path.isdir(book_dir):
-            shutil.rmtree(book_dir)
+            # Remove the entire per-book directory
+            book_dir = settings.get_user_book_dir(user_id, book_id)
+            if os.path.isdir(book_dir):
+                shutil.rmtree(book_dir)
 
-        # Remove images directory
-        images_dir = settings.get_images_dir(book_id)
-        if os.path.isdir(images_dir):
-            shutil.rmtree(images_dir)
+            # Remove images directory
+            images_dir = settings.get_images_dir(book_id)
+            if os.path.isdir(images_dir):
+                shutil.rmtree(images_dir)
 
-        db.delete(book_row)
-        db.commit()
-    except HTTPException:
-        raise
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
+            db.delete(book_row)
+            db.commit()
+        except HTTPException:
+            raise
+        except Exception:
+            db.rollback()
+            raise
 
     return {"message": "Book deleted", "bookId": book_id}

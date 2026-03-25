@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -10,20 +11,22 @@ from app.routers.reading_stats import router as reading_stats_router
 from app.routers.reading_progress import router as reading_progress_router
 import os
 
-app = FastAPI(title="EPUB-TTS Backend", version="1.0.0")
 
-# Run Alembic migrations on startup
 def _run_migrations():
     from alembic.config import Config
     from alembic import command
     alembic_cfg = Config("alembic.ini")
-    database_url = os.getenv("DATABASE_URL")
-    if database_url:
-        alembic_cfg.set_main_option("sqlalchemy.url", database_url)
     command.upgrade(alembic_cfg, "head")
     print("[Database] Alembic migrations applied")
 
-_run_migrations()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _run_migrations()
+    yield
+
+
+app = FastAPI(title="EPUB-TTS Backend", version="1.0.0", lifespan=lifespan)
 
 # CORS Configuration
 origins = [

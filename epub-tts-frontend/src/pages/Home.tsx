@@ -51,8 +51,9 @@ export default function Home() {
 
   // 加载书架
   useEffect(() => {
+    if (isAuthLoading) return;
     loadBooks();
-  }, [token]);
+  }, [token, isAuthLoading]);
 
   const loadBooks = async () => {
     setIsLoadingBooks(true);
