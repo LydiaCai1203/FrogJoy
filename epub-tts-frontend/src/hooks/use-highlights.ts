@@ -31,9 +31,8 @@ export function useCreateHighlight() {
   return useMutation({
     mutationFn: (req: CreateHighlightRequest) => highlightService.create(req),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({
-        queryKey: ["highlights", data.book_id, data.chapter_href],
-      });
+      queryClient.invalidateQueries({ queryKey: ["highlights", data.book_id, data.chapter_href] });
+      queryClient.invalidateQueries({ queryKey: ["highlights", data.book_id] });
     },
   });
 }
@@ -44,9 +43,8 @@ export function useUpdateHighlight() {
     mutationFn: ({ id, data }: { id: string; data: { color?: string; note?: string } }) =>
       highlightService.update(id, data),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({
-        queryKey: ["highlights", data.book_id, data.chapter_href],
-      });
+      queryClient.invalidateQueries({ queryKey: ["highlights", data.book_id, data.chapter_href] });
+      queryClient.invalidateQueries({ queryKey: ["highlights", data.book_id] });
     },
   });
 }
@@ -57,9 +55,8 @@ export function useDeleteHighlight() {
     mutationFn: ({ id, bookId, chapterHref }: { id: string; bookId: string; chapterHref: string }) =>
       highlightService.delete(id),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ["highlights", variables.bookId, variables.chapterHref],
-      });
+      queryClient.invalidateQueries({ queryKey: ["highlights", variables.bookId, variables.chapterHref] });
+      queryClient.invalidateQueries({ queryKey: ["highlights", variables.bookId] });
     },
   });
 }
