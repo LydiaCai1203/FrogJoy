@@ -482,106 +482,80 @@ class BookService:
                 target_element = soup.find(attrs={"name": anchor})
 
         heading_tags = {'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}
-        block_tags = {'p', 'div', 'section', 'article', 'blockquote'}
-        list_tags = {'ul', 'ol', 'nav', 'dl'}
-        list_item_tags = {'li', 'dt', 'dd'}
+        leaf_block_tags = {'p', 'blockquote', 'li', 'dt', 'dd', 'tr'}
+        container_tags = {'div', 'section', 'article', 'ul', 'ol', 'nav', 'dl',
+                          'table', 'thead', 'tbody', 'tfoot'}
+        all_block_tags = heading_tags | leaf_block_tags | container_tags
 
-        def extract_structured_text(element):
+        def collect_blocks(element):
+            """Walk DOM tree, collect each block-level element as one text block."""
+            blocks = []
             if element is None:
-                return ""
+                return blocks
 
-            if isinstance(element, str) or hasattr(element, 'strip') and not hasattr(element, 'name'):
-                text = str(element).strip()
-                return text if text else ""
-
+            # Text node
             if not hasattr(element, 'name') or element.name is None:
-                if hasattr(element, 'get_text'):
-                    return element.get_text().strip()
-                return str(element).strip()
+                text = element.get_text().strip() if hasattr(element, 'get_text') else str(element).strip()
+                if text:
+                    blocks.append(text)
+                return blocks
 
-            tag_name = element.name
+            tag = element.name
 
-            if tag_name in heading_tags:
-                text = element.get_text(separator=' ').strip()
-                return f"\n\n{text}\n\n" if text else ""
+            # If this block element has block-level children, recurse into them
+            has_block_children = any(
+                hasattr(c, 'name') and c.name in all_block_tags
+                for c in element.children
+            )
 
-            if tag_name in list_tags:
-                parts = []
+            if tag in (heading_tags | leaf_block_tags) and not has_block_children:
+                # Leaf block: collect as single text block
+                text = ' '.join(element.get_text(separator=' ').split())
+                if text:
+                    blocks.append(text)
+            else:
+                # Container or block-with-sub-blocks: recurse
                 for child in element.children:
-                    child_text = extract_structured_text(child)
-                    if child_text:
-                        parts.append(child_text)
-                return '\n'.join(parts)
+                    blocks.extend(collect_blocks(child))
 
-            if tag_name in list_item_tags:
-                text = element.get_text(separator=' ').strip()
-                return f"{text}\n" if text else ""
-
-            if tag_name in block_tags:
-                text = element.get_text(separator=' ').strip()
-                return f"{text}\n" if text else ""
-
-            if hasattr(element, 'children'):
-                parts = []
-                for child in element.children:
-                    child_text = extract_structured_text(child)
-                    if child_text:
-                        parts.append(child_text)
-                return ' '.join(parts) if parts else ""
-
-            if hasattr(element, 'get_text'):
-                return element.get_text(separator=' ').strip()
-            return ""
+            return blocks
 
         if target_element:
-            parts = [extract_structured_text(target_element)]
-
+            elements = [target_element]
             for sibling in target_element.find_next_siblings():
                 if hasattr(sibling, 'name') and sibling.name in heading_tags and sibling.get('id'):
                     break
-                sibling_text = extract_structured_text(sibling)
-                if sibling_text:
-                    parts.append(sibling_text)
-
-            text = '\n'.join(parts)
+                elements.append(sibling)
+            blocks = []
+            for el in elements:
+                blocks.extend(collect_blocks(el))
         else:
             body = soup.find('body') or soup
-            parts = []
+            blocks = []
             for child in body.children:
-                child_text = extract_structured_text(child)
-                if child_text:
-                    parts.append(child_text)
-            text = '\n'.join(parts)
+                blocks.extend(collect_blocks(child))
 
-        import re
-
-        text = re.sub(r'\n{3,}', '\n\n', text)
-
-        paragraphs = re.split(r'\n\s*\n', text)
+        text = '\n\n'.join(blocks)
 
         MAX_PARAGRAPH_LENGTH = 300
 
         sentences = []
-        for para in paragraphs:
-            para = ' '.join(line.strip() for line in para.split('\n') if line.strip())
-            if not para:
+        for block in blocks:
+            if not block:
                 continue
-
-            if len(para) <= MAX_PARAGRAPH_LENGTH:
-                sentences.append(para)
+            if len(block) <= MAX_PARAGRAPH_LENGTH:
+                sentences.append(block)
             else:
-                parts = re.split(r'([。！？])', para)
-
+                parts = re.split(r'([。！？][）)」】\u201d\u2019"\'\]》〉]*)', block)
                 current_sentence = ""
-                for i, part in enumerate(parts):
-                    if part in '。！？':
+                for part in parts:
+                    if re.match(r'^[。！？]', part):
                         current_sentence += part
                         if current_sentence.strip():
                             sentences.append(current_sentence.strip())
                         current_sentence = ""
                     else:
                         current_sentence += part
-
                 if current_sentence.strip():
                     sentences.append(current_sentence.strip())
 
