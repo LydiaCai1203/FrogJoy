@@ -30,7 +30,7 @@ export default function BookReader() {
 
   // Reading tracking & progress
   useReadingTracker(bookId);
-  const { data: savedProgress, isFetching: isProgressFetching } = useReadingProgress(bookId);
+  const { data: savedProgress, isFetching: isProgressFetching } = useReadingProgress(token ? bookId : undefined);
   const saveProgressMutation = useSaveReadingProgress();
   const resumeSentenceRef = useRef<number>(0);
   const progressRestoredRef = useRef(false);

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.middleware.auth import get_current_user
 from app.services.reading_progress_service import ReadingProgressService
 
@@ -8,7 +8,7 @@ router = APIRouter(prefix="/reading-progress", tags=["reading-progress"])
 
 class SaveProgressRequest(BaseModel):
     chapter_href: str
-    paragraph_index: int
+    paragraph_index: int = Field(ge=0)
 
 
 @router.get("/{book_id}")

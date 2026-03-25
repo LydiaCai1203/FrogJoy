@@ -18,8 +18,8 @@ import shutil
 router = APIRouter()
 
 
-def _get_book_owner(book_id: str) -> str:
-    """Look up the owner user_id for a book from the database."""
+def _get_book_owner(book_id: str, current_user_id: str) -> str:
+    """Look up the owner user_id for a book, with access control."""
     db = next(get_db())
     try:
         book = db.query(Book).filter(Book.id == book_id).first()
@@ -27,6 +27,8 @@ def _get_book_owner(book_id: str) -> str:
         db.close()
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
+    if not book.is_public and book.user_id != current_user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return book.user_id
 
 
@@ -234,7 +236,7 @@ async def download_chapter_audio(request: DownloadRequest, user_id: str = Depend
 
 @router.post("/tts/download/chapter")
 async def download_chapter_audio_smart(request: ChapterDownloadRequest, user_id: str = Depends(get_current_user)):
-    owner_id = _get_book_owner(request.book_id)
+    owner_id = _get_book_owner(request.book_id, user_id)
 
     try:
         chapter = BookService.get_chapter_content(request.book_id, request.chapter_href, owner_id)
@@ -287,7 +289,7 @@ async def get_download_file(user_id: str, book_id: str, filename: str):
 async def download_book_audio(book_id: str, request: BookDownloadRequest, user_id: str = Depends(get_current_user)):
     import time as time_module
 
-    owner_id = _get_book_owner(book_id)
+    owner_id = _get_book_owner(book_id, user_id)
 
     book_path = BookService.get_book_path(owner_id, book_id)
     if not os.path.exists(book_path):
@@ -504,7 +506,7 @@ async def download_book_audio(book_id: str, request: BookDownloadRequest, user_i
 async def download_book_audio_zip(book_id: str, request: BookDownloadZipRequest, user_id: str = Depends(get_current_user)):
     import time as time_module
 
-    owner_id = _get_book_owner(book_id)
+    owner_id = _get_book_owner(book_id, user_id)
 
     book_path = BookService.get_book_path(owner_id, book_id)
     if not os.path.exists(book_path):

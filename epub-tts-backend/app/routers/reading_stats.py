@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.middleware.auth import get_current_user
 from app.services.reading_stats_service import ReadingStatsService
 
@@ -8,7 +8,7 @@ router = APIRouter(prefix="/reading-stats", tags=["reading-stats"])
 
 class HeartbeatRequest(BaseModel):
     book_id: str
-    seconds: int = 30
+    seconds: int = Field(default=30, ge=1)
 
 
 @router.post("/heartbeat")
