@@ -251,7 +251,7 @@ export default function Home() {
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5">
-                        <Book className="w-12 h-12 text-primary/40" />
+                        <span className="text-4xl font-bold text-primary/60">{book.title.charAt(0)}</span>
                       </div>
                     )}
                   </div>

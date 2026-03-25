@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import type { NavItem } from "epubjs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Book, Download, Loader2, FileArchive, FileAudio, MessageSquare, List } from "lucide-react";
+import { Download, Loader2, FileArchive, FileAudio, MessageSquare, List } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { API_URL } from "@/config";
@@ -129,8 +129,8 @@ export function Sidebar({
             {coverUrl ? (
               <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center bg-secondary">
-                <Book className="w-6 h-6 text-muted-foreground" />
+              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5">
+                <span className="text-lg font-bold text-primary/60">{title?.charAt(0)}</span>
               </div>
             )}
           </div>

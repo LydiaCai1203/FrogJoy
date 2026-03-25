@@ -66,15 +66,38 @@ class BookService:
             cover_url = None
             cover_item = None
             try:
-                for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
-                    try:
-                        item_name = item.get_name().lower() if item.get_name() else ""
-                        item_id = item.get_id().lower() if item.get_id() else ""
-                        if 'cover' in item_name or 'cover' in item_id:
+                # 1. Try OPF metadata: <meta name="cover" content="manifest-id"/>
+                cover_meta = book.get_metadata('OPF', 'cover')
+                if not cover_meta:
+                    opf_meta = book.metadata.get('http://www.idpf.org/2007/opf', {}).get('meta', [])
+                    for val, attrs in opf_meta:
+                        if attrs.get('name') == 'cover' and attrs.get('content'):
+                            cover_meta = [(attrs['content'], {})]
+                            break
+                if cover_meta:
+                    manifest_id = cover_meta[0][0]
+                    item = book.get_item_with_id(manifest_id)
+                    if item and item.get_content():
+                        cover_item = item
+
+                # 2. Fallback: search ITEM_COVER type
+                if not cover_item:
+                    for item in book.get_items_of_type(ebooklib.ITEM_COVER):
+                        if item.get_content():
                             cover_item = item
                             break
-                    except Exception:
-                        continue
+
+                # 3. Fallback: search ITEM_IMAGE by name/id containing 'cover'
+                if not cover_item:
+                    for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
+                        try:
+                            item_name = item.get_name().lower() if item.get_name() else ""
+                            item_id = item.get_id().lower() if item.get_id() else ""
+                            if 'cover' in item_name or 'cover' in item_id:
+                                cover_item = item
+                                break
+                        except Exception:
+                            continue
 
                 if cover_item:
                     try:
