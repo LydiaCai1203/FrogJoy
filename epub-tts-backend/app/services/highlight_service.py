@@ -1,33 +1,49 @@
 import uuid
+from sqlalchemy import func
 from app.models.database import get_db
+from app.models.models import Highlight
+
+
+def _highlight_to_dict(h: Highlight) -> dict:
+    return {
+        "id": h.id,
+        "user_id": h.user_id,
+        "book_id": h.book_id,
+        "chapter_href": h.chapter_href,
+        "paragraph_index": h.paragraph_index,
+        "end_paragraph_index": h.end_paragraph_index,
+        "start_offset": h.start_offset,
+        "end_offset": h.end_offset,
+        "selected_text": h.selected_text,
+        "color": h.color,
+        "note": h.note,
+        "created_at": h.created_at.isoformat() if h.created_at else None,
+        "updated_at": h.updated_at.isoformat() if h.updated_at else None,
+    }
 
 
 class HighlightService:
     @staticmethod
     def list_by_chapter(book_id: str, chapter_href: str, user_id: str) -> list[dict]:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT id, user_id, book_id, chapter_href, paragraph_index, end_paragraph_index,
-                       start_offset, end_offset, selected_text, color, note, created_at, updated_at
-                FROM highlights
-                WHERE book_id = ? AND chapter_href = ? AND user_id = ?
-                ORDER BY paragraph_index, start_offset
-            """, (book_id, chapter_href, user_id))
-            return [dict(row) for row in cursor.fetchall()]
+        with get_db() as db:
+            rows = (
+                db.query(Highlight)
+                .filter_by(book_id=book_id, chapter_href=chapter_href, user_id=user_id)
+                .order_by(Highlight.paragraph_index, Highlight.start_offset)
+                .all()
+            )
+            return [_highlight_to_dict(r) for r in rows]
 
     @staticmethod
     def list_by_book(book_id: str, user_id: str) -> list[dict]:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT id, user_id, book_id, chapter_href, paragraph_index, end_paragraph_index,
-                       start_offset, end_offset, selected_text, color, note, created_at, updated_at
-                FROM highlights
-                WHERE book_id = ? AND user_id = ?
-                ORDER BY chapter_href, paragraph_index, start_offset
-            """, (book_id, user_id))
-            return [dict(row) for row in cursor.fetchall()]
+        with get_db() as db:
+            rows = (
+                db.query(Highlight)
+                .filter_by(book_id=book_id, user_id=user_id)
+                .order_by(Highlight.chapter_href, Highlight.paragraph_index, Highlight.start_offset)
+                .all()
+            )
+            return [_highlight_to_dict(r) for r in rows]
 
     @staticmethod
     def create(
@@ -43,82 +59,77 @@ class HighlightService:
         note: str | None,
     ) -> dict:
         highlight_id = str(uuid.uuid4())
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO highlights (
-                    id, user_id, book_id, chapter_href, paragraph_index, end_paragraph_index,
-                    start_offset, end_offset, selected_text, color, note
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                highlight_id, user_id, book_id, chapter_href,
-                paragraph_index, end_paragraph_index,
-                start_offset, end_offset, selected_text, color, note
-            ))
-            cursor.execute("""
-                SELECT id, user_id, book_id, chapter_href, paragraph_index, end_paragraph_index,
-                       start_offset, end_offset, selected_text, color, note, created_at, updated_at
-                FROM highlights WHERE id = ?
-            """, (highlight_id,))
-            return dict(cursor.fetchone())
+        with get_db() as db:
+            try:
+                h = Highlight(
+                    id=highlight_id,
+                    user_id=user_id,
+                    book_id=book_id,
+                    chapter_href=chapter_href,
+                    paragraph_index=paragraph_index,
+                    end_paragraph_index=end_paragraph_index,
+                    start_offset=start_offset,
+                    end_offset=end_offset,
+                    selected_text=selected_text,
+                    color=color,
+                    note=note,
+                )
+                db.add(h)
+                db.commit()
+                db.refresh(h)
+                return _highlight_to_dict(h)
+            except Exception:
+                db.rollback()
+                raise
 
     @staticmethod
     def update(highlight_id: str, user_id: str, color: str | None = None, note: str | None = None) -> dict:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, user_id FROM highlights WHERE id = ?", (highlight_id,))
-            row = cursor.fetchone()
-            if not row:
-                return None
-            if row["user_id"] != user_id:
-                return None
+        with get_db() as db:
+            try:
+                h = db.query(Highlight).filter_by(id=highlight_id).first()
+                if not h or h.user_id != user_id:
+                    return None
 
-            fields = []
-            values = []
-            if color is not None:
-                fields.append("color = ?")
-                values.append(color)
-            if note is not None:
-                fields.append("note = ?")
-                values.append(note)
-            if not fields:
-                cursor.execute("""
-                    SELECT id, user_id, book_id, chapter_href, paragraph_index, end_paragraph_index,
-                           start_offset, end_offset, selected_text, color, note, created_at, updated_at
-                    FROM highlights WHERE id = ?
-                """, (highlight_id,))
-                return dict(cursor.fetchone())
+                if color is not None:
+                    h.color = color
+                if note is not None:
+                    h.note = note
+                if color is not None or note is not None:
+                    h.updated_at = func.now()
 
-            fields.append("updated_at = CURRENT_TIMESTAMP")
-            values.append(highlight_id)
-            cursor.execute(f"UPDATE highlights SET {', '.join(fields)} WHERE id = ?", values)
-            cursor.execute("""
-                SELECT id, user_id, book_id, chapter_href, paragraph_index, end_paragraph_index,
-                       start_offset, end_offset, selected_text, color, note, created_at, updated_at
-                FROM highlights WHERE id = ?
-            """, (highlight_id,))
-            return dict(cursor.fetchone())
+                db.commit()
+                db.refresh(h)
+                return _highlight_to_dict(h)
+            except Exception:
+                db.rollback()
+                raise
 
     @staticmethod
     def delete(highlight_id: str, user_id: str) -> bool:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT user_id FROM highlights WHERE id = ?", (highlight_id,))
-            row = cursor.fetchone()
-            if not row or row["user_id"] != user_id:
-                return False
-            cursor.execute("DELETE FROM highlights WHERE id = ?", (highlight_id,))
-            return True
+        with get_db() as db:
+            try:
+                h = db.query(Highlight).filter_by(id=highlight_id).first()
+                if not h or h.user_id != user_id:
+                    return False
+                db.delete(h)
+                db.commit()
+                return True
+            except Exception:
+                db.rollback()
+                raise
 
     @staticmethod
     def search(book_id: str, user_id: str, query: str) -> list[dict]:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT id, user_id, book_id, chapter_href, paragraph_index, end_paragraph_index,
-                       start_offset, end_offset, selected_text, color, note, created_at, updated_at
-                FROM highlights
-                WHERE book_id = ? AND user_id = ? AND (selected_text LIKE ? OR note LIKE ?)
-                ORDER BY chapter_href, paragraph_index, start_offset
-            """, (book_id, user_id, f"%{query}%", f"%{query}%"))
-            return [dict(row) for row in cursor.fetchall()]
+        with get_db() as db:
+            pattern = f"%{query}%"
+            rows = (
+                db.query(Highlight)
+                .filter(
+                    Highlight.book_id == book_id,
+                    Highlight.user_id == user_id,
+                    (Highlight.selected_text.ilike(pattern) | Highlight.note.ilike(pattern)),
+                )
+                .order_by(Highlight.chapter_href, Highlight.paragraph_index, Highlight.start_offset)
+                .all()
+            )
+            return [_highlight_to_dict(r) for r in rows]

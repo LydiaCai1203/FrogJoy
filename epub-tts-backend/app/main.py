@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -6,13 +7,26 @@ from app.routers.auth import router as auth_router
 from app.routers.books import router as books_router
 from app.routers.files import router as files_router
 from app.routers.highlights import router as highlights_router
-from app.models.database import init_db
+from app.routers.reading_stats import router as reading_stats_router
+from app.routers.reading_progress import router as reading_progress_router
 import os
 
-app = FastAPI(title="EPUB-TTS Backend", version="1.0.0")
 
-# Initialize database
-init_db()
+def _run_migrations():
+    from alembic.config import Config
+    from alembic import command
+    alembic_cfg = Config("alembic.ini")
+    command.upgrade(alembic_cfg, "head")
+    print("[Database] Alembic migrations applied")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _run_migrations()
+    yield
+
+
+app = FastAPI(title="EPUB-TTS Backend", version="1.0.0", lifespan=lifespan)
 
 # CORS Configuration
 origins = [
@@ -42,6 +56,8 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(books_router, prefix="/api")
 app.include_router(files_router, prefix="/api")
 app.include_router(highlights_router, prefix="/api")
+app.include_router(reading_stats_router, prefix="/api")
+app.include_router(reading_progress_router, prefix="/api")
 
 @app.get("/")
 async def root():

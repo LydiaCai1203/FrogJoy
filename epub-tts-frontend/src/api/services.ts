@@ -1,7 +1,7 @@
 /**
  * 真实 API 服务 - 连接后端
  */
-import type { IBookService, ITTSService, TTSOptions, TTSResponse, ChapterContent, BookMetadata, NavItem, WordTimestamp, Highlight, CreateHighlightRequest } from "./types";
+import type { IBookService, ITTSService, TTSOptions, TTSResponse, ChapterContent, BookMetadata, NavItem, WordTimestamp, Highlight, CreateHighlightRequest, ReadingHeatmapEntry, BookReadingStats, ReadingSummary, ReadingProgress } from "./types";
 import { API_BASE, API_URL } from "@/config";
 
 export class BookService implements IBookService {
@@ -276,3 +276,74 @@ export class HighlightService {
 
 export const highlightService = new HighlightService();
 
+export class ReadingStatsService {
+  private getAuthHeaders(): HeadersInit {
+    const token = localStorage.getItem("auth_token");
+    return token
+      ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
+      : { "Content-Type": "application/json" };
+  }
+
+  async heartbeat(bookId: string, seconds: number): Promise<void> {
+    const response = await fetch(`${API_URL}/reading-stats/heartbeat`, {
+      method: "POST",
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ book_id: bookId, seconds }),
+    });
+    if (!response.ok) throw new Error("Failed to record heartbeat");
+  }
+
+  async getHeatmap(year: number): Promise<ReadingHeatmapEntry[]> {
+    const response = await fetch(`${API_URL}/reading-stats/heatmap?year=${year}`, {
+      headers: this.getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error("Failed to load heatmap");
+    return response.json();
+  }
+
+  async getBookStats(): Promise<BookReadingStats[]> {
+    const response = await fetch(`${API_URL}/reading-stats/books`, {
+      headers: this.getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error("Failed to load book stats");
+    return response.json();
+  }
+
+  async getSummary(): Promise<ReadingSummary> {
+    const response = await fetch(`${API_URL}/reading-stats/summary`, {
+      headers: this.getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error("Failed to load summary");
+    return response.json();
+  }
+}
+
+export const readingStatsService = new ReadingStatsService();
+
+export class ReadingProgressService {
+  private getAuthHeaders(): HeadersInit {
+    const token = localStorage.getItem("auth_token");
+    return token
+      ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
+      : { "Content-Type": "application/json" };
+  }
+
+  async get(bookId: string): Promise<ReadingProgress | null> {
+    const response = await fetch(`${API_URL}/reading-progress/${bookId}`, {
+      headers: this.getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error("Failed to load progress");
+    return response.json();
+  }
+
+  async save(bookId: string, chapterHref: string, paragraphIndex: number): Promise<void> {
+    const response = await fetch(`${API_URL}/reading-progress/${bookId}`, {
+      method: "PUT",
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ chapter_href: chapterHref, paragraph_index: paragraphIndex }),
+    });
+    if (!response.ok) throw new Error("Failed to save progress");
+  }
+}
+
+export const readingProgressService = new ReadingProgressService();

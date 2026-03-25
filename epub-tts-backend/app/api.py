@@ -7,6 +7,7 @@ from app.services.tts_service import TTSService, AudioCache
 from app.services.task_service import task_manager, TaskStatus
 from app.middleware.auth import get_current_user, get_optional_user
 from app.models.database import get_db
+from app.models.models import Book
 from app.config import settings
 import asyncio
 import os
@@ -17,15 +18,15 @@ import shutil
 router = APIRouter()
 
 
-def _get_book_owner(book_id: str) -> str:
-    """Look up the owner user_id for a book from the database."""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT user_id FROM books WHERE id = ?", (book_id,))
-        row = cursor.fetchone()
-    if not row:
+def _get_book_owner(book_id: str, current_user_id: str) -> str:
+    """Look up the owner user_id for a book, with access control."""
+    with get_db() as db:
+        book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
         raise HTTPException(status_code=404, detail="Book not found")
-    return row["user_id"]
+    if not book.is_public and book.user_id != current_user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return book.user_id
 
 
 # --- Data Models ---
@@ -232,7 +233,7 @@ async def download_chapter_audio(request: DownloadRequest, user_id: str = Depend
 
 @router.post("/tts/download/chapter")
 async def download_chapter_audio_smart(request: ChapterDownloadRequest, user_id: str = Depends(get_current_user)):
-    owner_id = _get_book_owner(request.book_id)
+    owner_id = _get_book_owner(request.book_id, user_id)
 
     try:
         chapter = BookService.get_chapter_content(request.book_id, request.chapter_href, owner_id)
@@ -285,18 +286,16 @@ async def get_download_file(user_id: str, book_id: str, filename: str):
 async def download_book_audio(book_id: str, request: BookDownloadRequest, user_id: str = Depends(get_current_user)):
     import time as time_module
 
-    owner_id = _get_book_owner(book_id)
+    owner_id = _get_book_owner(book_id, user_id)
 
     book_path = BookService.get_book_path(owner_id, book_id)
     if not os.path.exists(book_path):
         raise HTTPException(status_code=404, detail="Book not found")
 
     # Get book title from DB
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT title FROM books WHERE id = ?", (book_id,))
-        row = cursor.fetchone()
-    book_title = row["title"] if row else "book"
+    with get_db() as db:
+        book_row = db.query(Book).filter(Book.id == book_id).first()
+    book_title = book_row.title if book_row else "book"
 
     audio_dir = settings.get_audio_dir(user_id, book_id)
     os.makedirs(audio_dir, exist_ok=True)
@@ -501,18 +500,16 @@ async def download_book_audio(book_id: str, request: BookDownloadRequest, user_i
 async def download_book_audio_zip(book_id: str, request: BookDownloadZipRequest, user_id: str = Depends(get_current_user)):
     import time as time_module
 
-    owner_id = _get_book_owner(book_id)
+    owner_id = _get_book_owner(book_id, user_id)
 
     book_path = BookService.get_book_path(owner_id, book_id)
     if not os.path.exists(book_path):
         raise HTTPException(status_code=404, detail="Book not found")
 
     # Get book title from DB
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT title FROM books WHERE id = ?", (book_id,))
-        row = cursor.fetchone()
-    book_title = row["title"] if row else "book"
+    with get_db() as db:
+        book_row = db.query(Book).filter(Book.id == book_id).first()
+    book_title = book_row.title if book_row else "book"
 
     audio_dir = settings.get_audio_dir(user_id, book_id)
     os.makedirs(audio_dir, exist_ok=True)

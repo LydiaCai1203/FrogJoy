@@ -86,3 +86,30 @@ export interface CreateHighlightRequest {
   color: HighlightColor;
   note?: string;
 }
+
+// 阅读时间统计
+export interface ReadingHeatmapEntry {
+  date: string;
+  seconds: number;
+}
+
+export interface BookReadingStats {
+  book_id: string;
+  title: string;
+  cover_url?: string;
+  total_seconds: number;
+  last_read_date: string;
+}
+
+export interface ReadingSummary {
+  total_seconds: number;
+  streak_days: number;
+  books_count: number;
+}
+
+// 阅读进度
+export interface ReadingProgress {
+  chapter_href: string;
+  paragraph_index: number;
+  updated_at: string;
+}
