@@ -233,7 +233,7 @@ export function Controls({
                     <SelectTrigger className="h-12 text-base">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="z-[250]">
                       {[
                         { value: "neutral", label: "自然" },
                         { value: "warm", label: "温暖" },
@@ -277,7 +277,7 @@ export function Controls({
                     <SelectTrigger className="h-12 text-base">
                       <SelectValue placeholder={isLoadingVoices ? "加载中..." : "选择语音"} />
                     </SelectTrigger>
-                    <SelectContent className="max-h-[40vh]">
+                    <SelectContent className="max-h-[40vh] z-[250]">
                       {Object.entries(groupedVoices).map(([group, vs]) => (
                         <div key={group}>
                           <div className="px-2 py-2 text-xs bg-secondary font-medium text-muted-foreground sticky top-0">
@@ -330,7 +330,7 @@ export function Controls({
                     <SelectTrigger className="rounded-none border-primary/20 bg-background/50 focus:ring-primary/50">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="rounded-none border-primary/20 bg-card">
+                    <SelectContent className="rounded-none border-primary/20 bg-card z-[250]">
                       {[
                         { value: "neutral", label: "自然" },
                         { value: "warm", label: "温暖" },
@@ -369,7 +369,7 @@ export function Controls({
                     <SelectTrigger className="rounded-none border-primary/20 bg-background/50 focus:ring-primary/50">
                       <SelectValue placeholder={isLoadingVoices ? "加载中..." : "选择语音"} />
                     </SelectTrigger>
-                    <SelectContent className="rounded-none border-primary/20 bg-card max-h-[280px]">
+                    <SelectContent className="rounded-none border-primary/20 bg-card max-h-[280px] z-[250]">
                       {Object.entries(groupedVoices).map(([group, vs]) => (
                         <div key={group}>
                           <div className="px-2 py-1.5 text-[11px] bg-secondary font-medium text-muted-foreground sticky top-0">

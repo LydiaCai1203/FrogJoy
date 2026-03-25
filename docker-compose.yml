@@ -45,16 +45,13 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
-      - backend
-      - frontend
-    restart: unless-stopped
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    restart: always
     networks:
       - epub-tts-network
-    healthcheck:
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
 networks:
   epub-tts-network:
