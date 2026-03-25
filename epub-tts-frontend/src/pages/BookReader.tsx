@@ -5,6 +5,7 @@ import { Reader } from "@/components/player/Reader";
 import { Controls } from "@/components/player/Controls";
 import { TranslationSettings } from "@/components/player/TranslationSettings";
 import { useChapter } from "@/hooks/use-book";
+import { useChapterHighlights } from "@/hooks/use-highlights";
 import { ttsService } from "@/api";
 import type { NavItem, WordTimestamp } from "@/api/types";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
@@ -63,6 +64,7 @@ export default function BookReader() {
 
   // Queries
   const { data: chapterData, isLoading: isChapterLoading } = useChapter(bookId || null, currentChapterHref);
+  const { data: highlights = [] } = useChapterHighlights(bookId || null, currentChapterHref);
 
   // 加载书籍信息
   useEffect(() => {
@@ -539,13 +541,16 @@ export default function BookReader() {
               </div>
             </div>
           ) : (
-            <Reader 
-              sentences={displayedSentences} 
+            <Reader
+              sentences={displayedSentences}
               current={currentSentenceIndex}
               wordTimestamps={wordTimestamps}
               currentTime={currentTime}
               isPlaying={isPlaying}
               htmlContent={chapterData?.html}
+              bookId={bookId}
+              chapterHref={currentChapterHref || undefined}
+              highlights={highlights}
             />
           )}
         </div>
@@ -578,13 +583,16 @@ export default function BookReader() {
                   </div>
                 </div>
               ) : (
-                <Reader 
-                  sentences={displayedSentences} 
+                <Reader
+                  sentences={displayedSentences}
                   current={currentSentenceIndex}
                   wordTimestamps={wordTimestamps}
                   currentTime={currentTime}
                   isPlaying={isPlaying}
                   htmlContent={chapterData?.html}
+                  bookId={bookId}
+                  chapterHref={currentChapterHref || undefined}
+                  highlights={highlights}
                 />
               )}
             </div>

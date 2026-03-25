@@ -56,3 +56,33 @@ export interface ITTSService {
   stop(): void;
   getVoices(): Promise<{ name: string; lang: string; gender?: string }[]>;
 }
+
+export type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink';
+
+export interface Highlight {
+  id: string;
+  user_id: string;
+  book_id: string;
+  chapter_href: string;
+  paragraph_index: number;
+  end_paragraph_index: number;
+  start_offset: number;
+  end_offset: number;
+  selected_text: string;
+  color: HighlightColor;
+  note?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateHighlightRequest {
+  book_id: string;
+  chapter_href: string;
+  paragraph_index: number;
+  end_paragraph_index: number;
+  start_offset: number;
+  end_offset: number;
+  selected_text: string;
+  color: HighlightColor;
+  note?: string;
+}
