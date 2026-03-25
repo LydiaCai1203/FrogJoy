@@ -96,11 +96,18 @@ async def list_books(user_id: Optional[str] = Depends(get_optional_user)):
 
         books = []
         for row in query.all():
+            cover_url = row.cover_url
+            if not cover_url:
+                try:
+                    meta_info = BookService.parse_metadata(row.id, row.user_id)
+                    cover_url = meta_info.get("coverUrl")
+                except Exception:
+                    pass
             books.append({
                 "id": row.id,
                 "title": row.title,
                 "creator": row.creator,
-                "coverUrl": row.cover_url,
+                "coverUrl": cover_url,
                 "isPublic": bool(row.is_public),
                 "userId": row.user_id,
                 "createdAt": row.created_at.isoformat() if row.created_at else None,
