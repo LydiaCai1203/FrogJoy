@@ -4,6 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.models.database import get_db
 from app.models.models import ReadingStat, Book
+from app.services.book_service import BookService
 
 
 class ReadingStatsService:
@@ -52,25 +53,33 @@ class ReadingStatsService:
                     ReadingStat.book_id,
                     Book.title,
                     Book.cover_url,
+                    Book.user_id.label("owner_id"),
                     func.sum(ReadingStat.duration_seconds).label("total_seconds"),
                     func.max(ReadingStat.date).label("last_read_date"),
                 )
                 .join(Book, Book.id == ReadingStat.book_id)
                 .filter(ReadingStat.user_id == user_id)
-                .group_by(ReadingStat.book_id, Book.title, Book.cover_url)
+                .group_by(ReadingStat.book_id, Book.title, Book.cover_url, Book.user_id)
                 .order_by(func.sum(ReadingStat.duration_seconds).desc())
                 .all()
             )
-            return [
-                {
+            result = []
+            for r in rows:
+                cover_url = r.cover_url
+                if not cover_url:
+                    try:
+                        meta_info = BookService.parse_metadata(r.book_id, r.owner_id)
+                        cover_url = meta_info.get("coverUrl")
+                    except Exception:
+                        pass
+                result.append({
                     "book_id": r.book_id,
                     "title": r.title,
-                    "cover_url": r.cover_url,
+                    "cover_url": cover_url,
                     "total_seconds": r.total_seconds,
                     "last_read_date": r.last_read_date,
-                }
-                for r in rows
-            ]
+                })
+            return result
 
     @staticmethod
     def get_summary(user_id: str) -> dict:

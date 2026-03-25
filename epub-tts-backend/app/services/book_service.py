@@ -348,6 +348,16 @@ class BookService:
             raise HTTPException(status_code=500, detail=error_detail)
 
     @staticmethod
+    def flatten_toc(toc: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Flatten a hierarchical TOC into a flat list with only href and label."""
+        result = []
+        for item in toc:
+            result.append({"href": item["href"], "label": item["label"]})
+            if item.get("subitems"):
+                result.extend(BookService.flatten_toc(item["subitems"]))
+        return result
+
+    @staticmethod
     def get_first_available_chapter(book_id: str, user_id: str) -> Optional[Dict[str, Any]]:
         path = settings.get_book_path(user_id, book_id)
         if not os.path.exists(path):

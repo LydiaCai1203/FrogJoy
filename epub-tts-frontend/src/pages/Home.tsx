@@ -28,6 +28,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+interface ReadingProgress {
+  chapterIndex: number;
+  totalChapters: number;
+  percentage: number;
+}
+
 interface BookInfo {
   id: string;
   title: string;
@@ -36,6 +42,7 @@ interface BookInfo {
   lastOpened?: string;
   isPublic?: boolean;
   userId?: string;
+  readingProgress?: ReadingProgress;
 }
 
 export default function Home() {
@@ -75,6 +82,7 @@ export default function Home() {
         lastOpened: book.lastOpenedAt,
         isPublic: book.isPublic,
         userId: book.userId,
+        readingProgress: book.readingProgress,
       })));
     } catch (error) {
       console.error("Failed to load books:", error);
@@ -242,7 +250,7 @@ export default function Home() {
                   className="group relative bg-card/50 border border-border hover:border-primary/50 rounded-sm overflow-hidden cursor-pointer transition-all hover:shadow-[0_0_20px_rgba(204,255,0,0.1)] hover:-translate-y-1"
                 >
                   {/* 封面 */}
-                  <div className="aspect-[3/4] bg-secondary overflow-hidden">
+                  <div className="aspect-[3/4] bg-secondary overflow-hidden relative">
                     {book.coverUrl ? (
                       <img 
                         src={book.coverUrl} 
@@ -256,8 +264,18 @@ export default function Home() {
                     )}
                   </div>
                   
+                  {/* 阅读进度条 */}
+                  {book.readingProgress && (
+                    <div className="h-1.5 bg-black/10">
+                      <div 
+                        className="h-full bg-black/40 transition-all"
+                        style={{ width: `${book.readingProgress.percentage}%` }}
+                      />
+                    </div>
+                  )}
+                  
                   {/* 书名和作者 */}
-                  <div className="p-3">
+                  <div className="p-3 pt-2">
                     <h3 className="font-medium text-sm line-clamp-2 group-hover:text-primary transition-colors">
                       {book.title}
                     </h3>

@@ -6,6 +6,7 @@ from app.middleware.auth import get_current_user, get_optional_user
 from app.models.database import get_db
 from app.models.models import Book
 from app.services.book_service import BookService
+from app.services.reading_progress_service import ReadingProgressService
 from app.config import settings
 from typing import Optional
 
@@ -103,6 +104,16 @@ async def list_books(user_id: Optional[str] = Depends(get_optional_user)):
                     cover_url = meta_info.get("coverUrl")
                 except Exception:
                     pass
+
+            reading_progress = None
+            if user_id:
+                try:
+                    reading_progress = ReadingProgressService.get_progress_with_percentage(
+                        user_id, row.id, row.user_id
+                    )
+                except Exception:
+                    pass
+
             books.append({
                 "id": row.id,
                 "title": row.title,
@@ -112,6 +123,7 @@ async def list_books(user_id: Optional[str] = Depends(get_optional_user)):
                 "userId": row.user_id,
                 "createdAt": row.created_at.isoformat() if row.created_at else None,
                 "lastOpenedAt": row.last_opened_at.isoformat() if row.last_opened_at else None,
+                "readingProgress": reading_progress,
             })
 
         return books
