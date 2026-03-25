@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import Home from "@/pages/Home";
 import BookReader from "@/pages/BookReader";
+import Profile from "@/pages/Profile";
 
 // React Query Client
 const queryClient = new QueryClient();
@@ -18,6 +19,7 @@ function AppRouter() {
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/book/:bookId" component={BookReader} />
+        <Route path="/profile" component={Profile} />
       </Switch>
     </Router>
   );

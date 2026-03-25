@@ -7,6 +7,8 @@ import { Controls } from "@/components/player/Controls";
 import { TranslationSettings } from "@/components/player/TranslationSettings";
 import { useChapter } from "@/hooks/use-book";
 import { useChapterHighlights } from "@/hooks/use-highlights";
+import { useReadingTracker } from "@/hooks/use-reading-stats";
+import { useReadingProgress, useSaveReadingProgress } from "@/hooks/use-reading-progress";
 import { ttsService } from "@/api";
 import type { NavItem, WordTimestamp } from "@/api/types";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
@@ -25,6 +27,18 @@ export default function BookReader() {
   const { bookId } = useParams<{ bookId: string }>();
   const [, navigate] = useLocation();
   const { token } = useAuth();
+
+  // Reading tracking & progress
+  useReadingTracker(bookId);
+  const { data: savedProgress, isFetching: isProgressFetching } = useReadingProgress(bookId);
+  const saveProgressMutation = useSaveReadingProgress();
+  const resumeSentenceRef = useRef<number>(0);
+  const progressRestoredRef = useRef(false);
+  // 跳过初始章节加载时的首次保存，避免覆盖已有进度
+  const skipInitialSaveRef = useRef(true);
+  // 跟踪当前 displayedSentences 属于哪个 chapter href
+  // 用于确保 resumeSentenceRef 只在正确章节内容加载完成后才被消费
+  const displayedSentencesHrefRef = useRef<string | null>(null);
   
   // Book State
   const [metadata, setMetadata] = useState<any>({});
@@ -158,6 +172,46 @@ export default function BookReader() {
       });
   }, [bookId, navigate]);
 
+  // 书籍加载完成后，检查是否有保存的进度，提示恢复
+  useEffect(() => {
+    // 进度还在请求中、或 toc/章节未就绪、或已经弹过 toast，跳过
+    if (isProgressFetching || savedProgress === undefined || !toc.length || !currentChapterHref || progressRestoredRef.current) return;
+
+    // null：后端没有记录，不需要恢复
+    if (!savedProgress) return;
+
+    // 已在第一章第 0 句（即默认起点），无需提示
+    const firstHref = toc.find((item: NavItem) => item.href && item.href.trim())?.href;
+    if (savedProgress.chapter_href === firstHref && savedProgress.paragraph_index === 0) return;
+
+    // 自动恢复上次阅读进度
+    progressRestoredRef.current = true;
+    resumeSentenceRef.current = savedProgress.paragraph_index;
+
+    if (savedProgress.chapter_href !== currentChapterHref) {
+      setCurrentChapterHref(savedProgress.chapter_href);
+    }
+  }, [isProgressFetching, savedProgress, toc, currentChapterHref]);
+
+  // 防抖保存阅读进度（跳过初始章节加载，避免覆盖已有进度）
+  useEffect(() => {
+    if (!bookId || !currentChapterHref) return;
+    // 第一次 currentChapterHref 从 null 变为初始章节时跳过
+    if (skipInitialSaveRef.current) {
+      skipInitialSaveRef.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      saveProgressMutation.mutate({
+        bookId,
+        chapterHref: currentChapterHref,
+        paragraphIndex: currentSentenceIndex,
+      });
+    }, 3000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId, currentChapterHref, currentSentenceIndex]);
+
   // Sync translator config
   useEffect(() => {
     translator.updateConfig(transConfig);
@@ -174,6 +228,7 @@ export default function BookReader() {
       if (transConfig.enabled && transConfig.apiKey) {
         if (translatedCache[href]) {
           setDisplayedSentences(translatedCache[href]);
+          displayedSentencesHrefRef.current = href;
           return;
         }
 
@@ -188,16 +243,19 @@ export default function BookReader() {
 
           setTranslatedCache(prev => ({ ...prev, [href]: newSentences }));
           setDisplayedSentences(newSentences);
+          displayedSentencesHrefRef.current = href;
           toast.success("Chapter Translated");
         } catch (error) {
           console.error("Translation failed", error);
           toast.error("Translation Failed, showing original");
           setDisplayedSentences(rawSentences);
+          displayedSentencesHrefRef.current = href;
         } finally {
           setIsTranslating(false);
         }
       } else {
         setDisplayedSentences(rawSentences);
+        displayedSentencesHrefRef.current = href;
       }
     };
 
@@ -405,13 +463,27 @@ export default function BookReader() {
     ttsService.stop();
     // 更新章节 ref
     currentChapterHrefRef.current = currentChapterHref;
+
+    // 只有当 displayedSentences 已经是当前目标章节的内容时，才消费 resumeSentenceRef。
+    // 这样可以避免以下竞态：
+    //   1. setCurrentChapterHref(targetHref) 触发本 effect（displayedSentences 还是旧章节） → 错误清零
+    //   2. 新章节内容加载完成，displayedSentences 更新再次触发本 effect → resumeSentenceRef 已被清零
+    let startAt = 0;
+    if (
+      displayedSentencesHrefRef.current === currentChapterHref &&
+      resumeSentenceRef.current > 0
+    ) {
+      startAt = resumeSentenceRef.current;
+      resumeSentenceRef.current = 0; // 仅在实际使用时才清零
+    }
+
     // 重置所有状态
-    setCurrentSentenceIndex(0);
+    setCurrentSentenceIndex(startAt);
     setIsPlaying(false);
     playingSentenceRef.current = -1;
     setWordTimestamps([]);
     setCurrentTime(0);
-    
+
     // 章节切换时，预加载前3个段落
     if (displayedSentences.length > 0) {
       setTimeout(() => {

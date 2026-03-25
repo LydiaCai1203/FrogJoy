@@ -293,11 +293,18 @@ export function Reader({
   }, [editingHighlight, bookId, chapterHref, deleteHighlight]);
 
   if (sentences.length === 0) {
-    return (
-      <div className="h-full flex items-center justify-center text-muted-foreground font-mono uppercase tracking-widest text-sm animate-pulse">
-        Waiting for neural data stream...
-      </div>
-    );
+    // 有 HTML 内容（如图片页）就渲染出来，没有就留白
+    if (htmlContent) {
+      return (
+        <ScrollArea className="h-full">
+          <div
+            className="prose prose-sm dark:prose-invert max-w-none p-8 flex justify-center"
+            dangerouslySetInnerHTML={{ __html: htmlContent }}
+          />
+        </ScrollArea>
+      );
+    }
+    return <div className="h-full" />;
   }
 
   // Render sentence with TTS word highlight and user highlight marks

@@ -86,7 +86,54 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_highlights_user_book ON highlights(user_id, book_id)
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS reading_stats (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                book_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                duration_seconds INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (book_id) REFERENCES books(id),
+                UNIQUE(user_id, book_id, date)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_reading_stats_user_date ON reading_stats(user_id, date)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_reading_stats_user_book ON reading_stats(user_id, book_id)
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS reading_progress (
+                user_id TEXT NOT NULL,
+                book_id TEXT NOT NULL,
+                chapter_href TEXT NOT NULL,
+                paragraph_index INTEGER NOT NULL DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, book_id),
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (book_id) REFERENCES books(id)
+            )
+        """)
+
+        # Migrations: add columns that may be missing from older schemas
+        _add_column_if_not_exists(cursor, "reading_progress", "paragraph_index", "INTEGER NOT NULL DEFAULT 0")
+
         print("[Database] Initialized successfully")
+
+
+def _add_column_if_not_exists(cursor, table: str, column: str, col_def: str):
+    cursor.execute(f"PRAGMA table_info({table})")
+    columns = [row[1] for row in cursor.fetchall()]
+    if column not in columns:
+        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
+        print(f"[Database] Added column '{column}' to '{table}'")
 
 if __name__ == "__main__":
     init_db()

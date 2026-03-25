@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { UploadZone } from "@/components/player/UploadZone";
 import { useUploadBook } from "@/hooks/use-book";
 import { Button } from "@/components/ui/button";
-import { Loader2, Book, Trash2, BrainCircuit, Github, User, LogOut } from "lucide-react";
+import { Loader2, Book, Trash2, BrainCircuit, Github, User, LogOut, BarChart2 } from "lucide-react";
 import { toast } from "sonner";
 import { API_BASE, API_URL } from "@/config";
 import { TasksPanel } from "@/components/player/TasksPanel";
@@ -158,6 +158,10 @@ export default function Home() {
                         {user.email}
                       </div>
                       <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => navigate("/profile")}>
+                        <BarChart2 className="mr-2 h-4 w-4" />
+                        个人中心
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={handleLogout}>
                         <LogOut className="mr-2 h-4 w-4" />
                         退出登录
