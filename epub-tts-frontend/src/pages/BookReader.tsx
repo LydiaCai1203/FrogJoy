@@ -570,7 +570,7 @@ export default function BookReader() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate("/")}
+            onClick={() => { ttsService.stop(); navigate("/"); }}
             title="返回书架"
           >
             <ArrowLeft className="w-5 h-5" />
