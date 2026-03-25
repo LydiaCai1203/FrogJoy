@@ -5,6 +5,7 @@ from app.api import router
 from app.routers.auth import router as auth_router
 from app.routers.books import router as books_router
 from app.routers.files import router as files_router
+from app.routers.highlights import router as highlights_router
 from app.models.database import init_db
 import os
 
@@ -40,6 +41,7 @@ app.include_router(router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(books_router, prefix="/api")
 app.include_router(files_router, prefix="/api")
+app.include_router(highlights_router, prefix="/api")
 
 @app.get("/")
 async def root():

@@ -1,7 +1,7 @@
 /**
  * 真实 API 服务 - 连接后端
  */
-import type { IBookService, ITTSService, TTSOptions, TTSResponse, ChapterContent, BookMetadata, NavItem, WordTimestamp } from "./types";
+import type { IBookService, ITTSService, TTSOptions, TTSResponse, ChapterContent, BookMetadata, NavItem, WordTimestamp, Highlight, CreateHighlightRequest } from "./types";
 import { API_BASE, API_URL } from "@/config";
 
 export class BookService implements IBookService {
@@ -209,4 +209,70 @@ export class TTSService implements ITTSService {
     this.stopPlayback();
   }
 }
+
+export class HighlightService {
+  private getAuthHeaders(): HeadersInit {
+    const token = localStorage.getItem("auth_token");
+    return token
+      ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
+      : { "Content-Type": "application/json" };
+  }
+
+  async listByChapter(bookId: string, chapterHref: string): Promise<Highlight[]> {
+    const response = await fetch(
+      `${API_URL}/highlights?book_id=${encodeURIComponent(bookId)}&chapter_href=${encodeURIComponent(chapterHref)}`,
+      { headers: this.getAuthHeaders() }
+    );
+    if (!response.ok) throw new Error("Failed to load highlights");
+    return response.json();
+  }
+
+  async listByBook(bookId: string): Promise<Highlight[]> {
+    const response = await fetch(
+      `${API_URL}/highlights?book_id=${encodeURIComponent(bookId)}`,
+      { headers: this.getAuthHeaders() }
+    );
+    if (!response.ok) throw new Error("Failed to load highlights");
+    return response.json();
+  }
+
+  async create(req: CreateHighlightRequest): Promise<Highlight> {
+    const response = await fetch(`${API_URL}/highlights`, {
+      method: "POST",
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(req),
+    });
+    if (!response.ok) throw new Error("Failed to create highlight");
+    return response.json();
+  }
+
+  async update(id: string, data: { color?: string; note?: string }): Promise<Highlight> {
+    const response = await fetch(`${API_URL}/highlights/${id}`, {
+      method: "PUT",
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error("Failed to update highlight");
+    return response.json();
+  }
+
+  async delete(id: string): Promise<void> {
+    const response = await fetch(`${API_URL}/highlights/${id}`, {
+      method: "DELETE",
+      headers: this.getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error("Failed to delete highlight");
+  }
+
+  async search(bookId: string, query: string): Promise<Highlight[]> {
+    const response = await fetch(
+      `${API_URL}/highlights/search?book_id=${encodeURIComponent(bookId)}&q=${encodeURIComponent(query)}`,
+      { headers: this.getAuthHeaders() }
+    );
+    if (!response.ok) throw new Error("Failed to search highlights");
+    return response.json();
+  }
+}
+
+export const highlightService = new HighlightService();
 
