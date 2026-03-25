@@ -22,6 +22,7 @@ interface SidebarProps {
   toc: NavItem[];
   currentChapterHref: string;
   onSelectChapter: (href: string) => void;
+  onGoToHighlight?: (href: string, paragraphIndex: number, highlightId: string) => void;
   coverUrl?: string;
   title?: string;
   bookId?: string;
@@ -30,7 +31,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({
-  toc, currentChapterHref, onSelectChapter, coverUrl, title,
+  toc, currentChapterHref, onSelectChapter, onGoToHighlight, coverUrl, title,
   bookId, selectedVoice = "zh-CN-XiaoxiaoNeural", speed = 1.0
 }: SidebarProps) {
   const [tab, setTab] = useState<"toc" | "notes">("toc");
@@ -213,6 +214,7 @@ export function Sidebar({
               highlightsByChapter={highlightsByChapter}
               chapterLabelMap={chapterLabelMap}
               onGoToChapter={onSelectChapter}
+              onGoToHighlight={onGoToHighlight}
             />
           )}
         </ScrollArea>
@@ -229,10 +231,12 @@ function NotesPanel({
   highlightsByChapter,
   chapterLabelMap,
   onGoToChapter,
+  onGoToHighlight,
 }: {
   highlightsByChapter: Map<string, Highlight[]>;
   chapterLabelMap: Map<string, string>;
   onGoToChapter: (href: string) => void;
+  onGoToHighlight?: (href: string, paragraphIndex: number, highlightId: string) => void;
 }) {
   if (highlightsByChapter.size === 0) {
     return (
@@ -268,7 +272,11 @@ function NotesPanel({
               {highlights.map((h) => (
                 <button
                   key={h.id}
-                  onClick={() => onGoToChapter(href)}
+                  onClick={() =>
+                    onGoToHighlight
+                      ? onGoToHighlight(href, h.paragraph_index, h.id)
+                      : onGoToChapter(href)
+                  }
                   className="w-full text-left rounded-md border border-border/50 bg-card/50 p-2.5 hover:border-primary/40 hover:bg-primary/5 transition-colors group"
                 >
                   {/* Color strip + selected text */}

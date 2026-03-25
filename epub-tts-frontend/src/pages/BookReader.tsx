@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { Sidebar } from "@/components/player/Sidebar";
 import { Reader } from "@/components/player/Reader";
+import type { ScrollToHighlight } from "@/components/player/Reader";
 import { Controls } from "@/components/player/Controls";
 import { TranslationSettings } from "@/components/player/TranslationSettings";
 import { useChapter } from "@/hooks/use-book";
@@ -65,6 +66,15 @@ export default function BookReader() {
   // Queries
   const { data: chapterData, isLoading: isChapterLoading } = useChapter(bookId || null, currentChapterHref);
   const { data: highlights = [] } = useChapterHighlights(bookId || null, currentChapterHref);
+
+  // Scroll-to-highlight target (from notes panel)
+  const [scrollTarget, setScrollTarget] = useState<ScrollToHighlight | null>(null);
+
+  const handleGoToHighlight = useCallback((href: string, paragraphIndex: number, highlightId: string) => {
+    setCurrentChapterHref(href);
+    setMobileMenuOpen(false);
+    setScrollTarget({ paragraphIndex, highlightId, ts: Date.now() });
+  }, []);
 
   // 加载书籍信息
   useEffect(() => {
@@ -462,6 +472,7 @@ export default function BookReader() {
         setCurrentChapterHref(href);
         setMobileMenuOpen(false);
       }}
+      onGoToHighlight={handleGoToHighlight}
       coverUrl={cover}
       title={metadata?.title}
       bookId={bookId}
@@ -551,6 +562,7 @@ export default function BookReader() {
               bookId={bookId}
               chapterHref={currentChapterHref || undefined}
               highlights={highlights}
+              scrollToHighlight={scrollTarget}
             />
           )}
         </div>
@@ -593,6 +605,7 @@ export default function BookReader() {
                   bookId={bookId}
                   chapterHref={currentChapterHref || undefined}
                   highlights={highlights}
+                  scrollToHighlight={scrollTarget}
                 />
               )}
             </div>

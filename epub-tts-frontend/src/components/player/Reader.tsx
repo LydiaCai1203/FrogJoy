@@ -9,6 +9,12 @@ import { AnnotationDialog } from "@/components/highlight/AnnotationDialog";
 import { useCreateHighlight, useUpdateHighlight, useDeleteHighlight } from "@/hooks/use-highlights";
 import { toast } from "sonner";
 
+export interface ScrollToHighlight {
+  paragraphIndex: number;
+  highlightId: string;
+  ts: number; // timestamp to allow re-triggering same target
+}
+
 interface ReaderProps {
   sentences: string[];
   current: number;
@@ -19,6 +25,7 @@ interface ReaderProps {
   bookId?: string;
   chapterHref?: string;
   highlights?: Highlight[];
+  scrollToHighlight?: ScrollToHighlight | null;
 }
 
 const HIGHLIGHT_COLOR_MAP: Record<HighlightColor, string> = {
@@ -45,6 +52,7 @@ export function Reader({
   bookId,
   chapterHref,
   highlights = [],
+  scrollToHighlight,
 }: ReaderProps) {
   const activeRef = useRef<HTMLDivElement>(null);
   const activeWordRef = useRef<HTMLSpanElement>(null);
@@ -104,6 +112,37 @@ export function Reader({
   useEffect(() => {
     if (isPlaying) setViewMode("play");
   }, [isPlaying]);
+
+  // Scroll to highlight from notes panel
+  useEffect(() => {
+    if (!scrollToHighlight) return;
+    const { paragraphIndex, highlightId } = scrollToHighlight;
+
+    const doScroll = () => {
+      if (viewMode === "play") {
+        const el = document.getElementById(`sentence-${paragraphIndex}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.style.transition = "box-shadow 0.3s ease";
+          el.style.boxShadow = "0 0 0 2px hsl(var(--primary))";
+          setTimeout(() => { el.style.boxShadow = ""; }, 1400);
+        }
+      } else if (readModeRef.current) {
+        const el = readModeRef.current.querySelector<HTMLElement>(`[data-highlight-id="${highlightId}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.style.transition = "outline 0.3s ease";
+          el.style.outline = "2px solid hsl(var(--primary))";
+          el.style.outlineOffset = "2px";
+          setTimeout(() => { el.style.outline = ""; el.style.outlineOffset = ""; }, 1400);
+        }
+      }
+    };
+
+    // Delay to let chapter content render first
+    const timer = setTimeout(doScroll, 300);
+    return () => clearTimeout(timer);
+  }, [scrollToHighlight]);
 
   // Apply DOM highlights in read mode
   useEffect(() => {
