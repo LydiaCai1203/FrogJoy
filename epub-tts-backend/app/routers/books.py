@@ -1,8 +1,10 @@
 import os
 import shutil
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from sqlalchemy import func, case
 from app.middleware.auth import get_current_user, get_optional_user
 from app.models.database import get_db
+from app.models.models import Book
 from app.services.book_service import BookService
 from app.config import settings
 from typing import Optional
@@ -41,19 +43,24 @@ async def upload_book(
 
         cover_url = meta_info["coverUrl"]
 
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO books (id, user_id, title, creator, cover_url, file_path, is_public)
-                VALUES (?, ?, ?, ?, ?, ?, 0)
-            """, (
-                book_id,
-                user_id,
-                meta_info["metadata"].get("title", "Unknown"),
-                meta_info["metadata"].get("creator", "Unknown"),
-                cover_url,
-                file_path
-            ))
+        db = next(get_db())
+        try:
+            book = Book(
+                id=book_id,
+                user_id=user_id,
+                title=meta_info["metadata"].get("title", "Unknown"),
+                creator=meta_info["metadata"].get("creator", "Unknown"),
+                cover_url=cover_url,
+                file_path=file_path,
+                is_public=False,
+            )
+            db.add(book)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 
         return {
             "bookId": book_id,
@@ -76,68 +83,67 @@ async def upload_book(
 
 @router.get("")
 async def list_books(user_id: Optional[str] = Depends(get_optional_user)):
-    with get_db() as conn:
-        cursor = conn.cursor()
+    db = next(get_db())
+    try:
+        query = db.query(Book)
 
         if user_id:
-            cursor.execute("""
-                SELECT id, title, creator, cover_url, is_public, user_id, created_at, last_opened_at
-                FROM books
-                WHERE user_id = ? OR is_public = 1
-                ORDER BY CASE WHEN last_opened_at IS NULL THEN 1 ELSE 0 END, last_opened_at DESC
-            """, (user_id,))
+            query = query.filter((Book.user_id == user_id) | (Book.is_public == True))
+            query = query.order_by(
+                case((Book.last_opened_at.is_(None), 1), else_=0),
+                Book.last_opened_at.desc(),
+            )
         else:
-            cursor.execute("""
-                SELECT id, title, creator, cover_url, is_public, user_id, created_at, last_opened_at
-                FROM books
-                WHERE is_public = 1
-                ORDER BY created_at DESC
-            """)
+            query = query.filter(Book.is_public == True)
+            query = query.order_by(Book.created_at.desc())
 
         books = []
-        for row in cursor.fetchall():
+        for row in query.all():
             books.append({
-                "id": row["id"],
-                "title": row["title"],
-                "creator": row["creator"],
-                "coverUrl": row["cover_url"],
-                "isPublic": bool(row["is_public"]),
-                "userId": row["user_id"],
-                "createdAt": row["created_at"],
-                "lastOpenedAt": row["last_opened_at"]
+                "id": row.id,
+                "title": row.title,
+                "creator": row.creator,
+                "coverUrl": row.cover_url,
+                "isPublic": bool(row.is_public),
+                "userId": row.user_id,
+                "createdAt": row.created_at.isoformat() if row.created_at else None,
+                "lastOpenedAt": row.last_opened_at.isoformat() if row.last_opened_at else None,
             })
 
         return books
+    finally:
+        db.close()
 
 @router.get("/{book_id}")
 async def get_book(
     book_id: str,
     user_id: Optional[str] = Depends(get_optional_user)
 ):
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, user_id, is_public FROM books WHERE id = ?
-        """, (book_id,))
-        book_row = cursor.fetchone()
+    db = next(get_db())
+    try:
+        book_row = db.query(Book).filter(Book.id == book_id).first()
 
-    if not book_row:
-        raise HTTPException(status_code=404, detail="Book not found")
+        if not book_row:
+            raise HTTPException(status_code=404, detail="Book not found")
 
-    if not book_row["is_public"] and book_row["user_id"] != user_id:
-        raise HTTPException(status_code=403, detail="Access denied")
+        if not book_row.is_public and book_row.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
 
-    owner_id = book_row["user_id"]
+        owner_id = book_row.user_id
 
-    book_path = BookService.get_book_path(owner_id, book_id)
-    if not os.path.exists(book_path):
-        raise HTTPException(status_code=404, detail="Book file not found")
+        book_path = BookService.get_book_path(owner_id, book_id)
+        if not os.path.exists(book_path):
+            raise HTTPException(status_code=404, detail="Book file not found")
 
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE books SET last_opened_at = CURRENT_TIMESTAMP WHERE id = ?
-        """, (book_id,))
+        book_row.last_opened_at = func.now()
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
     try:
         meta_info = BookService.parse_metadata(book_id, owner_id)
@@ -174,18 +180,19 @@ async def get_chapter(
     href: str,
     user_id: Optional[str] = Depends(get_optional_user)
 ):
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT user_id, is_public FROM books WHERE id = ?", (book_id,))
-        book_row = cursor.fetchone()
+    db = next(get_db())
+    try:
+        book_row = db.query(Book).filter(Book.id == book_id).first()
 
-    if not book_row:
-        raise HTTPException(status_code=404, detail="Book not found")
+        if not book_row:
+            raise HTTPException(status_code=404, detail="Book not found")
 
-    if not book_row["is_public"] and book_row["user_id"] != user_id:
-        raise HTTPException(status_code=403, detail="Access denied")
+        if not book_row.is_public and book_row.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
 
-    owner_id = book_row["user_id"]
+        owner_id = book_row.user_id
+    finally:
+        db.close()
 
     try:
         chapter_content = BookService.get_chapter_content(book_id, href, owner_id)
@@ -200,29 +207,34 @@ async def delete_book(
     book_id: str,
     user_id: str = Depends(get_current_user)
 ):
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT user_id FROM books WHERE id = ?", (book_id,))
-        book_row = cursor.fetchone()
+    db = next(get_db())
+    try:
+        book_row = db.query(Book).filter(Book.id == book_id).first()
 
-    if not book_row:
-        raise HTTPException(status_code=404, detail="Book not found")
+        if not book_row:
+            raise HTTPException(status_code=404, detail="Book not found")
 
-    if book_row["user_id"] != user_id:
-        raise HTTPException(status_code=403, detail="You can only delete your own books")
+        if book_row.user_id != user_id:
+            raise HTTPException(status_code=403, detail="You can only delete your own books")
 
-    # Remove the entire per-book directory
-    book_dir = settings.get_user_book_dir(user_id, book_id)
-    if os.path.isdir(book_dir):
-        shutil.rmtree(book_dir)
+        # Remove the entire per-book directory
+        book_dir = settings.get_user_book_dir(user_id, book_id)
+        if os.path.isdir(book_dir):
+            shutil.rmtree(book_dir)
 
-    # Remove images directory
-    images_dir = settings.get_images_dir(book_id)
-    if os.path.isdir(images_dir):
-        shutil.rmtree(images_dir)
+        # Remove images directory
+        images_dir = settings.get_images_dir(book_id)
+        if os.path.isdir(images_dir):
+            shutil.rmtree(images_dir)
 
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM books WHERE id = ?", (book_id,))
+        db.delete(book_row)
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
     return {"message": "Book deleted", "bookId": book_id}

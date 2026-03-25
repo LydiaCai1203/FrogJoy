@@ -1,6 +1,25 @@
 version: '3.8'
 
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: epub-tts-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: bookreader
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - epub-tts-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   backend:
     build:
       context: ./epub-tts-backend
@@ -10,6 +29,10 @@ services:
       - ./epub-tts-backend/data:/app/data
     environment:
       - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/bookreader
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - epub-tts-network
@@ -57,3 +80,5 @@ networks:
   epub-tts-network:
     driver: bridge
 
+volumes:
+  pgdata:

@@ -8,13 +8,22 @@ from app.routers.files import router as files_router
 from app.routers.highlights import router as highlights_router
 from app.routers.reading_stats import router as reading_stats_router
 from app.routers.reading_progress import router as reading_progress_router
-from app.models.database import init_db
 import os
 
 app = FastAPI(title="EPUB-TTS Backend", version="1.0.0")
 
-# Initialize database
-init_db()
+# Run Alembic migrations on startup
+def _run_migrations():
+    from alembic.config import Config
+    from alembic import command
+    alembic_cfg = Config("alembic.ini")
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+    command.upgrade(alembic_cfg, "head")
+    print("[Database] Alembic migrations applied")
+
+_run_migrations()
 
 # CORS Configuration
 origins = [

@@ -7,6 +7,7 @@ from app.services.tts_service import TTSService, AudioCache
 from app.services.task_service import task_manager, TaskStatus
 from app.middleware.auth import get_current_user, get_optional_user
 from app.models.database import get_db
+from app.models.models import Book
 from app.config import settings
 import asyncio
 import os
@@ -19,13 +20,14 @@ router = APIRouter()
 
 def _get_book_owner(book_id: str) -> str:
     """Look up the owner user_id for a book from the database."""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT user_id FROM books WHERE id = ?", (book_id,))
-        row = cursor.fetchone()
-    if not row:
+    db = next(get_db())
+    try:
+        book = db.query(Book).filter(Book.id == book_id).first()
+    finally:
+        db.close()
+    if not book:
         raise HTTPException(status_code=404, detail="Book not found")
-    return row["user_id"]
+    return book.user_id
 
 
 # --- Data Models ---
@@ -292,11 +294,12 @@ async def download_book_audio(book_id: str, request: BookDownloadRequest, user_i
         raise HTTPException(status_code=404, detail="Book not found")
 
     # Get book title from DB
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT title FROM books WHERE id = ?", (book_id,))
-        row = cursor.fetchone()
-    book_title = row["title"] if row else "book"
+    db = next(get_db())
+    try:
+        book_row = db.query(Book).filter(Book.id == book_id).first()
+    finally:
+        db.close()
+    book_title = book_row.title if book_row else "book"
 
     audio_dir = settings.get_audio_dir(user_id, book_id)
     os.makedirs(audio_dir, exist_ok=True)
@@ -508,11 +511,12 @@ async def download_book_audio_zip(book_id: str, request: BookDownloadZipRequest,
         raise HTTPException(status_code=404, detail="Book not found")
 
     # Get book title from DB
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT title FROM books WHERE id = ?", (book_id,))
-        row = cursor.fetchone()
-    book_title = row["title"] if row else "book"
+    db = next(get_db())
+    try:
+        book_row = db.query(Book).filter(Book.id == book_id).first()
+    finally:
+        db.close()
+    book_title = book_row.title if book_row else "book"
 
     audio_dir = settings.get_audio_dir(user_id, book_id)
     os.makedirs(audio_dir, exist_ok=True)
