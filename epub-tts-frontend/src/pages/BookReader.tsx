@@ -186,10 +186,17 @@ export default function BookReader() {
 
     // 自动恢复上次阅读进度
     progressRestoredRef.current = true;
-    resumeSentenceRef.current = savedProgress.paragraph_index;
 
     if (savedProgress.chapter_href !== currentChapterHref) {
+      // 跨章节恢复：先存 ref，等章节内容加载完后由 chapter reset effect 消费
+      resumeSentenceRef.current = savedProgress.paragraph_index;
       setCurrentChapterHref(savedProgress.chapter_href);
+    } else if (displayedSentencesHrefRef.current === currentChapterHref) {
+      // 同章节且内容已加载：直接定位，不走 ref 机制
+      setCurrentSentenceIndex(savedProgress.paragraph_index);
+    } else {
+      // 同章节但内容尚未加载：走 ref 机制，等 displayedSentences 变化时消费
+      resumeSentenceRef.current = savedProgress.paragraph_index;
     }
   }, [isProgressFetching, savedProgress, toc, currentChapterHref]);
 

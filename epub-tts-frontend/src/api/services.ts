@@ -285,11 +285,12 @@ export class ReadingStatsService {
   }
 
   async heartbeat(bookId: string, seconds: number): Promise<void> {
-    await fetch(`${API_URL}/reading-stats/heartbeat`, {
+    const response = await fetch(`${API_URL}/reading-stats/heartbeat`, {
       method: "POST",
       headers: this.getAuthHeaders(),
       body: JSON.stringify({ book_id: bookId, seconds }),
     });
+    if (!response.ok) throw new Error("Failed to record heartbeat");
   }
 
   async getHeatmap(year: number): Promise<ReadingHeatmapEntry[]> {
@@ -336,11 +337,12 @@ export class ReadingProgressService {
   }
 
   async save(bookId: string, chapterHref: string, paragraphIndex: number): Promise<void> {
-    await fetch(`${API_URL}/reading-progress/${bookId}`, {
+    const response = await fetch(`${API_URL}/reading-progress/${bookId}`, {
       method: "PUT",
       headers: this.getAuthHeaders(),
       body: JSON.stringify({ chapter_href: chapterHref, paragraph_index: paragraphIndex }),
     });
+    if (!response.ok) throw new Error("Failed to save progress");
   }
 }
 

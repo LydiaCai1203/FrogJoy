@@ -51,7 +51,7 @@ export function ReadingHeatmap({ data }: Props) {
       const weekColIndex = weeks.length;
 
       for (let d = 0; d < 7; d++) {
-        const dateStr = current.toISOString().slice(0, 10);
+        const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
         const month = current.getMonth();
 
         if (month !== lastMonth && current <= today) {
