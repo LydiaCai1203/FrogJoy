@@ -1,211 +1,156 @@
-# 📚 BookReader
+# BookReader
+
+一款轻量级 EPUB 阅读器 Web 应用，支持文字阅读与 AI 语音朗读
+
+**在线体验：https://deepkb.com.cn**
 
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-black?logo=github)](https://github.com/LydiaCai1203/BookReader)
-
-> 一款轻量级 EPUB 阅读器 Web 应用，支持文字阅读与 AI 语音朗读
->
-> 🔗 **GitHub**: https://github.com/LydiaCai1203/BookReader
-
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi&logoColor=white)
 ![React](https://img.shields.io/badge/React-18+-61DAFB?logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5+-3178C6?logo=typescript&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-### 💰 完全免费
+---
 
-当前版本使用 **Microsoft Edge TTS** 引擎，无需 API Key，无需付费，完全白嫖微软的高质量语音合成服务！
+## 功能与优势
+
+| 功能 | 说明 |
+|------|------|
+| **阅读** | EPUB 解析、章节导航、进度追踪、书籍自动保存 |
+| **语音朗读** | Edge TTS 免费语音、14+ 音色可选、实时高亮、音频缓存、离线下载 |
+| **高亮批注** | 文本高亮、批注笔记、笔记列表统一管理 |
+| **AI 助手** | 选中内容提问、AI 智能解答 |
+| **数据统计** | 阅读热力图、阅读时长、习惯分析 |
+| **多端同步** | PostgreSQL 数据持久化，随时继续阅读 |
 
 ---
 
-## ✨ 功能亮点
+## 技术栈
 
-| 功能 | 描述 |
-|------|------|
-| 📖 **文字阅读** | 智能分句、章节导航、阅读进度追踪 |
-| 🎧 **在线语音** | 基于 Microsoft Edge TTS，14+ 种中文音色可选 |
-| 🎯 **逐词高亮** | 播放时实时高亮当前朗读的词语 |
-| ⚡ **音频缓存** | 已生成的音频自动缓存，无需重复生成 |
-| 📥 **离线下载** | 支持整本书音频下载，断点续传 |
-| 📚 **书架管理** | 上传的书籍自动保存，随时继续阅读 |
+### 后端
+- Python 3.10+ / FastAPI / edge-tts / ebooklib / SQLAlchemy / PostgreSQL
+
+### 前端
+- React 18 / TypeScript / Vite / TailwindCSS / shadcn/ui / TanStack Query / epubjs
 
 ---
 
-## 🛠️ 技术栈
+## 界面预览
 
-### 后端 (Backend)
+### 首页
+![首页](./assets/首页.png)
 
-| 技术 | 用途 |
-|------|------|
-| **Python 3.10+** | 运行环境 |
-| **FastAPI** | Web 框架，高性能异步 API |
-| **edge-tts** | 微软 Edge TTS 引擎，免费语音合成 |
-| **ebooklib** | EPUB 文件解析 |
-| **BeautifulSoup4** | HTML 内容提取 |
-| **langdetect** | 自动语言检测 |
+### 朗读支持多音色选择
+![朗读支持多音色选择](./assets/朗读支持多音色选择.png)
 
-### 前端 (Frontend)
+### 阅读模式同步高亮笔记
+![阅读模式同步高亮笔记](./assets/阅读模式同步高亮笔记.png)
 
-| 技术 | 用途 |
-|------|------|
-| **React 18** | UI 框架 |
-| **TypeScript** | 类型安全 |
-| **Vite** | 构建工具 |
-| **TailwindCSS** | 样式框架 |
-| **shadcn/ui** | UI 组件库 |
-| **TanStack Query** | 数据请求管理 |
+### 高亮和批注
+![高亮和批注](./assets/高亮和批注.png)
+
+### 笔记列表
+![笔记列表](./assets/笔记列表.png)
+
+### 阅读热力图
+![阅读热力图](./assets/阅读热力图.png)
+
+### 问 AI
+![问AI](./assets/问AI.png)
 
 ---
 
-## 🚀 快速开始
+## 快速部署
 
 ### 环境要求
 
-- Python 3.10+
-- Node.js 18+
-- pnpm / npm
+- Docker & Docker Compose
 
-### 1. 启动后端
+### 启动服务
 
 ```bash
-cd epub-tts-backend
+# 克隆项目后，进入项目目录
+cd /workspace
 
-# 创建虚拟环境（首次）
-python -m venv venv
+# 启动所有服务（数据库 + 后端 + 前端 + Nginx）
+docker-compose up -d
 
-# 激活虚拟环境
-source venv/bin/activate  # macOS/Linux
-# venv\Scripts\activate   # Windows
-
-# 安装依赖
-pip install -r requirements.txt
-
-# 启动服务
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# 查看服务状态
+docker-compose ps
 ```
 
-### 2. 启动前端
+### 访问应用
+
+- Nginx 代理端口：**80**
+- 访问地址：`http://localhost`
+
+### 服务架构
+
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| nginx | 80, 443 | 反向代理 |
+| frontend | 80 (nginx) | React 前端 |
+| backend | 8000 (internal) | FastAPI 后端 |
+| db | 5432 (internal) | PostgreSQL 数据库 |
+
+### 停止服务
 
 ```bash
-cd epub-tts-frontend
-
-# 安装依赖
-npm install
-
-# 方式一：开发模式（热更新，适合开发）
-npm run dev
-
-# 方式二：生产模式（构建后预览，适合部署）
-npm run build
-npm run preview
+docker-compose down
 ```
 
-### 3. 访问应用
+### 重新构建
 
-- 本机访问：[http://localhost:8888](http://localhost:8888)
-- 局域网访问：`http://<你的IP>:8888`（同一网络内的其他设备）
-
-> 💡 **生产部署**：运行 `npm run build` 后，可将 `dist/` 目录部署到任意静态服务器（Nginx、Caddy、Vercel 等）
+```bash
+docker-compose up -d --build
+```
 
 ---
 
-## 📁 项目结构
+## 项目结构
 
 ```
-ett/
+/workspace/
+├── assets/                    # README 图片资源
 ├── epub-tts-backend/          # 后端服务
 │   ├── app/
 │   │   ├── main.py            # 应用入口
 │   │   ├── api.py             # API 路由
-│   │   └── services/          # 业务逻辑
-│   │       ├── book_service.py    # 书籍管理
-│   │       ├── tts_service.py     # 语音合成
-│   │       └── task_service.py    # 后台任务
-│   └── data/                  # 数据存储（已 gitignore）
-│       ├── books/             # 上传的 EPUB 文件
-│       ├── audio/             # 生成的音频缓存
-│       └── covers/            # 书籍封面
-│
-└── epub-tts-frontend/         # 前端应用
-    └── src/
-        ├── components/        # UI 组件
-        ├── api/               # API 服务层
-        └── pages/             # 页面组件
+│   │   ├── routers/           # 路由模块
+│   │   ├── services/          # 业务逻辑
+│   │   └── models/            # 数据模型
+│   └── data/                  # 数据存储
+│       ├── books/             # EPUB 文件
+│       ├── audio/             # 音频缓存
+│       └── images/            # 用户图片
+├── epub-tts-frontend/         # 前端应用
+│   └── src/
+│       ├── components/        # UI 组件
+│       ├── pages/             # 页面
+│       └── api/               # API 服务
+├── docker-compose.yml         # 容器编排
+└── nginx/                     # Nginx 配置
 ```
 
 ---
 
-## 🎨 界面预览
+## Star History
 
-### 上传书籍
-![上传书籍](./upload.png)
-
-### 阅读界面
-![阅读界面](./content.png)
-
-### 音频下载
-![音频下载](./download.png)
-
-### LLM 翻译配置
-![LLM配置](./llm%20config.png)
+<a href="https://www.star-history.com/?repos=LydiaCai1203%2FBookReader&type=timeline&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=LydiaCai1203/BookReader&type=timeline&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=LydiaCai1203/BookReader&type=timeline&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=LydiaCai1203/BookReader&type=timeline&legend=top-left" />
+ </picture>
+</a>
 
 ---
 
-## 🗺️ Roadmap
+## License
 
-### 已完成 ✅
+**禁止商业使用**
 
-- [x] EPUB 解析与阅读
-- [x] Microsoft Edge TTS 语音合成（免费）
-- [x] 多种中文音色选择
-- [x] 逐词高亮跟读
-- [x] 音频缓存与离线下载
-- [x] 断点续传
-- [x] 书架管理
+本项目仅供个人学习与研究使用，未经授权不得用于任何商业目的。
 
-### 计划中 🚧
-
-**📖 阅读体验**
-- [ ] **多语言支持** - 外语书籍阅读
-- [ ] **LLM 智能翻译** - 接入大语言模型，实时翻译外语内容
-- [ ] **PDF 支持** - 扩展文档格式支持
-
-**🎙️ 语音引擎**
-- [ ] **高级 TTS 服务** - 支持更多语音服务商
-  - [ ] OpenAI TTS
-  - [ ] Azure Speech
-  - [ ] ElevenLabs
-  - [ ] Fish Audio
-- [ ] **流行音色** - 更自然、更有表现力的 AI 音色
-- [ ] **语音克隆** - 自定义专属音色
-
-**📚 书架与社区**
-- [ ] **书籍共享** - 用户上传的书籍支持公开共享，构建共享书库
-- [ ] **智能分类** - 基于 AI 的书籍自动分类与标签
-- [ ] **高级检索** - 支持全文搜索、标签筛选、智能推荐
-- [ ] **阅读统计** - 阅读时长、进度追踪、阅读习惯分析
-- [ ] **用户系统** - 账号登录、云端同步、多设备阅读进度
-
-**💎 高级功能（付费）**
-- [ ] **知识图谱生成** - 基于 LLM 分析书籍内容，自动生成知识图谱
-  - 概念关系可视化
-  - 人物关系网络
-  - 事件脉络梳理
-- [ ] **跨书观点对比** - 对比不同书籍对同一主题的观点与论述
-- [ ] **思维导图** - AI 自动生成章节/全书思维导图
-- [ ] **核心观点提取** - 智能总结每章及全书核心论点
-- [ ] **智能读书笔记** - AI 辅助生成笔记，关联知识图谱
-- [ ] **学习路径推荐** - 基于知识图谱，推荐相关书籍的最佳阅读顺序
-- [ ] **引用网络** - 分析书中引用来源，构建学术引用关系图
-
----
-
-## 📝 License
-
-MIT License © 2024
-
----
-
-## 🤝 Contributing
-
-欢迎提交 Issue 和 Pull Request！
+MIT License
