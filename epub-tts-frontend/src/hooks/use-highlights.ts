@@ -14,6 +14,18 @@ export function useChapterHighlights(bookId: string | null, chapterHref: string 
   });
 }
 
+export function useBookHighlights(bookId: string | null) {
+  return useQuery({
+    queryKey: ["highlights", bookId],
+    queryFn: () => {
+      if (!bookId) throw new Error("Missing bookId");
+      return highlightService.listByBook(bookId);
+    },
+    enabled: !!bookId,
+    staleTime: 30_000,
+  });
+}
+
 export function useCreateHighlight() {
   const queryClient = useQueryClient();
   return useMutation({
