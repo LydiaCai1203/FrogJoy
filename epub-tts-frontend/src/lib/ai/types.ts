@@ -4,6 +4,21 @@ export type AIProviderType = "openai-chat" | "anthropic";
 
 export type TranslationMode = "current-page" | "whole-book";
 
+export type ReadingDisplayMode = "original" | "translated" | "split";
+
+export type PlaybackMode = "play-original" | "play-translated" | "play-both";
+
+export const LANGUAGE_OPTIONS = [
+  { value: "Auto", label: "Auto (自动检测)" },
+  { value: "Chinese", label: "中文" },
+  { value: "English", label: "English" },
+  { value: "Japanese", label: "日本語" },
+  { value: "Korean", label: "한국어" },
+  { value: "French", label: "Français" },
+  { value: "German", label: "Deutsch" },
+  { value: "Spanish", label: "Español" },
+] as const;
+
 // 模型配置（存后端）
 export interface AIModelConfig {
   provider_type: AIProviderType;
@@ -18,6 +33,8 @@ export interface UserAIPreferences {
   enabled_ask_ai: boolean;
   enabled_translation: boolean;
   translation_mode: TranslationMode;
+  source_lang: string;
+  target_lang: string;
 }
 
 // 多轮对话消息

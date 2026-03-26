@@ -446,6 +446,46 @@ export class AIService {
     }
   }
 
+  async detectLanguage(text: string): Promise<string> {
+    const res = await fetch(`${API_URL}/ai/chat`, {
+      method: "POST",
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "system",
+            content: "You are a language detector. Reply with ONLY the language name in English, e.g. 'Chinese', 'English', 'Japanese', 'Korean', 'French', 'German', 'Spanish'. No explanation.",
+          },
+          { role: "user", content: `What language is this text written in?\n\n${text}` },
+        ],
+      }),
+    });
+    if (!res.ok) return "Unknown";
+    const reader = res.body?.getReader();
+    if (!reader) return "Unknown";
+    const decoder = new TextDecoder();
+    let result = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        for (const line of chunk.split("\n")) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {
+            try {
+              const data = JSON.parse(trimmed.slice(6));
+              if (data.content) result += data.content;
+            } catch { /* skip */ }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    return result.trim();
+  }
+
   async translateChapter(bookId: string, chapterHref: string, text: string, targetLang = "Chinese"): Promise<string> {
     const res = await fetch(`${API_URL}/ai/translate/chapter`, {
       method: "POST",

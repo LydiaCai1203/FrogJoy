@@ -57,6 +57,8 @@ export interface AIActiveFeatures {
   enabledAskAI: boolean;
   enabledTranslation: boolean;
   translationMode: TranslationMode;
+  sourceLang: string;
+  targetLang: string;
 }
 
 export function useAIPreferences() {
@@ -69,6 +71,8 @@ export function useAIPreferences() {
         enabledAskAI: prefs.enabled_ask_ai,
         enabledTranslation: prefs.enabled_translation,
         translationMode: prefs.translation_mode as TranslationMode,
+        sourceLang: prefs.source_lang || "Auto",
+        targetLang: prefs.target_lang || "Chinese",
       };
     },
     enabled: !!token,

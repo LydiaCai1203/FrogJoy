@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Bot, ChevronDown, Loader2, Save, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +12,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Dialog,
   DialogContent,
@@ -22,15 +22,15 @@ import { toast } from "sonner";
 import { aiService } from "@/api";
 import type {
   AIProviderType,
-  TranslationMode,
   ModelOption,
 } from "@/lib/ai/types";
-import { PROVIDER_LABELS, DEFAULT_CONFIGS } from "@/lib/ai/types";
+import { PROVIDER_LABELS, DEFAULT_CONFIGS, LANGUAGE_OPTIONS } from "@/lib/ai/types";
 import { useAIPreferences } from "@/hooks/use-reading-stats";
 
 export function AIConfigPanel() {
   // ----- Dialog open state -----
   const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
 
   // ----- Preferences from hook (used by collapsed card) -----
   const { data: prefs, isLoading: prefsLoading } = useAIPreferences();
@@ -50,7 +50,8 @@ export function AIConfigPanel() {
   // ----- Preferences state (dialog) -----
   const [enabledAskAI, setEnabledAskAI] = useState(false);
   const [enabledTranslation, setEnabledTranslation] = useState(false);
-  const [translationMode, setTranslationMode] = useState<TranslationMode>("current-page");
+  const [sourceLang, setSourceLang] = useState("Auto");
+  const [targetLang, setTargetLang] = useState("Chinese");
 
   // Load saved config when dialog opens
   useEffect(() => {
@@ -64,7 +65,8 @@ export function AIConfigPanel() {
     if (!prefs) return;
     setEnabledAskAI(prefs.enabledAskAI);
     setEnabledTranslation(prefs.enabledTranslation);
-    setTranslationMode(prefs.translationMode);
+    setSourceLang(prefs.sourceLang || "Auto");
+    setTargetLang(prefs.targetLang || "Chinese");
   }, [prefs]);
 
   // Fetch model list — prefer already-selected model, fallback to first from API or savedModel
@@ -159,14 +161,14 @@ export function AIConfigPanel() {
       await aiService.savePreferences({
         enabled_ask_ai: enabledAskAI,
         enabled_translation: enabledTranslation,
-        translation_mode: translationMode,
+        translation_mode: "current-page",
+        source_lang: sourceLang,
+        target_lang: targetLang,
       });
       toast.success("AI 配置已保存");
       setApiKey("");
       setOpen(false);
-      // Invalidate the hook query so collapsed card updates immediately
-      // (useAIPreferences is imported from hooks, but we need to access the queryClient)
-      // Instead, we rely on the parent re-fetching; close dialog to indicate success
+      queryClient.invalidateQueries({ queryKey: ["ai-preferences"] });
     } catch (e) {
       toast.error("保存失败: " + (e as Error).message);
     }
@@ -336,25 +338,37 @@ export function AIConfigPanel() {
                   </div>
 
                   {enabledTranslation && (
-                    <div className="pl-3 border-l-2 border-primary/20 space-y-1.5">
-                      <RadioGroup
-                        value={translationMode}
-                        onValueChange={(v) => setTranslationMode(v as TranslationMode)}
-                        className="flex flex-col gap-1.5"
-                      >
-                        <div className="flex items-center gap-2">
-                          <RadioGroupItem value="current-page" id="mode-page" />
-                          <Label htmlFor="mode-page" className="text-sm font-normal cursor-pointer">
-                            翻译当前页
-                          </Label>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <RadioGroupItem value="whole-book" id="mode-book" />
-                          <Label htmlFor="mode-book" className="text-sm font-normal cursor-pointer">
-                            翻译整本书（后台异步）
-                          </Label>
-                        </div>
-                      </RadioGroup>
+                    <div className="pl-3 border-l-2 border-primary/20 space-y-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">源语言 (FROM)</Label>
+                        <Select value={sourceLang} onValueChange={setSourceLang}>
+                          <SelectTrigger className="text-xs h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {LANGUAGE_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">目标语言 (TO)</Label>
+                        <Select value={targetLang} onValueChange={setTargetLang}>
+                          <SelectTrigger className="text-xs h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {LANGUAGE_OPTIONS.filter((o) => o.value !== "Auto").map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   )}
                 </div>

@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { BookOpen, Headphones } from "lucide-react";
 import type { WordTimestamp, Highlight, HighlightColor } from "@/api/types";
+import type { ReadingDisplayMode, PlaybackMode } from "@/lib/ai/types";
 import { API_BASE } from "@/config";
 import { SelectionMenu, type SelectionInfo } from "@/components/highlight/SelectionMenu";
 import { AnnotationDialog } from "@/components/highlight/AnnotationDialog";
@@ -17,6 +18,10 @@ export interface ScrollToHighlight {
 
 interface ReaderProps {
   sentences: string[];
+  translatedSentences?: string[];
+  readingDisplayMode?: ReadingDisplayMode;
+  playbackMode?: PlaybackMode;
+  playBothPhase?: "original" | "translated";
   current: number;
   wordTimestamps?: WordTimestamp[];
   currentTime?: number;
@@ -47,6 +52,10 @@ const HIGHLIGHT_MARK_STYLE: Record<HighlightColor, string> = {
 
 export function Reader({
   sentences,
+  translatedSentences = [],
+  readingDisplayMode = "original",
+  playbackMode = "play-original",
+  playBothPhase = "original",
   current,
   wordTimestamps = [],
   currentTime = 0,
@@ -434,11 +443,55 @@ export function Reader({
                 [&_blockquote]:border-l-4 [&_blockquote]:border-primary/50 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:my-4"
               dangerouslySetInnerHTML={{ __html: processedHtml }}
             />
-          ) : (
-            <div className="max-w-3xl mx-auto space-y-6 pb-20" onPointerUp={handlePointerUp}>
+          ) : readingDisplayMode === "split" && translatedSentences.length > 0 ? (
+            /* Split view: left original, right translated */
+            <div className="max-w-5xl mx-auto pb-20 grid grid-cols-2 gap-4" onPointerUp={handlePointerUp}>
               {sentences.map((text, index) => {
                 const isActive = index === current;
                 const isPast = index < current;
+                const translated = translatedSentences[index] || "";
+                return (
+                  <div key={index} className="contents">
+                    <div
+                      id={`sentence-${index}`}
+                      ref={isActive ? activeRef : null}
+                      className={cn(
+                        "transition-all duration-500 ease-out p-4 rounded-sm border-l-2",
+                        isActive
+                          ? "bg-primary/5 border-primary text-foreground shadow-[0_0_20px_rgba(204,255,0,0.1)]"
+                          : isPast
+                            ? "border-transparent text-muted-foreground/40 blur-[0.5px]"
+                            : "border-transparent text-muted-foreground opacity-70"
+                      )}
+                    >
+                      <p className={cn("leading-relaxed font-serif text-lg", isActive ? "font-medium" : "font-normal")}>
+                        {renderSentence(text, index, isActive)}
+                      </p>
+                    </div>
+                    <div
+                      className={cn(
+                        "transition-all duration-500 ease-out p-4 rounded-sm border-l-2",
+                        isActive
+                          ? "bg-primary/5 border-primary/50 text-foreground"
+                          : isPast
+                            ? "border-transparent text-muted-foreground/40 blur-[0.5px]"
+                            : "border-transparent text-muted-foreground opacity-70"
+                      )}
+                    >
+                      <p className={cn("leading-relaxed font-serif text-lg", isActive ? "font-medium" : "font-normal")}>
+                        {translated || <span className="text-muted-foreground/30 italic">...</span>}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="max-w-3xl mx-auto space-y-6 pb-20" onPointerUp={handlePointerUp}>
+              {(readingDisplayMode === "translated" && translatedSentences.length > 0 ? translatedSentences : sentences).map((text, index) => {
+                const isActive = index === current;
+                const isPast = index < current;
+                const showBothTranslation = isActive && isPlaying && playbackMode === "play-both" && translatedSentences[index];
                 return (
                   <div
                     key={index}
@@ -456,6 +509,14 @@ export function Reader({
                     <p className={cn("leading-relaxed font-serif text-lg md:text-xl", isActive ? "font-medium" : "font-normal")}>
                       {renderSentence(text, index, isActive)}
                     </p>
+                    {showBothTranslation && (
+                      <p className={cn(
+                        "leading-relaxed font-serif text-base md:text-lg mt-2 pl-3 border-l-2",
+                        playBothPhase === "translated" ? "border-primary/50 text-foreground" : "border-muted text-muted-foreground/70"
+                      )}>
+                        {translatedSentences[index]}
+                      </p>
+                    )}
                     {isActive && (
                       <div className="mt-2 flex items-center gap-2">
                         <span className="h-[1px] w-4 bg-primary/50" />

@@ -132,6 +132,8 @@ class UserAIPreferences(Base):
     enabled_ask_ai = Column(Boolean, default=False)
     enabled_translation = Column(Boolean, default=False)
     translation_mode = Column(String, default="current-page")
+    source_lang = Column(String, default="Auto")
+    target_lang = Column(String, default="Chinese")
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     user = relationship("User")

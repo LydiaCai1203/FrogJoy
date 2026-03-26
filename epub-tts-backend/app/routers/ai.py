@@ -43,12 +43,16 @@ class UserAIPrefsIn(BaseModel):
     enabled_ask_ai: bool = False
     enabled_translation: bool = False
     translation_mode: str = "current-page"  # "current-page" | "whole-book"
+    source_lang: str = "Auto"
+    target_lang: str = "Chinese"
 
 
 class UserAIPrefsOut(BaseModel):
     enabled_ask_ai: bool
     enabled_translation: bool
     translation_mode: str
+    source_lang: str
+    target_lang: str
 
 
 class ChatMessageIn(BaseModel):
@@ -163,11 +167,15 @@ async def get_ai_preferences(user_id: str = Depends(get_current_user)):
             enabled_ask_ai=False,
             enabled_translation=False,
             translation_mode="current-page",
+            source_lang="Auto",
+            target_lang="Chinese",
         )
     return UserAIPrefsOut(
         enabled_ask_ai=row.enabled_ask_ai,
         enabled_translation=row.enabled_translation,
         translation_mode=row.translation_mode,
+        source_lang=row.source_lang or "Auto",
+        target_lang=row.target_lang or "Chinese",
     )
 
 
@@ -179,12 +187,16 @@ async def save_ai_preferences(prefs_in: UserAIPrefsIn, user_id: str = Depends(ge
             existing.enabled_ask_ai = prefs_in.enabled_ask_ai
             existing.enabled_translation = prefs_in.enabled_translation
             existing.translation_mode = prefs_in.translation_mode
+            existing.source_lang = prefs_in.source_lang
+            existing.target_lang = prefs_in.target_lang
         else:
             existing = UserAIPreferences(
                 user_id=user_id,
                 enabled_ask_ai=prefs_in.enabled_ask_ai,
                 enabled_translation=prefs_in.enabled_translation,
                 translation_mode=prefs_in.translation_mode,
+                source_lang=prefs_in.source_lang,
+                target_lang=prefs_in.target_lang,
             )
             db.add(existing)
         db.commit()
@@ -192,6 +204,8 @@ async def save_ai_preferences(prefs_in: UserAIPrefsIn, user_id: str = Depends(ge
         enabled_ask_ai=prefs_in.enabled_ask_ai,
         enabled_translation=prefs_in.enabled_translation,
         translation_mode=prefs_in.translation_mode,
+        source_lang=prefs_in.source_lang,
+        target_lang=prefs_in.target_lang,
     )
 
 

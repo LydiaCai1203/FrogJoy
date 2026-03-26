@@ -4,7 +4,6 @@ import { Sidebar } from "@/components/player/Sidebar";
 import { Reader } from "@/components/player/Reader";
 import type { ScrollToHighlight } from "@/components/player/Reader";
 import { Controls } from "@/components/player/Controls";
-import { TranslationSettings } from "@/components/player/TranslationSettings";
 import { useChapter } from "@/hooks/use-book";
 import { useChapterHighlights } from "@/hooks/use-highlights";
 import { useReadingTracker } from "@/hooks/use-reading-stats";
@@ -13,7 +12,7 @@ import { ttsService, aiService } from "@/api";
 import type { NavItem, WordTimestamp } from "@/api/types";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
-import { Loader2, Menu, X, BrainCircuit, Home, ArrowLeft } from "lucide-react";
+import { Loader2, Menu, X, BrainCircuit, Home, ArrowLeft, Languages, Headphones } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -23,6 +22,7 @@ import { TasksPanel } from "@/components/player/TasksPanel";
 import { API_BASE, API_URL } from "@/config";
 import { useAuth } from "@/contexts/AuthContext";
 import { AskAIDialog } from "@/components/highlight/AskAIDialog";
+import type { ReadingDisplayMode, PlaybackMode } from "@/lib/ai/types";
 
 export default function BookReader() {
   const { bookId } = useParams<{ bookId: string }>();
@@ -50,8 +50,9 @@ export default function BookReader() {
   // Reader State
   const [currentChapterHref, setCurrentChapterHref] = useState<string | null>(null);
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
-  const [displayedSentences, setDisplayedSentences] = useState<string[]>([]);
-  
+  const [originalSentences, setOriginalSentences] = useState<string[]>([]);
+  const [translatedSentences, setTranslatedSentences] = useState<string[]>([]);
+
   // Player State
   const [isPlaying, setIsPlaying] = useState(false);
   const isPlayingRef = useRef(false);
@@ -60,7 +61,7 @@ export default function BookReader() {
   const [voice, setVoice] = useState<string | null>(null);
   const [speed, setSpeed] = useState(1.0);
   const [emotion, setEmotion] = useState<"neutral" | "warm" | "excited" | "serious" | "suspense">("neutral");
-  
+
   // 字词同步高亮状态
   const [wordTimestamps, setWordTimestamps] = useState<WordTimestamp[]>([]);
   const [currentTime, setCurrentTime] = useState(0);
@@ -69,6 +70,14 @@ export default function BookReader() {
   const [translationEnabled, setTranslationEnabled] = useState(false);
   const [translatedCache, setTranslatedCache] = useState<Record<string, string[]>>({});
   const [isTranslating, setIsTranslating] = useState(false);
+  const [sourceLang, setSourceLang] = useState("Auto");
+  const [targetLang, setTargetLang] = useState("Chinese");
+  const [translateTrigger, setTranslateTrigger] = useState(0);
+
+  // Display & Playback Mode
+  const [readingDisplayMode, setReadingDisplayMode] = useState<ReadingDisplayMode>("original");
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("play-original");
+  const [playBothPhase, setPlayBothPhase] = useState<"original" | "translated">("original");
 
   // AskAI State
   const [askAIEnabled, setAskAIEnabled] = useState(false);
@@ -228,6 +237,8 @@ export default function BookReader() {
     aiService.getPreferences().then((prefs) => {
       setTranslationEnabled(prefs.enabled_translation);
       setAskAIEnabled(prefs.enabled_ask_ai);
+      setSourceLang(prefs.source_lang || "Auto");
+      setTargetLang(prefs.target_lang || "Chinese");
     }).catch(() => {
       // defaults off
     });
@@ -238,51 +249,78 @@ export default function BookReader() {
     translator.updateConfig({ enabled: translationEnabled });
   }, [translationEnabled]);
 
-  // Handle Translation or Raw Content Update
+  // Set original sentences when chapter loads
   useEffect(() => {
     if (!chapterData) return;
-    
+    setOriginalSentences(chapterData.sentences);
+    displayedSentencesHrefRef.current = chapterData.href;
+    // Check cache for existing translation
+    if (translatedCache[chapterData.href]) {
+      setTranslatedSentences(translatedCache[chapterData.href]);
+    } else {
+      setTranslatedSentences([]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chapterData]);
+
+  // Background translation — triggered by translateTrigger button
+  useEffect(() => {
+    if (translateTrigger === 0 || !chapterData || !bookId) return;
     const href = chapterData.href;
     const rawSentences = chapterData.sentences;
+    if (rawSentences.length === 0) return;
 
-    const processContent = async () => {
-      if (translationEnabled && bookId) {
-        if (translatedCache[href]) {
-          setDisplayedSentences(translatedCache[href]);
-          displayedSentencesHrefRef.current = href;
-          return;
+    // Already cached
+    if (translatedCache[href]) {
+      setTranslatedSentences(translatedCache[href]);
+      return;
+    }
+
+    let cancelled = false;
+    const runTranslation = async () => {
+      setIsTranslating(true);
+      try {
+        // Auto-detect source language using first paragraph
+        if (sourceLang === "Auto") {
+          const sample = rawSentences.slice(0, 2).join(" ").slice(0, 200);
+          const detected = await aiService.detectLanguage(sample);
+          if (detected.toLowerCase().includes(targetLang.toLowerCase()) ||
+              targetLang.toLowerCase().includes(detected.toLowerCase())) {
+            toast.info("源语言与目标语言相同，无需翻译");
+            setIsTranslating(false);
+            return;
+          }
         }
 
-        setIsTranslating(true);
-        try {
-          const fullText = rawSentences.join(" ");
-          const translatedText = await translator.translate(bookId, href, fullText);
-          
-          const newSentences = translatedText.match(/([^.!?。！？\n\r]+[.!?。！？\n\r]+)|([^.!?。！？\n\r]+$)/g)
-            ?.map(s => s.trim())
-            .filter(s => s.length > 0) || [translatedText];
+        if (cancelled) return;
 
-          setTranslatedCache(prev => ({ ...prev, [href]: newSentences }));
-          setDisplayedSentences(newSentences);
-          displayedSentencesHrefRef.current = href;
-          toast.success("翻译完成");
-        } catch (error) {
+        const fullText = rawSentences.join(" ");
+        const translatedText = await translator.translate(bookId, href, fullText, targetLang);
+
+        if (cancelled) return;
+
+        const newSentences = translatedText.match(/([^.!?。！？\n\r]+[.!?。！？\n\r]+)|([^.!?。！？\n\r]+$)/g)
+          ?.map(s => s.trim())
+          .filter(s => s.length > 0) || [translatedText];
+
+        setTranslatedCache(prev => ({ ...prev, [href]: newSentences }));
+        setTranslatedSentences(newSentences);
+        toast.success("翻译完成");
+      } catch (error) {
+        if (!cancelled) {
           console.error("Translation failed", error);
-          toast.error("翻译失败，显示原文");
-          setDisplayedSentences(rawSentences);
-          displayedSentencesHrefRef.current = href;
-        } finally {
-          setIsTranslating(false);
+          toast.error("翻译失败");
+          setTranslatedSentences([]);
         }
-      } else {
-        setDisplayedSentences(rawSentences);
-        displayedSentencesHrefRef.current = href;
+      } finally {
+        if (!cancelled) setIsTranslating(false);
       }
     };
 
-    processContent();
+    runTranslation();
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chapterData, translationEnabled, translatedCache, bookId]);
+  }, [translateTrigger, chapterData, bookId, targetLang, sourceLang]);
 
   // 时间更新回调
   const handleTimeUpdate = useCallback((time: number) => {
@@ -319,9 +357,7 @@ export default function BookReader() {
 
   // 监听 voice 变化
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/d66f05a9-12a5-4788-bac8-35940a51b987',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BookReader.tsx:226',message:'Voice changed',data:{voice,currentSentenceIndex},timestamp:Date.now(),runId:'debug',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
+    // voice changed — no action needed
   }, [voice]);
 
   // 预加载音频函数
@@ -329,10 +365,7 @@ export default function BookReader() {
     startIndex: number,
     endIndex: number
   ) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/d66f05a9-12a5-4788-bac8-35940a51b987',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BookReader.tsx:228',message:'prefetchAudio called',data:{startIndex,endIndex,voice},timestamp:Date.now(),runId:'debug',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    if (!bookId || !currentChapterHref || displayedSentences.length === 0) {
+    if (!bookId || !currentChapterHref || originalSentences.length === 0) {
       return;
     }
 
@@ -347,7 +380,7 @@ export default function BookReader() {
     
     const params = getEmotionParams(emotion);
     const actualStart = Math.max(0, startIndex);
-    const actualEnd = Math.min(displayedSentences.length, endIndex);
+    const actualEnd = Math.min(originalSentences.length, endIndex);
 
     if (actualStart >= actualEnd) {
       return;
@@ -365,7 +398,7 @@ export default function BookReader() {
         body: JSON.stringify({
           book_id: bookId,
           chapter_href: currentChapterHref,
-          sentences: displayedSentences,
+          sentences: originalSentences,
           voice: voice || "zh-CN-XiaoxiaoNeural",
           rate: params.rate,
           pitch: params.pitch,
@@ -377,7 +410,7 @@ export default function BookReader() {
     } catch (error) {
       console.warn("[Prefetch] Failed to prefetch audio:", error);
     }
-  }, [bookId, currentChapterHref, displayedSentences, voice, speed, emotion]);
+  }, [bookId, currentChapterHref, originalSentences, voice, speed, emotion]);
 
   // TTS Loop
   useEffect(() => {
@@ -389,26 +422,43 @@ export default function BookReader() {
     }
 
     // 防止章节切换后状态未同步时播放错误内容
-    // 检查当前 ref 记录的章节是否与 currentChapterHref 匹配
     if (currentChapterHrefRef.current !== currentChapterHref) {
       currentChapterHrefRef.current = currentChapterHref;
       playingSentenceRef.current = -1;
       setWordTimestamps([]);
       setCurrentTime(0);
     }
-    
-    if (currentSentenceIndex >= displayedSentences.length) {
+
+    if (currentSentenceIndex >= originalSentences.length) {
       setIsPlaying(false);
       playingSentenceRef.current = -1;
       return;
     }
 
-    const text = displayedSentences[currentSentenceIndex];
+    // Determine which text to play based on playback mode and phase
+    let text: string;
+    if (playbackMode === "play-translated" && translatedSentences[currentSentenceIndex]) {
+      text = translatedSentences[currentSentenceIndex];
+    } else if (playbackMode === "play-both") {
+      if (playBothPhase === "original") {
+        text = originalSentences[currentSentenceIndex];
+      } else {
+        text = translatedSentences[currentSentenceIndex] || originalSentences[currentSentenceIndex];
+      }
+    } else {
+      text = originalSentences[currentSentenceIndex];
+    }
     if (!text) return;
 
     const thisSentenceIndex = currentSentenceIndex;
-    
-    if (playingSentenceRef.current === thisSentenceIndex) {
+    const thisPhase = playBothPhase;
+
+    // For play-both, use a composite key to track sentence+phase
+    const playKey = playbackMode === "play-both"
+      ? thisSentenceIndex * 2 + (thisPhase === "translated" ? 1 : 0)
+      : thisSentenceIndex;
+
+    if (playingSentenceRef.current === playKey) {
       return;
     }
 
@@ -420,18 +470,17 @@ export default function BookReader() {
         default: return { rate: 1.0 * speed, pitch: 1.0 };
       }
     };
-    
+
     const params = getEmotionParams(emotion);
 
-    // 预加载相邻段落（当前段落的前一个和后两个）
-    // 总是保持3个音频在缓存中：前一个、当前、后两个
+    // 预加载相邻段落
     const prefetchStart = Math.max(0, thisSentenceIndex - 1);
-    const prefetchEnd = Math.min(displayedSentences.length, thisSentenceIndex + 3);
+    const prefetchEnd = Math.min(originalSentences.length, thisSentenceIndex + 3);
     prefetchAudio(prefetchStart, prefetchEnd);
 
     ttsService.stop();
-    playingSentenceRef.current = thisSentenceIndex;
-    
+    playingSentenceRef.current = playKey;
+
     ttsService.speak(text, {
       voice: voice || undefined,
       rate: params.rate,
@@ -440,57 +489,54 @@ export default function BookReader() {
       chapter_href: currentChapterHref || undefined,
       paragraph_index: thisSentenceIndex,
     }).then(() => {
-      if (playingSentenceRef.current !== thisSentenceIndex) {
-        return;
-      }
-      
+      if (playingSentenceRef.current !== playKey) return;
       if (!isPlayingRef.current) {
         playingSentenceRef.current = -1;
         return;
       }
-      
+
       setWordTimestamps([]);
       setCurrentTime(0);
       playingSentenceRef.current = -1;
-      
-      // 播放完成后，预加载下一个段落（如果还没加载）
-      const nextIndex = thisSentenceIndex + 1;
-      if (nextIndex < displayedSentences.length) {
-        prefetchAudio(nextIndex, nextIndex + 2);
+
+      if (playbackMode === "play-both" && thisPhase === "original" && translatedSentences[thisSentenceIndex]) {
+        // Switch to translated phase for the same sentence
+        setPlayBothPhase("translated");
+      } else {
+        // Move to next sentence
+        if (playbackMode === "play-both") {
+          setPlayBothPhase("original");
+        }
+        const nextIndex = thisSentenceIndex + 1;
+        if (nextIndex < originalSentences.length) {
+          prefetchAudio(nextIndex, nextIndex + 2);
+        }
+        setCurrentSentenceIndex(prev => prev + 1);
       }
-      
-      setCurrentSentenceIndex(prev => prev + 1);
     }).catch(e => {
-      if (playingSentenceRef.current === thisSentenceIndex) {
+      if (playingSentenceRef.current === playKey) {
         console.error("TTS Error:", e);
         playingSentenceRef.current = -1;
         setIsPlaying(false);
       }
     });
 
-  }, [isPlaying, currentSentenceIndex, displayedSentences, voice, speed, emotion, bookId, currentChapterHref, prefetchAudio]);
+  }, [isPlaying, currentSentenceIndex, originalSentences, translatedSentences, playbackMode, playBothPhase, voice, speed, emotion, bookId, currentChapterHref, prefetchAudio]);
 
   // 章节切换时重置句子索引并预加载前几个段落
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/d66f05a9-12a5-4788-bac8-35940a51b987',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BookReader.tsx:356',message:'Chapter reset useEffect triggered',data:{currentChapterHref,displayedSentencesLength:displayedSentences.length,currentSentenceIndexBefore:currentSentenceIndex,voice},timestamp:Date.now(),runId:'debug',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     // 先停止当前播放
     ttsService.stop();
     // 更新章节 ref
     currentChapterHrefRef.current = currentChapterHref;
 
-    // 只有当 displayedSentences 已经是当前目标章节的内容时，才消费 resumeSentenceRef。
-    // 这样可以避免以下竞态：
-    //   1. setCurrentChapterHref(targetHref) 触发本 effect（displayedSentences 还是旧章节） → 错误清零
-    //   2. 新章节内容加载完成，displayedSentences 更新再次触发本 effect → resumeSentenceRef 已被清零
     let startAt = 0;
     if (
       displayedSentencesHrefRef.current === currentChapterHref &&
       resumeSentenceRef.current > 0
     ) {
       startAt = resumeSentenceRef.current;
-      resumeSentenceRef.current = 0; // 仅在实际使用时才清零
+      resumeSentenceRef.current = 0;
     }
 
     // 重置所有状态
@@ -499,19 +545,20 @@ export default function BookReader() {
     playingSentenceRef.current = -1;
     setWordTimestamps([]);
     setCurrentTime(0);
+    setPlayBothPhase("original");
 
     // 章节切换时，预加载前3个段落
-    if (displayedSentences.length > 0) {
+    if (originalSentences.length > 0) {
       setTimeout(() => {
-        prefetchAudio(0, Math.min(3, displayedSentences.length));
+        prefetchAudio(0, Math.min(3, originalSentences.length));
       }, 100);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentChapterHref, displayedSentences]);
+  }, [currentChapterHref, originalSentences]);
 
   const togglePlay = () => {
-    if (displayedSentences.length === 0) return;
-    
+    if (originalSentences.length === 0) return;
+
     if (isPlaying) {
       ttsService.stop();
       playingSentenceRef.current = -1;
@@ -520,7 +567,7 @@ export default function BookReader() {
   };
 
   const handleNext = () => {
-    if (currentSentenceIndex < displayedSentences.length - 1) {
+    if (currentSentenceIndex < originalSentences.length - 1) {
       ttsService.stop();
       playingSentenceRef.current = -1;
       setWordTimestamps([]);
@@ -608,7 +655,70 @@ export default function BookReader() {
         </div>
         
         <div className="flex items-center gap-2">
-          <TranslationSettings />
+          {/* Translate toggle — only show when translation is configured */}
+          {translationEnabled && (
+            <button
+              onClick={() => {
+                if (translatedSentences.length > 0 || isTranslating) {
+                  // Clear translations
+                  setTranslatedSentences([]);
+                  setTranslatedCache({});
+                  setIsTranslating(false);
+                  setReadingDisplayMode("original");
+                  setPlaybackMode("play-original");
+                } else {
+                  // Trigger translation
+                  setTranslateTrigger(t => t + 1);
+                }
+              }}
+              className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
+                translatedSentences.length > 0
+                  ? "bg-primary/10 text-primary"
+                  : "bg-muted text-muted-foreground hover:text-foreground"
+              }`}
+              title={translatedSentences.length > 0 ? "关闭翻译" : "翻译当前章节"}
+            >
+              <Languages className="w-3.5 h-3.5" />
+              {isTranslating ? "翻译中..." : translatedSentences.length > 0 ? "翻译" : "翻译"}
+            </button>
+          )}
+          {/* Display & Playback mode switches — only when translated content is ready */}
+          {translationEnabled && translatedSentences.length > 0 && (
+            <>
+              <div className="hidden sm:flex items-center gap-1 bg-muted rounded-md p-0.5">
+                <Languages className="w-3.5 h-3.5 text-muted-foreground ml-1.5" />
+                {([["original", "原文"], ["translated", "译文"], ["split", "双屏"]] as const).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    onClick={() => setReadingDisplayMode(mode)}
+                    className={`px-2 py-1 text-xs rounded-sm transition-colors ${
+                      readingDisplayMode === mode
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="hidden sm:flex items-center gap-1 bg-muted rounded-md p-0.5">
+                <Headphones className="w-3.5 h-3.5 text-muted-foreground ml-1.5" />
+                {([["play-original", "原文"], ["play-translated", "译文"], ["play-both", "原+译"]] as const).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    onClick={() => setPlaybackMode(mode)}
+                    className={`px-2 py-1 text-xs rounded-sm transition-colors ${
+                      playbackMode === mode
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           <TasksPanel />
         </div>
       </header>
@@ -616,16 +726,16 @@ export default function BookReader() {
       {/* Main Content */}
       {isMobile ? (
         <div className="flex-1 overflow-hidden">
-          {isChapterLoading || isTranslating ? (
+          {isChapterLoading ? (
             <div className="h-full flex items-center justify-center">
               <div className="flex flex-col items-center gap-4 animate-pulse">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
                 <span className="text-muted-foreground font-mono text-sm uppercase tracking-wider">
-                  {isTranslating ? "Translating..." : "Loading Chapter..."}
+                  Loading Chapter...
                 </span>
               </div>
             </div>
-          ) : displayedSentences.length === 0 && !currentChapterHref ? (
+          ) : originalSentences.length === 0 && !currentChapterHref ? (
             <div className="h-full flex items-center justify-center">
               <div className="text-center space-y-4">
                 <p className="text-muted-foreground font-mono text-sm">
@@ -638,7 +748,11 @@ export default function BookReader() {
             </div>
           ) : (
             <Reader
-              sentences={displayedSentences}
+              sentences={originalSentences}
+              translatedSentences={translatedSentences}
+              readingDisplayMode={readingDisplayMode}
+              playbackMode={playbackMode}
+              playBothPhase={playBothPhase}
               current={currentSentenceIndex}
               wordTimestamps={wordTimestamps}
               currentTime={currentTime}
@@ -665,16 +779,16 @@ export default function BookReader() {
           <ResizableHandle withHandle className="bg-border hover:bg-primary/50 transition-colors" />
           <ResizablePanel defaultSize={75}>
             <div className="h-full flex flex-col overflow-hidden">
-              {isChapterLoading || isTranslating ? (
+              {isChapterLoading ? (
                 <div className="flex-1 flex items-center justify-center">
                   <div className="flex flex-col items-center gap-4 animate-pulse">
                     <Loader2 className="w-8 h-8 animate-spin text-primary" />
                     <span className="text-muted-foreground font-mono text-sm uppercase tracking-wider">
-                      {isTranslating ? "Translating..." : "Loading Chapter..."}
+                      Loading Chapter...
                     </span>
                   </div>
                 </div>
-              ) : displayedSentences.length === 0 && !currentChapterHref ? (
+              ) : originalSentences.length === 0 && !currentChapterHref ? (
                 <div className="flex-1 flex items-center justify-center">
                   <div className="text-center space-y-4">
                     <p className="text-muted-foreground font-mono text-sm">
@@ -687,7 +801,11 @@ export default function BookReader() {
                 </div>
               ) : (
                 <Reader
-                  sentences={displayedSentences}
+                  sentences={originalSentences}
+                  translatedSentences={translatedSentences}
+                  readingDisplayMode={readingDisplayMode}
+                  playbackMode={playbackMode}
+                  playBothPhase={playBothPhase}
                   current={currentSentenceIndex}
                   wordTimestamps={wordTimestamps}
                   currentTime={currentTime}
@@ -711,25 +829,25 @@ export default function BookReader() {
       )}
     </div>
 
-    <Controls 
+    <Controls
       isPlaying={isPlaying}
       onPlayPause={togglePlay}
       onNext={handleNext}
       onPrev={handlePrev}
       current={currentSentenceIndex}
-      total={displayedSentences.length}
-      progress={displayedSentences.length > 0 ? (currentSentenceIndex / displayedSentences.length) * 100 : 0}
-      
+      total={originalSentences.length}
+      progress={originalSentences.length > 0 ? (currentSentenceIndex / originalSentences.length) * 100 : 0}
+
       selectedVoice={voice}
       onVoiceChange={setVoice}
       emotion={emotion}
       onEmotionChange={(e) => setEmotion(e)}
       speed={speed}
       onSpeedChange={setSpeed}
-      
+
       bookId={bookId}
       chapterHref={currentChapterHref}
-      sentences={displayedSentences}
+      sentences={originalSentences}
       chapterTitle={metadata?.title || "chapter"}
     />
 

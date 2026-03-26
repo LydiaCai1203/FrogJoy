@@ -29,6 +29,8 @@ export async function loadAIPreferences(): Promise<UserAIPreferences> {
       enabled_ask_ai: false,
       enabled_translation: false,
       translation_mode: "current-page",
+      source_lang: "Auto",
+      target_lang: "Chinese",
     };
   }
 }
