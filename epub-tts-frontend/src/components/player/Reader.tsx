@@ -24,8 +24,11 @@ interface ReaderProps {
   htmlContent?: string;
   bookId?: string;
   chapterHref?: string;
+  chapterTitle?: string;
   highlights?: Highlight[];
   scrollToHighlight?: ScrollToHighlight | null;
+  askAIEnabled?: boolean;
+  onAskAI?: (selectedText: string) => void;
 }
 
 const HIGHLIGHT_COLOR_MAP: Record<HighlightColor, string> = {
@@ -51,8 +54,11 @@ export function Reader({
   htmlContent,
   bookId,
   chapterHref,
+  chapterTitle,
   highlights = [],
   scrollToHighlight,
+  askAIEnabled = false,
+  onAskAI,
 }: ReaderProps) {
   const activeRef = useRef<HTMLDivElement>(null);
   const activeWordRef = useRef<HTMLSpanElement>(null);
@@ -476,6 +482,12 @@ export function Reader({
         selection={selectionInfo}
         onHighlight={handleHighlight}
         onAnnotate={handleAnnotateOpen}
+        askAIEnabled={askAIEnabled}
+        onAskAI={() => {
+          if (selectionInfo) {
+            onAskAI?.(selectionInfo.selectedText);
+          }
+        }}
       />
 
       {/* Annotation dialog */}

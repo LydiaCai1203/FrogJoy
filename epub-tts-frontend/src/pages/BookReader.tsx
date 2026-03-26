@@ -9,19 +9,20 @@ import { useChapter } from "@/hooks/use-book";
 import { useChapterHighlights } from "@/hooks/use-highlights";
 import { useReadingTracker } from "@/hooks/use-reading-stats";
 import { useReadingProgress, useSaveReadingProgress } from "@/hooks/use-reading-progress";
-import { ttsService } from "@/api";
+import { ttsService, aiService } from "@/api";
 import type { NavItem, WordTimestamp } from "@/api/types";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
-import { Loader2, Menu, X, BrainCircuit, Languages, Home, ArrowLeft } from "lucide-react";
+import { Loader2, Menu, X, BrainCircuit, Home, ArrowLeft } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { translator, type TranslatorConfig, DEFAULT_CONFIG } from "@/lib/translator";
+import { translator } from "@/lib/translator";
 import { TTSService } from "@/api/services";
 import { TasksPanel } from "@/components/player/TasksPanel";
 import { API_BASE, API_URL } from "@/config";
 import { useAuth } from "@/contexts/AuthContext";
+import { AskAIDialog } from "@/components/highlight/AskAIDialog";
 
 export default function BookReader() {
   const { bookId } = useParams<{ bookId: string }>();
@@ -65,12 +66,14 @@ export default function BookReader() {
   const [currentTime, setCurrentTime] = useState(0);
 
   // Translation State
-  const [transConfig, setTransConfig] = useState<TranslatorConfig>(() => {
-    const saved = localStorage.getItem("epub-tts-trans-config");
-    return saved ? JSON.parse(saved) : DEFAULT_CONFIG;
-  });
+  const [translationEnabled, setTranslationEnabled] = useState(false);
   const [translatedCache, setTranslatedCache] = useState<Record<string, string[]>>({});
   const [isTranslating, setIsTranslating] = useState(false);
+
+  // AskAI State
+  const [askAIEnabled, setAskAIEnabled] = useState(false);
+  const [askAIOpen, setAskAIOpen] = useState(false);
+  const [pendingAskAIText, setPendingAskAIText] = useState("");
 
   // 移动端侧边栏状态
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -219,10 +222,21 @@ export default function BookReader() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId, currentChapterHref, currentSentenceIndex, token]);
 
-  // Sync translator config
+  // Load AI preferences on mount
   useEffect(() => {
-    translator.updateConfig(transConfig);
-  }, [transConfig]);
+    if (!token) return;
+    aiService.getPreferences().then((prefs) => {
+      setTranslationEnabled(prefs.enabled_translation);
+      setAskAIEnabled(prefs.enabled_ask_ai);
+    }).catch(() => {
+      // defaults off
+    });
+  }, [token]);
+
+  // Sync translator enabled state
+  useEffect(() => {
+    translator.updateConfig({ enabled: translationEnabled });
+  }, [translationEnabled]);
 
   // Handle Translation or Raw Content Update
   useEffect(() => {
@@ -232,7 +246,7 @@ export default function BookReader() {
     const rawSentences = chapterData.sentences;
 
     const processContent = async () => {
-      if (transConfig.enabled && transConfig.apiKey) {
+      if (translationEnabled && bookId) {
         if (translatedCache[href]) {
           setDisplayedSentences(translatedCache[href]);
           displayedSentencesHrefRef.current = href;
@@ -242,7 +256,7 @@ export default function BookReader() {
         setIsTranslating(true);
         try {
           const fullText = rawSentences.join(" ");
-          const translatedText = await translator.translate(fullText);
+          const translatedText = await translator.translate(bookId, href, fullText);
           
           const newSentences = translatedText.match(/([^.!?。！？\n\r]+[.!?。！？\n\r]+)|([^.!?。！？\n\r]+$)/g)
             ?.map(s => s.trim())
@@ -251,10 +265,10 @@ export default function BookReader() {
           setTranslatedCache(prev => ({ ...prev, [href]: newSentences }));
           setDisplayedSentences(newSentences);
           displayedSentencesHrefRef.current = href;
-          toast.success("Chapter Translated");
+          toast.success("翻译完成");
         } catch (error) {
           console.error("Translation failed", error);
-          toast.error("Translation Failed, showing original");
+          toast.error("翻译失败，显示原文");
           setDisplayedSentences(rawSentences);
           displayedSentencesHrefRef.current = href;
         } finally {
@@ -267,13 +281,8 @@ export default function BookReader() {
     };
 
     processContent();
-  }, [chapterData, transConfig.enabled, transConfig.apiKey, translatedCache]);
-
-  const handleConfigChange = (newConfig: TranslatorConfig) => {
-    setTransConfig(newConfig);
-    localStorage.setItem("epub-tts-trans-config", JSON.stringify(newConfig));
-    toast.success("Settings Saved");
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chapterData, translationEnabled, translatedCache, bookId]);
 
   // 时间更新回调
   const handleTimeUpdate = useCallback((time: number) => {
@@ -599,10 +608,7 @@ export default function BookReader() {
         </div>
         
         <div className="flex items-center gap-2">
-          <TranslationSettings 
-            config={transConfig} 
-            onConfigChange={handleConfigChange}
-          />
+          <TranslationSettings />
           <TasksPanel />
         </div>
       </header>
@@ -640,8 +646,14 @@ export default function BookReader() {
               htmlContent={chapterData?.html}
               bookId={bookId}
               chapterHref={currentChapterHref || undefined}
+              chapterTitle={metadata?.title}
               highlights={highlights}
               scrollToHighlight={scrollTarget}
+              askAIEnabled={askAIEnabled}
+              onAskAI={(text) => {
+                setPendingAskAIText(text);
+                setAskAIOpen(true);
+              }}
             />
           )}
         </div>
@@ -683,8 +695,14 @@ export default function BookReader() {
                   htmlContent={chapterData?.html}
                   bookId={bookId}
                   chapterHref={currentChapterHref || undefined}
+                  chapterTitle={metadata?.title}
                   highlights={highlights}
                   scrollToHighlight={scrollTarget}
+                  askAIEnabled={askAIEnabled}
+                  onAskAI={(text) => {
+                    setPendingAskAIText(text);
+                    setAskAIOpen(true);
+                  }}
                 />
               )}
             </div>
@@ -713,6 +731,18 @@ export default function BookReader() {
       chapterHref={currentChapterHref}
       sentences={displayedSentences}
       chapterTitle={metadata?.title || "chapter"}
+    />
+
+    <AskAIDialog
+      open={askAIOpen}
+      selectedText={pendingAskAIText}
+      bookId={bookId || undefined}
+      chapterHref={currentChapterHref || undefined}
+      chapterTitle={metadata?.title}
+      onClose={() => {
+        setAskAIOpen(false);
+        setPendingAskAIText("");
+      }}
     />
     </>
   );

@@ -10,7 +10,7 @@ RUN npm config set registry https://registry.npmmirror.com || true
 COPY package*.json ./
 
 # 安装依赖
-RUN npm ci --prefer-offline --no-audit
+RUN npm ci --no-audit
 
 # 复制源代码
 COPY . .

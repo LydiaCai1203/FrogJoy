@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, Bot } from "lucide-react";
 import type { HighlightColor } from "@/api/types";
 
 export interface SelectionInfo {
@@ -23,9 +23,11 @@ interface SelectionMenuProps {
   selection: SelectionInfo | null;
   onHighlight: (color: HighlightColor) => void;
   onAnnotate: () => void;
+  onAskAI: () => void;
+  askAIEnabled?: boolean;
 }
 
-export function SelectionMenu({ selection, onHighlight, onAnnotate }: SelectionMenuProps) {
+export function SelectionMenu({ selection, onHighlight, onAnnotate, onAskAI, askAIEnabled }: SelectionMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -73,6 +75,18 @@ export function SelectionMenu({ selection, onHighlight, onAnnotate }: SelectionM
       >
         <MessageSquare className="w-3.5 h-3.5" />
       </button>
+      {askAIEnabled && (
+        <>
+          <div className="w-px h-4 bg-border mx-0.5" />
+          <button
+            title="问 AI"
+            onClick={onAskAI}
+            className="p-1 rounded hover:bg-accent transition-colors text-muted-foreground hover:text-primary"
+          >
+            <Bot className="w-3.5 h-3.5" />
+          </button>
+        </>
+      )}
     </div>
   );
 }

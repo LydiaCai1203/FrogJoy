@@ -347,3 +347,134 @@ export class ReadingProgressService {
 }
 
 export const readingProgressService = new ReadingProgressService();
+
+// ----- AI Service -----
+
+import type { AIModelConfig, UserAIPreferences, ChatMessage, ModelOption, ChapterTranslation } from "@/lib/ai/types";
+
+export class AIService {
+  private getAuthHeaders(): HeadersInit {
+    const token = localStorage.getItem("auth_token");
+    return token
+      ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
+      : { "Content-Type": "application/json" };
+  }
+
+  async getConfig(): Promise<AIModelConfig> {
+    const res = await fetch(`${API_URL}/ai/config`, { headers: this.getAuthHeaders() });
+    if (!res.ok) throw new Error("Failed to fetch AI config");
+    return res.json();
+  }
+
+  async saveConfig(config: AIModelConfig): Promise<AIModelConfig> {
+    const res = await fetch(`${API_URL}/ai/config`, {
+      method: "PUT",
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) throw new Error("Failed to save AI config");
+    return res.json();
+  }
+
+  async getPreferences(): Promise<UserAIPreferences> {
+    const res = await fetch(`${API_URL}/ai/preferences`, { headers: this.getAuthHeaders() });
+    if (!res.ok) throw new Error("Failed to fetch AI preferences");
+    return res.json();
+  }
+
+  async savePreferences(prefs: UserAIPreferences): Promise<UserAIPreferences> {
+    const res = await fetch(`${API_URL}/ai/preferences`, {
+      method: "PUT",
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(prefs),
+    });
+    if (!res.ok) throw new Error("Failed to save AI preferences");
+    return res.json();
+  }
+
+  async getModelList(providerType: string, baseUrl = "", apiKey = ""): Promise<ModelOption[]> {
+    const params = new URLSearchParams({ provider_type: providerType });
+    if (baseUrl) params.set("base_url", baseUrl);
+    if (apiKey) params.set("api_key", apiKey);
+    const res = await fetch(`${API_URL}/ai/models?${params}`, {
+      headers: this.getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error("Failed to fetch model list");
+    return res.json();
+  }
+
+  async *streamChat(
+    messages: ChatMessage[],
+    bookId?: string,
+    chapterHref?: string,
+    chapterTitle?: string,
+  ): AsyncGenerator<string, void, unknown> {
+    const res = await fetch(`${API_URL}/ai/chat`, {
+      method: "POST",
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ messages, book_id: bookId, chapter_href: chapterHref, chapter_title: chapterTitle }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Chat failed" }));
+      throw new Error(err.detail || "Chat failed");
+    }
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("No response body");
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === "data: [DONE]" || trimmed === "data:") continue;
+          if (trimmed.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(trimmed.slice(6));
+              if (data.content) yield data.content;
+              else if (data.error) throw new Error(data.error);
+            } catch { /* skip */ }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  async translateChapter(bookId: string, chapterHref: string, text: string, targetLang = "Chinese"): Promise<string> {
+    const res = await fetch(`${API_URL}/ai/translate/chapter`, {
+      method: "POST",
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ book_id: bookId, chapter_href: chapterHref, text, target_lang: targetLang }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Translation failed" }));
+      throw new Error(err.detail || "Translation failed");
+    }
+    const data = await res.json();
+    return data.translated as string;
+  }
+
+  async translateBook(bookId: string, mode = "whole-book"): Promise<{ task_id: string }> {
+    const res = await fetch(`${API_URL}/ai/translate/book`, {
+      method: "POST",
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ book_id: bookId, mode }),
+    });
+    if (!res.ok) throw new Error("Failed to start book translation");
+    return res.json();
+  }
+
+  async getBookTranslations(bookId: string): Promise<ChapterTranslation[]> {
+    const res = await fetch(`${API_URL}/ai/translate/${bookId}`, { headers: this.getAuthHeaders() });
+    if (!res.ok) throw new Error("Failed to fetch translations");
+    return res.json();
+  }
+}
+
+export const aiService = new AIService();

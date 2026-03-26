@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { readingStatsService } from "@/api/services";
+import { readingStatsService, aiService } from "@/api/services";
 import { useAuth } from "@/contexts/AuthContext";
+import type { TranslationMode } from "@/lib/ai/types";
 
 export function useReadingTracker(bookId: string | undefined) {
   const { token } = useAuth();
@@ -48,6 +49,28 @@ export function useReadingSummary() {
   return useQuery({
     queryKey: ["reading-summary"],
     queryFn: () => readingStatsService.getSummary(),
+    enabled: !!token,
+  });
+}
+
+export interface AIActiveFeatures {
+  enabledAskAI: boolean;
+  enabledTranslation: boolean;
+  translationMode: TranslationMode;
+}
+
+export function useAIPreferences() {
+  const { token } = useAuth();
+  return useQuery<AIActiveFeatures>({
+    queryKey: ["ai-preferences"],
+    queryFn: async () => {
+      const prefs = await aiService.getPreferences();
+      return {
+        enabledAskAI: prefs.enabled_ask_ai,
+        enabledTranslation: prefs.enabled_translation,
+        translationMode: prefs.translation_mode as TranslationMode,
+      };
+    },
     enabled: !!token,
   });
 }

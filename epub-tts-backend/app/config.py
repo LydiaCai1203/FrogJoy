@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     # ElevenLabs API Configuration
     elevenlabs_api_key: str = ""
 
+    # AI API Key Encryption
+    fernet_key: str = ""
+
     # Data directory root
     data_dir: str = "data"
 
