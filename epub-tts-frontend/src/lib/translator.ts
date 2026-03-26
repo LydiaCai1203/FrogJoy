@@ -1,15 +1,14 @@
+// 翻译模块 - 改为调用后端 /api/ai/translate 接口
+
+import { aiService } from "@/api";
+
 export interface TranslatorConfig {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
+  // 不再直接存储 API Key，相关配置由后端管理
   enabled: boolean;
 }
 
 export const DEFAULT_CONFIG: TranslatorConfig = {
-  apiKey: "",
-  baseUrl: "https://api.openai.com/v1",
-  model: "gpt-4o-mini",
-  enabled: false
+  enabled: false,
 };
 
 class Translator {
@@ -19,39 +18,28 @@ class Translator {
     this.config = config;
   }
 
-  async translate(text: string): Promise<string> {
-    if (!this.config.enabled || !this.config.apiKey) {
+  async translate(
+    bookId: string,
+    chapterHref: string,
+    text: string,
+    targetLang = "Chinese",
+  ): Promise<string> {
+    if (!this.config.enabled) {
       return text;
     }
 
-    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: this.config.model,
-        messages: [
-          {
-            role: "system",
-            content: "You are a professional translator. Translate the following text to Chinese. Keep the original meaning and tone. Only output the translation, no explanations."
-          },
-          {
-            role: "user",
-            content: text
-          }
-        ],
-        temperature: 0.3,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Translation failed: ${response.statusText}`);
+    try {
+      const result = await aiService.translateChapter(
+        bookId,
+        chapterHref,
+        text,
+        targetLang,
+      );
+      return result;
+    } catch (error) {
+      console.error("Translation failed:", error);
+      throw error;
     }
-
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || text;
   }
 }
 

@@ -9,6 +9,7 @@ from app.routers.files import router as files_router
 from app.routers.highlights import router as highlights_router
 from app.routers.reading_stats import router as reading_stats_router
 from app.routers.reading_progress import router as reading_progress_router
+from app.routers.ai import router as ai_router
 import os
 
 
@@ -58,6 +59,7 @@ app.include_router(files_router, prefix="/api")
 app.include_router(highlights_router, prefix="/api")
 app.include_router(reading_stats_router, prefix="/api")
 app.include_router(reading_progress_router, prefix="/api")
+app.include_router(ai_router, prefix="/api")
 
 @app.get("/")
 async def root():

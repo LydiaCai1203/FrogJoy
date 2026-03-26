@@ -2,6 +2,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useReadingHeatmap, useBookReadingStats, useReadingSummary } from "@/hooks/use-reading-stats";
 import { ReadingHeatmap } from "@/components/profile/ReadingHeatmap";
+import { AIConfigPanel } from "@/components/profile/AIConfigPanel";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, BrainCircuit, Book, Clock, Flame, BookOpen } from "lucide-react";
 import { API_BASE } from "@/config";
@@ -129,6 +130,9 @@ export default function Profile() {
             </div>
           )}
         </div>
+
+        {/* AI Config */}
+        <AIConfigPanel />
       </main>
     </div>
   );
