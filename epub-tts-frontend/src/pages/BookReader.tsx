@@ -18,10 +18,10 @@ import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { translator } from "@/lib/translator";
 import { TTSService } from "@/api/services";
-import { TasksPanel } from "@/components/player/TasksPanel";
 import { API_BASE, API_URL } from "@/config";
 import { useAuth } from "@/contexts/AuthContext";
 import { AskAIDialog } from "@/components/highlight/AskAIDialog";
+import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import type { UnifiedMode, ContentMode, InteractionMode } from "@/lib/ai/types";
 
 export default function BookReader() {
@@ -740,7 +740,7 @@ export default function BookReader() {
               )}
             </button>
           )}
-          <TasksPanel />
+          <ThemeSwitcher />
         </div>
       </header>
 
