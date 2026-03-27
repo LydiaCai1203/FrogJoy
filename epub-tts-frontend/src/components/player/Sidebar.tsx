@@ -247,9 +247,7 @@ export function Sidebar({
         </ScrollArea>
       </div>
 
-      <div className="p-2 border-t border-border bg-black/20 text-[10px] font-mono text-center text-muted-foreground">
-        SYSTEM READY // V1.0.0
-      </div>
+
     </div>
   );
 }
