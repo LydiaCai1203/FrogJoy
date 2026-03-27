@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Theme = "day" | "night" | "eye-care";
 
@@ -13,10 +14,12 @@ interface ThemeProviderProps {
   children: React.ReactNode;
 }
 
-const STORAGE_KEY = "bookreader-theme";
+function getStorageKey(userId: string | undefined) {
+  return userId ? `bookreader-theme-${userId}` : "bookreader-theme-anonymous";
+}
 
-function getInitialTheme(): Theme {
-  const stored = localStorage.getItem(STORAGE_KEY);
+function getInitialTheme(userId: string | undefined): Theme {
+  const stored = localStorage.getItem(getStorageKey(userId));
   if (stored === "day" || stored === "night" || stored === "eye-care") {
     return stored;
   }
@@ -26,12 +29,14 @@ function getInitialTheme(): Theme {
 export function ThemeProvider({
   children,
 }: ThemeProviderProps) {
-  const [theme, setTheme] = React.useState<Theme>(getInitialTheme);
+  const { user } = useAuth();
+  const userId = user?.id;
+  const [theme, setTheme] = React.useState<Theme>(() => getInitialTheme(userId));
 
   React.useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem(STORAGE_KEY, theme);
-  }, [theme]);
+    localStorage.setItem(getStorageKey(userId), theme);
+  }, [theme, userId]);
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme }}>
