@@ -29,6 +29,7 @@ export interface TTSOptions {
   book_id?: string;
   chapter_href?: string;
   paragraph_index?: number;
+  is_translated?: boolean;
 }
 
 // 单词时间戳（用于字级高亮同步）
@@ -71,6 +72,7 @@ export interface Highlight {
   selected_text: string;
   color: HighlightColor;
   note?: string;
+  is_translated?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -85,6 +87,7 @@ export interface CreateHighlightRequest {
   selected_text: string;
   color: HighlightColor;
   note?: string;
+  is_translated?: boolean;
 }
 
 // 阅读时间统计

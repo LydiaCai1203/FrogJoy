@@ -12,7 +12,7 @@ import { ttsService, aiService } from "@/api";
 import type { NavItem, WordTimestamp } from "@/api/types";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
-import { Loader2, Menu, X, BrainCircuit, Home, ArrowLeft, Languages, Headphones } from "lucide-react";
+import { Loader2, Menu, BrainCircuit, ArrowLeft, Languages } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -22,7 +22,7 @@ import { TasksPanel } from "@/components/player/TasksPanel";
 import { API_BASE, API_URL } from "@/config";
 import { useAuth } from "@/contexts/AuthContext";
 import { AskAIDialog } from "@/components/highlight/AskAIDialog";
-import type { ReadingDisplayMode, PlaybackMode } from "@/lib/ai/types";
+import type { UnifiedMode, ContentMode, InteractionMode } from "@/lib/ai/types";
 
 export default function BookReader() {
   const { bookId } = useParams<{ bookId: string }>();
@@ -70,14 +70,25 @@ export default function BookReader() {
   const [translationEnabled, setTranslationEnabled] = useState(false);
   const [translatedCache, setTranslatedCache] = useState<Record<string, string[]>>({});
   const [isTranslating, setIsTranslating] = useState(false);
+  const [translationProgress, setTranslationProgress] = useState(0);
   const [sourceLang, setSourceLang] = useState("Auto");
   const [targetLang, setTargetLang] = useState("Chinese");
   const [translateTrigger, setTranslateTrigger] = useState(0);
+  const cancelTranslationRef = useRef(false);
 
-  // Display & Playback Mode
-  const [readingDisplayMode, setReadingDisplayMode] = useState<ReadingDisplayMode>("original");
-  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("play-original");
+  // Unified reader mode
+  const [unifiedMode, setUnifiedMode] = useState<UnifiedMode>("read-original");
   const [playBothPhase, setPlayBothPhase] = useState<"original" | "translated">("original");
+
+  const [interactionMode, contentMode] = unifiedMode.split("-") as [InteractionMode, ContentMode];
+  const isPlayMode = interactionMode === "play";
+  const canUseTranslatedContent = translatedSentences.length > 0;
+  const effectiveContentMode: ContentMode =
+    canUseTranslatedContent || contentMode === "original" ? contentMode : "original";
+  const effectiveUnifiedMode = `${interactionMode}-${effectiveContentMode}` as UnifiedMode;
+  const isReadMode = interactionMode === "read";
+  const isBilingualMode = effectiveContentMode === "bilingual";
+  const isTranslatedMode = effectiveContentMode === "translated";
 
   // AskAI State
   const [askAIEnabled, setAskAIEnabled] = useState(false);
@@ -260,6 +271,8 @@ export default function BookReader() {
     } else {
       setTranslatedSentences([]);
     }
+    // Reset translation trigger to prevent auto-translation on chapter change
+    setTranslateTrigger(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chapterData]);
 
@@ -277,43 +290,47 @@ export default function BookReader() {
     }
 
     let cancelled = false;
+    cancelTranslationRef.current = false;
     const runTranslation = async () => {
       setIsTranslating(true);
+      setTranslationProgress(0);
       try {
-        // Auto-detect source language using first paragraph
-        if (sourceLang === "Auto") {
-          const sample = rawSentences.slice(0, 2).join(" ").slice(0, 200);
-          const detected = await aiService.detectLanguage(sample);
-          if (detected.toLowerCase().includes(targetLang.toLowerCase()) ||
-              targetLang.toLowerCase().includes(detected.toLowerCase())) {
-            toast.info("源语言与目标语言相同，无需翻译");
-            setIsTranslating(false);
-            return;
+        if (cancelled || cancelTranslationRef.current) return;
+
+        let accumulatedSentences: string[] = new Array(rawSentences.length).fill("");
+        let finalSentences: string[] = [];
+
+        for await (const chunk of translator.translate(bookId, href, rawSentences, targetLang)) {
+          if (cancelled || cancelTranslationRef.current) return;
+          setTranslationProgress(chunk.progress);
+          // Slot partial sentence into the correct index for real-time display
+          if (chunk.index !== undefined && chunk.partialSentence) {
+            accumulatedSentences = [...accumulatedSentences];
+            accumulatedSentences[chunk.index] = chunk.partialSentence;
+            setTranslatedSentences([...accumulatedSentences]);
+          }
+          if (chunk.done) {
+            finalSentences = accumulatedSentences;
+            setTranslatedSentences([...accumulatedSentences]);
+            break;
           }
         }
 
-        if (cancelled) return;
-
-        const fullText = rawSentences.join(" ");
-        const translatedText = await translator.translate(bookId, href, fullText, targetLang);
-
-        if (cancelled) return;
-
-        const newSentences = translatedText.match(/([^.!?。！？\n\r]+[.!?。！？\n\r]+)|([^.!?。！？\n\r]+$)/g)
-          ?.map(s => s.trim())
-          .filter(s => s.length > 0) || [translatedText];
-
-        setTranslatedCache(prev => ({ ...prev, [href]: newSentences }));
-        setTranslatedSentences(newSentences);
-        toast.success("翻译完成");
+        if (!cancelled && !cancelTranslationRef.current && finalSentences.length > 0) {
+          setTranslatedCache(prev => ({ ...prev, [href]: finalSentences }));
+          toast.success("翻译完成");
+        }
       } catch (error) {
-        if (!cancelled) {
+        if (!cancelled && !cancelTranslationRef.current) {
           console.error("Translation failed", error);
           toast.error("翻译失败");
           setTranslatedSentences([]);
         }
       } finally {
-        if (!cancelled) setIsTranslating(false);
+        if (!cancelled && !cancelTranslationRef.current) {
+          setIsTranslating(false);
+          setTranslationProgress(0);
+        }
       }
     };
 
@@ -414,8 +431,8 @@ export default function BookReader() {
 
   // TTS Loop
   useEffect(() => {
-    // 章节切换时立即停止播放，避免播放旧章节内容
-    if (!isPlaying) {
+    // 仅在播放模式自动朗读
+    if (!isPlaying || !isPlayMode) {
       ttsService.stop();
       playingSentenceRef.current = -1;
       return;
@@ -427,6 +444,7 @@ export default function BookReader() {
       playingSentenceRef.current = -1;
       setWordTimestamps([]);
       setCurrentTime(0);
+      return;
     }
 
     if (currentSentenceIndex >= originalSentences.length) {
@@ -435,26 +453,28 @@ export default function BookReader() {
       return;
     }
 
-    // Determine which text to play based on playback mode and phase
     let text: string;
-    if (playbackMode === "play-translated" && translatedSentences[currentSentenceIndex]) {
-      text = translatedSentences[currentSentenceIndex];
-    } else if (playbackMode === "play-both") {
+    let isTranslatedAudio = false;
+
+    if (isBilingualMode) {
       if (playBothPhase === "original") {
         text = originalSentences[currentSentenceIndex];
       } else {
         text = translatedSentences[currentSentenceIndex] || originalSentences[currentSentenceIndex];
+        isTranslatedAudio = !!translatedSentences[currentSentenceIndex];
       }
+    } else if (isTranslatedMode && translatedSentences[currentSentenceIndex]) {
+      text = translatedSentences[currentSentenceIndex];
+      isTranslatedAudio = true;
     } else {
       text = originalSentences[currentSentenceIndex];
     }
+
     if (!text) return;
 
     const thisSentenceIndex = currentSentenceIndex;
     const thisPhase = playBothPhase;
-
-    // For play-both, use a composite key to track sentence+phase
-    const playKey = playbackMode === "play-both"
+    const playKey = isBilingualMode
       ? thisSentenceIndex * 2 + (thisPhase === "translated" ? 1 : 0)
       : thisSentenceIndex;
 
@@ -473,7 +493,6 @@ export default function BookReader() {
 
     const params = getEmotionParams(emotion);
 
-    // 预加载相邻段落
     const prefetchStart = Math.max(0, thisSentenceIndex - 1);
     const prefetchEnd = Math.min(originalSentences.length, thisSentenceIndex + 3);
     prefetchAudio(prefetchStart, prefetchEnd);
@@ -488,6 +507,7 @@ export default function BookReader() {
       book_id: bookId || undefined,
       chapter_href: currentChapterHref || undefined,
       paragraph_index: thisSentenceIndex,
+      is_translated: isTranslatedAudio,
     }).then(() => {
       if (playingSentenceRef.current !== playKey) return;
       if (!isPlayingRef.current) {
@@ -499,12 +519,10 @@ export default function BookReader() {
       setCurrentTime(0);
       playingSentenceRef.current = -1;
 
-      if (playbackMode === "play-both" && thisPhase === "original" && translatedSentences[thisSentenceIndex]) {
-        // Switch to translated phase for the same sentence
+      if (isBilingualMode && thisPhase === "original" && translatedSentences[thisSentenceIndex]) {
         setPlayBothPhase("translated");
       } else {
-        // Move to next sentence
-        if (playbackMode === "play-both") {
+        if (isBilingualMode) {
           setPlayBothPhase("original");
         }
         const nextIndex = thisSentenceIndex + 1;
@@ -521,7 +539,7 @@ export default function BookReader() {
       }
     });
 
-  }, [isPlaying, currentSentenceIndex, originalSentences, translatedSentences, playbackMode, playBothPhase, voice, speed, emotion, bookId, currentChapterHref, prefetchAudio]);
+  }, [isPlaying, isPlayMode, isBilingualMode, isTranslatedMode, currentSentenceIndex, originalSentences, translatedSentences, playBothPhase, voice, speed, emotion, bookId, currentChapterHref, prefetchAudio]);
 
   // 章节切换时重置句子索引并预加载前几个段落
   useEffect(() => {
@@ -556,8 +574,24 @@ export default function BookReader() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentChapterHref, originalSentences]);
 
+  const handleUnifiedModeChange = useCallback((nextMode: UnifiedMode) => {
+    const [, nextContent] = nextMode.split("-") as [InteractionMode, ContentMode];
+
+    ttsService.stop();
+    playingSentenceRef.current = -1;
+    setWordTimestamps([]);
+    setCurrentTime(0);
+    setIsPlaying(false);
+
+    if (nextContent !== "bilingual") {
+      setPlayBothPhase("original");
+    }
+
+    setUnifiedMode(nextMode);
+  }, []);
+
   const togglePlay = () => {
-    if (originalSentences.length === 0) return;
+    if (originalSentences.length === 0 || !isPlayMode) return;
 
     if (isPlaying) {
       ttsService.stop();
@@ -659,65 +693,52 @@ export default function BookReader() {
           {translationEnabled && (
             <button
               onClick={() => {
-                if (translatedSentences.length > 0 || isTranslating) {
+                if (isTranslating) {
+                  // Cancel translation
+                  cancelTranslationRef.current = true;
+                  setIsTranslating(false);
+                  setTranslationProgress(0);
+                  return;
+                }
+                if (translatedSentences.length > 0) {
                   // Clear translations
                   setTranslatedSentences([]);
                   setTranslatedCache({});
-                  setIsTranslating(false);
-                  setReadingDisplayMode("original");
-                  setPlaybackMode("play-original");
+                  setUnifiedMode((prev) => {
+                    const [currentInteraction] = prev.split("-") as [InteractionMode, ContentMode];
+                    return `${currentInteraction}-original` as UnifiedMode;
+                  });
                 } else {
                   // Trigger translation
                   setTranslateTrigger(t => t + 1);
                 }
               }}
-              className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
-                translatedSentences.length > 0
+              className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
+                translatedSentences.length > 0 || isTranslating
                   ? "bg-primary/10 text-primary"
                   : "bg-muted text-muted-foreground hover:text-foreground"
               }`}
-              title={translatedSentences.length > 0 ? "关闭翻译" : "翻译当前章节"}
+              title={translatedSentences.length > 0 ? "关闭翻译" : isTranslating ? `翻译中 ${translationProgress}%` : "翻译当前章节"}
             >
-              <Languages className="w-3.5 h-3.5" />
-              {isTranslating ? "翻译中..." : translatedSentences.length > 0 ? "翻译" : "翻译"}
+              {isTranslating ? (
+                <>
+                  <Languages className="w-3.5 h-3.5" />
+                  <span>翻译中</span>
+                  <div className="w-16 h-1.5 bg-primary/20 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all duration-300"
+                      style={{ width: `${translationProgress}%` }}
+                    />
+                  </div>
+                  <span className="tabular-nums">{translationProgress}%</span>
+                </>
+              ) : (
+                <>
+                  <Languages className="w-3.5 h-3.5" />
+                  <span>{translatedSentences.length > 0 ? "翻译 ✓" : "翻译"}</span>
+                </>
+              )}
             </button>
-          )}
-          {/* Display & Playback mode switches — only when translated content is ready */}
-          {translationEnabled && translatedSentences.length > 0 && (
-            <>
-              <div className="hidden sm:flex items-center gap-1 bg-muted rounded-md p-0.5">
-                <Languages className="w-3.5 h-3.5 text-muted-foreground ml-1.5" />
-                {([["original", "原文"], ["translated", "译文"], ["split", "双屏"]] as const).map(([mode, label]) => (
-                  <button
-                    key={mode}
-                    onClick={() => setReadingDisplayMode(mode)}
-                    className={`px-2 py-1 text-xs rounded-sm transition-colors ${
-                      readingDisplayMode === mode
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <div className="hidden sm:flex items-center gap-1 bg-muted rounded-md p-0.5">
-                <Headphones className="w-3.5 h-3.5 text-muted-foreground ml-1.5" />
-                {([["play-original", "原文"], ["play-translated", "译文"], ["play-both", "原+译"]] as const).map(([mode, label]) => (
-                  <button
-                    key={mode}
-                    onClick={() => setPlaybackMode(mode)}
-                    className={`px-2 py-1 text-xs rounded-sm transition-colors ${
-                      playbackMode === mode
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </>
           )}
           <TasksPanel />
         </div>
@@ -750,8 +771,7 @@ export default function BookReader() {
             <Reader
               sentences={originalSentences}
               translatedSentences={translatedSentences}
-              readingDisplayMode={readingDisplayMode}
-              playbackMode={playbackMode}
+              unifiedMode={effectiveUnifiedMode}
               playBothPhase={playBothPhase}
               current={currentSentenceIndex}
               wordTimestamps={wordTimestamps}
@@ -768,6 +788,7 @@ export default function BookReader() {
                 setPendingAskAIText(text);
                 setAskAIOpen(true);
               }}
+              onUnifiedModeChange={handleUnifiedModeChange}
             />
           )}
         </div>
@@ -803,8 +824,7 @@ export default function BookReader() {
                 <Reader
                   sentences={originalSentences}
                   translatedSentences={translatedSentences}
-                  readingDisplayMode={readingDisplayMode}
-                  playbackMode={playbackMode}
+                  unifiedMode={effectiveUnifiedMode}
                   playBothPhase={playBothPhase}
                   current={currentSentenceIndex}
                   wordTimestamps={wordTimestamps}
@@ -821,6 +841,7 @@ export default function BookReader() {
                     setPendingAskAIText(text);
                     setAskAIOpen(true);
                   }}
+                  onUnifiedModeChange={handleUnifiedModeChange}
                 />
               )}
             </div>
@@ -830,10 +851,12 @@ export default function BookReader() {
     </div>
 
     <Controls
+      unifiedMode={effectiveUnifiedMode}
       isPlaying={isPlaying}
       onPlayPause={togglePlay}
       onNext={handleNext}
       onPrev={handlePrev}
+      onSeek={setCurrentSentenceIndex}
       current={currentSentenceIndex}
       total={originalSentences.length}
       progress={originalSentences.length > 0 ? (currentSentenceIndex / originalSentences.length) * 100 : 0}

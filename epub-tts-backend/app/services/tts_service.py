@@ -56,7 +56,8 @@ class AudioCache:
     @staticmethod
     def generate_cache_key(text: str, voice: str, rate: float, pitch: float,
                            book_id: str = None, chapter_href: str = None,
-                           paragraph_index: int = None) -> str:
+                           paragraph_index: int = None,
+                           is_translated: bool = False) -> str:
         parts = [text, voice, str(rate), str(pitch)]
         if book_id:
             parts.append(book_id)
@@ -64,6 +65,8 @@ class AudioCache:
             parts.append(chapter_href)
         if paragraph_index is not None:
             parts.append(str(paragraph_index))
+        if is_translated:
+            parts.append("translated")
 
         content = "|".join(parts)
         return hashlib.sha256(content.encode('utf-8')).hexdigest()[:16]
@@ -178,22 +181,25 @@ class AudioMemoryCache:
         self.lock = asyncio.Lock()
 
     def _make_key(self, book_id: str, chapter_href: str, paragraph_index: int,
-                  voice: str, rate: float, pitch: float) -> tuple:
-        return (book_id, chapter_href, paragraph_index, voice, rate, pitch)
+                  voice: str, rate: float, pitch: float,
+                  is_translated: bool = False) -> tuple:
+        return (book_id, chapter_href, paragraph_index, voice, rate, pitch, is_translated)
 
     async def get(self, book_id: str, chapter_href: str, paragraph_index: int,
-                  voice: str, rate: float, pitch: float) -> Optional[Dict]:
+                  voice: str, rate: float, pitch: float,
+                  is_translated: bool = False) -> Optional[Dict]:
         async with self.lock:
-            key = self._make_key(book_id, chapter_href, paragraph_index, voice, rate, pitch)
+            key = self._make_key(book_id, chapter_href, paragraph_index, voice, rate, pitch, is_translated)
             if key in self.cache:
                 self.cache.move_to_end(key)
                 return self.cache[key]
             return None
 
     async def put(self, book_id: str, chapter_href: str, paragraph_index: int,
-                  voice: str, rate: float, pitch: float, audio_data: Dict):
+                  voice: str, rate: float, pitch: float, audio_data: Dict,
+                  is_translated: bool = False):
         async with self.lock:
-            key = self._make_key(book_id, chapter_href, paragraph_index, voice, rate, pitch)
+            key = self._make_key(book_id, chapter_href, paragraph_index, voice, rate, pitch, is_translated)
 
             if key in self.cache:
                 self.cache[key] = audio_data
@@ -328,7 +334,8 @@ class TTSService:
         user_id: str = None,
         book_id: str = None,
         chapter_href: str = None,
-        paragraph_index: int = None
+        paragraph_index: int = None,
+        is_translated: bool = False,
     ) -> Dict[str, Any]:
         if user_id and book_id:
             audio_dir = settings.get_audio_dir(user_id, book_id)
@@ -349,13 +356,13 @@ class TTSService:
 
         # 1. 优先检查内存缓存
         if book_id and chapter_href is not None and paragraph_index is not None:
-            memory_cached = await memory_cache.get(book_id, chapter_href, paragraph_index, voice, rate, pitch)
+            memory_cached = await memory_cache.get(book_id, chapter_href, paragraph_index, voice, rate, pitch, is_translated)
             if memory_cached:
-                print(f"[TTS] Memory cache hit: paragraph {paragraph_index}")
+                print(f"[TTS] Memory cache hit: paragraph {paragraph_index} (translated={is_translated})")
                 return memory_cached
 
         # 2. 检查磁盘缓存
-        cache_key = AudioCache.generate_cache_key(text, voice, rate, pitch, book_id, chapter_href, paragraph_index)
+        cache_key = AudioCache.generate_cache_key(text, voice, rate, pitch, book_id, chapter_href, paragraph_index, is_translated)
         cached_entry = AudioCache.get_cached_entry(cache_key, user_id, book_id)
 
         if cached_entry:
@@ -365,7 +372,7 @@ class TTSService:
                 "wordTimestamps": cached_entry.get('word_timestamps', [])
             }
             if book_id and chapter_href is not None and paragraph_index is not None:
-                await memory_cache.put(book_id, chapter_href, paragraph_index, voice, rate, pitch, result)
+                await memory_cache.put(book_id, chapter_href, paragraph_index, voice, rate, pitch, result, is_translated)
             return result
 
         # 缓存未命中，生成新音频
@@ -441,7 +448,7 @@ class TTSService:
         }
 
         if book_id and chapter_href is not None and paragraph_index is not None:
-            await memory_cache.put(book_id, chapter_href, paragraph_index, voice, rate, pitch, result)
+            await memory_cache.put(book_id, chapter_href, paragraph_index, voice, rate, pitch, result, is_translated)
 
         return result
 

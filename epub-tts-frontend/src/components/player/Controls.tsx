@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Play, Pause, SkipBack, SkipForward, Settings2, Download, Loader2 } from "lucide-react";
+import type { UnifiedMode } from "@/lib/ai/types";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -20,10 +21,12 @@ interface VoiceOption {
 }
 
 interface ControlsProps {
+  unifiedMode: UnifiedMode;
   isPlaying: boolean;
   onPlayPause: () => void;
   onNext: () => void;
   onPrev: () => void;
+  onSeek: (index: number) => void;
   progress: number; // 0-100
   total: number;
   current: number;
@@ -46,10 +49,12 @@ interface ControlsProps {
 import { API_BASE, API_URL } from "@/config";
 
 export function Controls({
-  isPlaying, onPlayPause, onNext, onPrev, progress, current, total,
+  unifiedMode,
+  isPlaying, onPlayPause, onNext, onPrev, onSeek, progress, current, total,
   selectedVoice, onVoiceChange, emotion, onEmotionChange, speed, onSpeedChange,
   bookId, chapterHref, sentences = [], chapterTitle = "chapter"
 }: ControlsProps) {
+  const isPlayMode = unifiedMode.startsWith("play-");
   const [voices, setVoices] = useState<VoiceOption[]>([]);
   const [isLoadingVoices, setIsLoadingVoices] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -154,42 +159,51 @@ export function Controls({
     }
   };
 
+  const handleSliderChange = ([value]: number[]) => {
+    onSeek(value);
+  };
+
   return (
     <div className="fixed bottom-0 inset-x-0 bg-card border-t border-border p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] flex items-center gap-6 shadow-[0_-5px_20px_rgba(0,0,0,0.3)] z-[100]">
       
-      {/* Playback Controls */}
+      {/* Playback / Navigation Controls */}
       <div className="flex items-center gap-2">
-        <Button variant="outline" size="icon" onClick={onPrev} className="rounded-none border-primary/20 hover:border-primary hover:text-primary hover:bg-primary/10">
+        <Button variant="outline" size="icon" onClick={onPrev} className="rounded-lg border-primary/20 hover:border-primary hover:text-primary hover:bg-primary/10">
           <SkipBack className="w-4 h-4" />
         </Button>
-        <Button 
-          size="icon" 
-          onClick={onPlayPause} 
-          className="w-12 h-12 rounded-none bg-primary text-primary-foreground hover:bg-primary/90 border border-transparent hover:border-white/20 shadow-[0_0_15px_rgba(204,255,0,0.4)]"
-        >
-          {isPlaying ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current" />}
-        </Button>
-        <Button variant="outline" size="icon" onClick={onNext} className="rounded-none border-primary/20 hover:border-primary hover:text-primary hover:bg-primary/10">
+        {isPlayMode ? (
+          <Button
+            size="icon"
+            onClick={onPlayPause}
+            className="w-12 h-12 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 border border-transparent hover:border-white/20 shadow-[0_0_15px_rgba(204,255,0,0.4)]"
+          >
+            {isPlaying ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current" />}
+          </Button>
+        ) : (
+          <div className="w-12 h-12 rounded-lg border border-primary/20 bg-muted/40 flex items-center justify-center text-[10px] font-mono text-muted-foreground">
+            阅读
+          </div>
+        )}
+        <Button variant="outline" size="icon" onClick={onNext} className="rounded-lg border-primary/20 hover:border-primary hover:text-primary hover:bg-primary/10">
           <SkipForward className="w-4 h-4" />
         </Button>
       </div>
 
       {/* Progress */}
-      <div className="flex-1 flex flex-col gap-1">
+      <div className="flex-1 flex flex-col gap-2">
         <div className="flex justify-between text-[10px] font-mono text-muted-foreground tracking-wider">
-          <span>第 {current + 1} / {total} 句</span>
-          <span>进度 {Math.round(progress)}%</span>
+          <span>{isPlayMode ? `第 ${current + 1} / ${total} 句` : `定位到第 ${current + 1} / ${total} 句`}</span>
+          <span>{isPlayMode ? `进度 ${Math.round(progress)}%` : "章节导航"}</span>
         </div>
-        <div className="h-2 bg-secondary w-full relative overflow-hidden group">
-            {/* Background grid */}
-            <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_2px,var(--color-background)_2px)] bg-[length:4px_100%] opacity-20" />
-            
-            {/* Active bar */}
-            <div 
-              className="absolute top-0 left-0 h-full bg-primary transition-all duration-300 ease-out shadow-[0_0_10px_var(--color-primary)]"
-              style={{ width: `${progress}%` }} 
-            />
-        </div>
+        <Slider
+          value={[Math.min(current, Math.max(total - 1, 0))]}
+          onValueChange={handleSliderChange}
+          min={0}
+          max={Math.max(total - 1, 0)}
+          step={1}
+          disabled={total <= 1}
+          className="py-1"
+        />
       </div>
 
       {/* Download & Settings */}

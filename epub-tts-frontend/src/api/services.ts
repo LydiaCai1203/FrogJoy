@@ -151,6 +151,7 @@ export class TTSService implements ITTSService {
         book_id: options?.book_id,
         chapter_href: options?.chapter_href,
         paragraph_index: options?.paragraph_index,
+        is_translated: options?.is_translated ?? false,
       }),
     });
 
@@ -486,18 +487,57 @@ export class AIService {
     return result.trim();
   }
 
-  async translateChapter(bookId: string, chapterHref: string, text: string, targetLang = "Chinese"): Promise<string> {
+  async *translateChapter(
+    bookId: string,
+    chapterHref: string,
+    sentences: string[],
+    targetLang = "Chinese",
+  ): AsyncGenerator<{ progress: number; sentences: string[]; partialSentence?: string; index?: number; total?: number; done: boolean }> {
     const res = await fetch(`${API_URL}/ai/translate/chapter`, {
       method: "POST",
       headers: this.getAuthHeaders(),
-      body: JSON.stringify({ book_id: bookId, chapter_href: chapterHref, text, target_lang: targetLang }),
+      body: JSON.stringify({ book_id: bookId, chapter_href: chapterHref, sentences, target_lang: targetLang }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Translation failed" }));
       throw new Error(err.detail || "Translation failed");
     }
-    const data = await res.json();
-    return data.translated as string;
+    const reader = res.body?.getReader();
+    if (!reader) return;
+    const decoder = new TextDecoder();
+    let buffer = "";
+    // Build aligned array as we receive per-index results
+    const aligned: string[] = new Array(sentences.length).fill("");
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {
+            try {
+              const data = JSON.parse(trimmed.slice(6));
+              if (typeof data.index === "number" && data.translated_part) {
+                aligned[data.index] = data.translated_part as string;
+              }
+              yield {
+                progress: data.progress as number,
+                sentences: [...aligned],
+                partialSentence: data.translated_part as string,
+                index: data.index as number,
+                total: data.total as number,
+                done: !!data.done,
+              };
+            } catch { /* skip malformed */ }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
   }
 
   async translateBook(bookId: string, mode = "whole-book"): Promise<{ task_id: string }> {

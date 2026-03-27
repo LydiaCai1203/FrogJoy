@@ -328,7 +328,7 @@ export function AIConfigPanel() {
                     <div className="flex flex-col">
                       <span className="text-sm font-medium">翻译</span>
                       <span className="text-xs text-muted-foreground">
-                        自动将书籍内容翻译为目标语言
+                        开启后可在阅读页手动翻译当前章节
                       </span>
                     </div>
                     <Switch

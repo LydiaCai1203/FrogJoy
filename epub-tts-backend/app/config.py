@@ -38,8 +38,13 @@ class Settings(BaseSettings):
     def get_cache_index_path(self, user_id: str, book_id: str) -> str:
         return os.path.join(self.get_user_book_dir(user_id, book_id), "cache_index.json")
 
-    def get_images_dir(self, book_id: str) -> str:
-        return os.path.join(self.data_dir, "images", book_id)
+    def get_translation_dir(self, user_id: str, book_id: str, target_lang: str) -> str:
+        return os.path.join(self.get_user_book_dir(user_id, book_id), "translations", target_lang)
+
+    def get_translation_path(self, user_id: str, book_id: str, target_lang: str, chapter_href: str) -> str:
+        import hashlib
+        chapter_hash = hashlib.md5(chapter_href.encode("utf-8")).hexdigest()
+        return os.path.join(self.get_translation_dir(user_id, book_id, target_lang), f"{chapter_hash}.json")
 
 
 @lru_cache()
