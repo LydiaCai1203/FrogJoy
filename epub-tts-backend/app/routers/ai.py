@@ -70,7 +70,7 @@ class ChatRequest(BaseModel):
 class TranslateChapterRequest(BaseModel):
     book_id: str
     chapter_href: str
-    text: str
+    sentences: list[str]
     target_lang: str = "Chinese"
 
 
@@ -313,16 +313,37 @@ async def chat(request: ChatRequest, user_id: str = Depends(get_current_user)):
 
 @router.post("/translate/chapter")
 async def translate_chapter(request: TranslateChapterRequest, user_id: str = Depends(get_current_user)):
-    """Translate a single chapter synchronously."""
+    """Translate a single chapter as SSE stream, sentence by sentence."""
     ai_config = _build_ai_config(user_id)
     service = AIService(ai_config)
-    messages = AIService.build_translation_messages(request.text, request.target_lang)
 
-    try:
-        result = await service.chat_once(messages, temperature=0.3, max_tokens=8192)
-        return {"translated": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Translation failed: {str(e)}")
+    sentences = [s.strip() for s in request.sentences if s.strip()]
+    if not sentences:
+        return StreamingResponse(iter([]), media_type="text/event-stream")
+
+    total = len(sentences)
+
+    async def generate():
+        translated_parts = []
+        for i, sentence in enumerate(sentences):
+            try:
+                messages = AIService.build_translation_messages(sentence, request.target_lang)
+                result = await service.chat_once(messages, temperature=0.3, max_tokens=2048)
+                translated_parts.append(result.strip())
+            except Exception as e:
+                translated_parts.append(sentence)  # fallback: keep original
+            progress = int((i + 1) / total * 100)
+            payload = json.dumps({
+                "progress": progress,
+                "index": i,
+                "total": total,
+                "translated_part": translated_parts[-1],
+                "done": (i + 1) == total,
+                "full_translated": " ".join(translated_parts) if (i + 1) == total else "",
+            }, ensure_ascii=False)
+            yield f"data: {payload}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @router.post("/translate/book")

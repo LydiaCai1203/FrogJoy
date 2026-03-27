@@ -39,6 +39,7 @@ class TTSRequest(BaseModel):
     book_id: Optional[str] = None
     chapter_href: Optional[str] = None
     paragraph_index: Optional[int] = None
+    is_translated: Optional[bool] = False
 
 class DownloadRequest(BaseModel):
     sentences: List[str]
@@ -83,7 +84,8 @@ async def speak(request: TTSRequest, user_id: str = Depends(get_current_user)):
             user_id=user_id,
             book_id=request.book_id,
             chapter_href=request.chapter_href,
-            paragraph_index=request.paragraph_index
+            paragraph_index=request.paragraph_index,
+            is_translated=request.is_translated or False,
         )
         return result
     except Exception as e:

@@ -4,9 +4,15 @@ export type AIProviderType = "openai-chat" | "anthropic";
 
 export type TranslationMode = "current-page" | "whole-book";
 
-export type ReadingDisplayMode = "original" | "translated" | "split";
+export type InteractionMode = "play" | "read";
 
-export type PlaybackMode = "play-original" | "play-translated" | "play-both";
+export type ContentMode = "original" | "translated" | "bilingual";
+
+export type UnifiedMode = `${InteractionMode}-${ContentMode}`;
+
+export type ReadingDisplayMode = ContentMode;
+
+export type PlaybackMode = "play-original" | "play-translated" | "play-bilingual";
 
 export const LANGUAGE_OPTIONS = [
   { value: "Auto", label: "Auto (自动检测)" },

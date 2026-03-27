@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { BookOpen, Headphones } from "lucide-react";
 import type { WordTimestamp, Highlight, HighlightColor } from "@/api/types";
-import type { ReadingDisplayMode, PlaybackMode } from "@/lib/ai/types";
+import type { UnifiedMode, InteractionMode, ContentMode } from "@/lib/ai/types";
 import { API_BASE } from "@/config";
 import { SelectionMenu, type SelectionInfo } from "@/components/highlight/SelectionMenu";
 import { AnnotationDialog } from "@/components/highlight/AnnotationDialog";
@@ -19,8 +19,7 @@ export interface ScrollToHighlight {
 interface ReaderProps {
   sentences: string[];
   translatedSentences?: string[];
-  readingDisplayMode?: ReadingDisplayMode;
-  playbackMode?: PlaybackMode;
+  unifiedMode?: UnifiedMode;
   playBothPhase?: "original" | "translated";
   current: number;
   wordTimestamps?: WordTimestamp[];
@@ -34,6 +33,7 @@ interface ReaderProps {
   scrollToHighlight?: ScrollToHighlight | null;
   askAIEnabled?: boolean;
   onAskAI?: (selectedText: string) => void;
+  onUnifiedModeChange?: (mode: UnifiedMode) => void;
 }
 
 const HIGHLIGHT_COLOR_MAP: Record<HighlightColor, string> = {
@@ -53,8 +53,7 @@ const HIGHLIGHT_MARK_STYLE: Record<HighlightColor, string> = {
 export function Reader({
   sentences,
   translatedSentences = [],
-  readingDisplayMode = "original",
-  playbackMode = "play-original",
+  unifiedMode = "read-original",
   playBothPhase = "original",
   current,
   wordTimestamps = [],
@@ -68,12 +67,57 @@ export function Reader({
   scrollToHighlight,
   askAIEnabled = false,
   onAskAI,
+  onUnifiedModeChange,
 }: ReaderProps) {
+  const [interactionMode, contentMode] = unifiedMode.split("-") as [InteractionMode, ContentMode];
+  const isPlayMode = interactionMode === "play";
+  const isReadMode = interactionMode === "read";
+  const isTranslatedMode = contentMode === "translated";
+  const isBilingualMode = contentMode === "bilingual";
+  const canAnnotate = isReadMode;
+  const hasTranslation = translatedSentences.length > 0;
+  const availableContentModes = (["original", "translated", "bilingual"] as const).filter(
+    (mode) => mode === "original" || hasTranslation
+  );
+
+  const setInteractionMode = (nextInteractionMode: InteractionMode) => {
+    onUnifiedModeChange?.(`${nextInteractionMode}-${contentMode}` as UnifiedMode);
+  };
+
+  const setContentMode = (nextContentMode: ContentMode) => {
+    onUnifiedModeChange?.(`${interactionMode}-${nextContentMode}` as UnifiedMode);
+  };
   const activeRef = useRef<HTMLDivElement>(null);
   const activeWordRef = useRef<HTMLSpanElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const readModeRef = useRef<HTMLDivElement>(null);
-  const [viewMode, setViewMode] = useState<"play" | "read">("play");
+  const bilingualReadRef = useRef<HTMLDivElement>(null);
+  const sentenceReadRef = useRef<HTMLDivElement>(null);
+  const highlightContainerRef = htmlContent && isReadMode ? readModeRef : isBilingualMode ? bilingualReadRef : sentenceReadRef;
+  const displayedSentences = isTranslatedMode && hasTranslation ? translatedSentences : sentences;
+  const playModeSelectionSentences = isTranslatedMode && hasTranslation ? translatedSentences : sentences;
+  const shouldRenderHtmlReadMode = isReadMode && !!htmlContent && !isBilingualMode && !isTranslatedMode;
+  const shouldRenderBilingual = isBilingualMode && hasTranslation;
+  const shouldAutoScroll = isPlayMode || !canAnnotate;
+  const shouldScrollWords = isPlayMode && isPlaying;
+  const activeStatusLabel = isPlayMode ? (isPlaying ? "Reading Now" : "Paused") : "Reading";
+  const currentReadHighlightMode = isBilingualMode ? "bilingual" : isTranslatedMode ? "translated" : "original";
+
+  type ReadHighlightMode = typeof currentReadHighlightMode;
+
+  const getSentenceHighlights = useCallback(
+    (sentenceIndex: number, mode: ReadHighlightMode = currentReadHighlightMode) => {
+      return highlights.filter((h) => {
+        if (h.paragraph_index !== sentenceIndex || h.end_paragraph_index !== sentenceIndex) {
+          return false;
+        }
+        if (mode === "original") return !h.is_translated;
+        if (mode === "translated") return !!h.is_translated;
+        return true;
+      });
+    },
+    [highlights, currentReadHighlightMode]
+  );
 
   // Selection / highlight state
   const [selectionInfo, setSelectionInfo] = useState<SelectionInfo | null>(null);
@@ -103,12 +147,12 @@ export function Reader({
     }
   }, [sentences]);
 
-  // Scroll to active sentence
+  // Scroll to active sentence (play mode only)
   useEffect(() => {
-    if (activeRef.current && current > 0) {
+    if (activeRef.current && isPlayMode && current > 0) {
       activeRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [current]);
+  }, [current, isPlayMode]);
 
   // Scroll to active word
   useEffect(() => {
@@ -123,10 +167,6 @@ export function Reader({
     return htmlContent.replace(/src="\/images\//g, `src="${API_BASE}/images/`);
   }, [htmlContent]);
 
-  // Auto-switch to play mode when playing
-  useEffect(() => {
-    if (isPlaying) setViewMode("play");
-  }, [isPlaying]);
 
   // Scroll to highlight from notes panel
   useEffect(() => {
@@ -134,7 +174,7 @@ export function Reader({
     const { paragraphIndex, highlightId } = scrollToHighlight;
 
     const doScroll = () => {
-      if (viewMode === "play") {
+      if (isPlayMode) {
         const el = document.getElementById(`sentence-${paragraphIndex}`);
         if (el) {
           el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -142,8 +182,8 @@ export function Reader({
           el.style.boxShadow = "0 0 0 2px hsl(var(--primary))";
           setTimeout(() => { el.style.boxShadow = ""; }, 1400);
         }
-      } else if (readModeRef.current) {
-        const el = readModeRef.current.querySelector<HTMLElement>(`[data-highlight-id="${highlightId}"]`);
+      } else if (highlightContainerRef.current) {
+        const el = highlightContainerRef.current.querySelector<HTMLElement>(`[data-highlight-id="${highlightId}"]`);
         if (el) {
           el.scrollIntoView({ behavior: "smooth", block: "center" });
           el.style.transition = "outline 0.3s ease";
@@ -157,16 +197,16 @@ export function Reader({
     // Delay to let chapter content render first
     const timer = setTimeout(doScroll, 300);
     return () => clearTimeout(timer);
-  }, [scrollToHighlight]);
+  }, [scrollToHighlight, isPlayMode, highlightContainerRef]);
 
   // Apply DOM highlights in read mode
   useEffect(() => {
-    if (viewMode !== "read" || !readModeRef.current || !highlights.length) return;
-    applyDomHighlights(readModeRef.current, highlights, (highlight) => {
+    if (!canAnnotate || !highlightContainerRef.current || !highlights.length) return;
+    applyDomHighlights(highlightContainerRef.current, highlights, (highlight) => {
       setEditingHighlight(highlight);
       setAnnotationOpen(true);
     });
-  }, [viewMode, highlights, processedHtml]);
+  }, [canAnnotate, highlights, processedHtml, displayedSentences, highlightContainerRef]);
 
   // Handle pointer up for text selection
   const handlePointerUp = useCallback(
@@ -189,21 +229,19 @@ export function Reader({
       const range = sel.getRangeAt(0);
       const rect = range.getBoundingClientRect();
 
-      if (viewMode === "play") {
-        // Play mode: find paragraph by walking up DOM from anchor node
-        const info = getPlayModeSelection(range, selectedText, sentences);
+      if (isPlayMode) {
+        const info = getPlayModeSelection(range, selectedText, playModeSelectionSentences);
         if (info) {
           setSelectionInfo({ ...info, rect });
         }
       } else {
-        // Read mode: match selectedText in sentences
-        const info = getReadModeSelection(selectedText, sentences);
+        const info = getReadModeSelection(selectedText, displayedSentences);
         if (info) {
           setSelectionInfo({ ...info, rect });
         }
       }
     },
-    [viewMode, sentences]
+    [isPlayMode, playModeSelectionSentences, displayedSentences]
   );
 
   // Clear selection when clicking outside
@@ -231,6 +269,7 @@ export function Reader({
           end_offset: selectionInfo.endOffset,
           selected_text: selectionInfo.selectedText,
           color,
+          is_translated: isTranslatedMode,
         },
         {
           onSuccess: () => {
@@ -241,7 +280,7 @@ export function Reader({
         }
       );
     },
-    [selectionInfo, bookId, chapterHref, createHighlight]
+    [selectionInfo, bookId, chapterHref, createHighlight, isTranslatedMode]
   );
 
   const handleAnnotateOpen = useCallback(() => {
@@ -277,6 +316,7 @@ export function Reader({
             selected_text: pendingSelection.selectedText,
             color,
             note: note || undefined,
+            is_translated: isTranslatedMode,
           },
           {
             onSuccess: () => {
@@ -290,7 +330,7 @@ export function Reader({
         );
       }
     },
-    [editingHighlight, pendingSelection, bookId, chapterHref, updateHighlight, createHighlight]
+    [editingHighlight, pendingSelection, bookId, chapterHref, updateHighlight, createHighlight, isTranslatedMode]
   );
 
   const handleAnnotationDelete = useCallback(() => {
@@ -323,11 +363,8 @@ export function Reader({
   }
 
   // Render sentence with TTS word highlight and user highlight marks
-  const renderSentence = (text: string, sentenceIndex: number, isActive: boolean) => {
+  const renderSentence = (text: string, sentenceIndex: number, isActive: boolean, sentenceHighlights: Highlight[] = getSentenceHighlights(sentenceIndex)) => {
     // Get highlights for this sentence
-    const sentenceHighlights = highlights.filter(
-      (h) => h.paragraph_index === sentenceIndex && h.end_paragraph_index === sentenceIndex
-    );
 
     if (!isActive || !isPlaying || wordTimestamps.length === 0) {
       // No TTS highlight, only user highlight marks
@@ -396,40 +433,56 @@ export function Reader({
 
   return (
     <div className="h-full w-full flex flex-col bg-background overflow-hidden" onClick={handleContainerClick}>
-      {/* View toggle */}
-      {htmlContent && (
-        <div className="flex-shrink-0 flex items-center justify-center py-2 border-b border-border bg-card/50">
-          <div className="inline-flex items-center rounded-lg bg-muted p-1 text-muted-foreground">
+      {/* Unified mode selector */}
+      <div className="flex-shrink-0 flex flex-col items-center gap-2 py-3 border-b border-border bg-card/50">
+        <div className="inline-flex items-center rounded-lg bg-muted p-1 text-muted-foreground">
+          {([
+            ["play", "播放", Headphones],
+            ["read", "阅读", BookOpen],
+          ] as const).map(([mode, label, Icon]) => (
             <button
-              onClick={() => setViewMode("play")}
+              key={mode}
+              onClick={() => setInteractionMode(mode)}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all",
-                viewMode === "play" ? "bg-background text-foreground shadow-sm" : "hover:text-foreground"
+                interactionMode === mode ? "bg-background text-foreground shadow-sm" : "hover:text-foreground"
               )}
             >
-              <Headphones className="w-3.5 h-3.5" />
-              播放
+              <Icon className="w-3.5 h-3.5" />
+              {label}
             </button>
-            <button
-              onClick={() => setViewMode("read")}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all",
-                viewMode === "read" ? "bg-background text-foreground shadow-sm" : "hover:text-foreground"
-              )}
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              阅读
-            </button>
-          </div>
+          ))}
         </div>
-      )}
+
+        <div className="inline-flex items-center rounded-lg bg-muted p-1 text-muted-foreground">
+          {([
+            ["original", "原文"],
+            ["translated", "译文"],
+            ["bilingual", "原+译"],
+          ] as const)
+            .filter(([mode]) => availableContentModes.includes(mode))
+            .map(([mode, label]) => (
+              <button
+                key={mode}
+                onClick={() => setContentMode(mode)}
+                className={cn(
+                  "inline-flex items-center rounded-md px-3 py-1.5 text-xs font-medium transition-all",
+                  contentMode === mode ? "bg-background text-foreground shadow-sm" : "hover:text-foreground"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+        </div>
+      </div>
+
 
       <div className="flex-1 min-h-0 overflow-hidden">
         <ScrollArea className="h-full w-full px-4 md:px-12 py-8" ref={scrollRef}>
-          {viewMode === "read" && htmlContent ? (
+          {shouldRenderHtmlReadMode ? (
             <div
               ref={readModeRef}
-              onPointerUp={handlePointerUp}
+              onPointerUp={canAnnotate ? handlePointerUp : undefined}
               className="max-w-3xl mx-auto pb-20
                 [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:text-primary [&_h1]:my-6
                 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-primary [&_h2]:my-5
@@ -443,73 +496,124 @@ export function Reader({
                 [&_blockquote]:border-l-4 [&_blockquote]:border-primary/50 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:my-4"
               dangerouslySetInnerHTML={{ __html: processedHtml }}
             />
-          ) : readingDisplayMode === "split" && translatedSentences.length > 0 ? (
-            /* Split view: left original, right translated */
-            <div className="max-w-5xl mx-auto pb-20 grid grid-cols-2 gap-4" onPointerUp={handlePointerUp}>
+          ) : shouldRenderBilingual ? (
+            <div
+              ref={bilingualReadRef}
+              className="max-w-5xl mx-auto pb-20 grid grid-cols-1 md:grid-cols-2 gap-4"
+              onPointerUp={canAnnotate ? handlePointerUp : undefined}
+            >
               {sentences.map((text, index) => {
                 const isActive = index === current;
+                const isSentenceActive = isActive && isPlayMode;
                 const isPast = index < current;
                 const translated = translatedSentences[index] || "";
+                const originalIsReading = isActive && isPlaying && isPlayMode && playBothPhase === "original";
+                const translatedIsReading = isActive && isPlaying && isPlayMode && playBothPhase === "translated";
+                const translatedIsActive = isActive && (isTranslatedMode || translatedIsReading);
+                const originalHighlights = getSentenceHighlights(index, "original");
+                const translatedHighlights = getSentenceHighlights(index, "translated");
+
                 return (
                   <div key={index} className="contents">
                     <div
                       id={`sentence-${index}`}
-                      ref={isActive ? activeRef : null}
+                      ref={isSentenceActive ? activeRef : null}
                       className={cn(
                         "transition-all duration-500 ease-out p-4 rounded-sm border-l-2",
-                        isActive
+                        isSentenceActive
                           ? "bg-primary/5 border-primary text-foreground shadow-[0_0_20px_rgba(204,255,0,0.1)]"
-                          : isPast
+                          : isPlayMode && isPast
                             ? "border-transparent text-muted-foreground/40 blur-[0.5px]"
-                            : "border-transparent text-muted-foreground opacity-70"
+                            : isPlayMode
+                              ? "border-transparent text-muted-foreground opacity-70"
+                              : "border-transparent text-foreground"
                       )}
                     >
-                      <p className={cn("leading-relaxed font-serif text-lg", isActive ? "font-medium" : "font-normal")}>
-                        {renderSentence(text, index, isActive)}
+                      <p className={cn("leading-relaxed font-serif text-lg", isSentenceActive ? "font-medium" : "font-normal")}>
+                        {renderSentence(text, index, isSentenceActive && !translatedIsActive, originalHighlights)}
                       </p>
+                      {originalIsReading && (
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="h-[1px] w-4 bg-primary/50" />
+                          <span className="text-[10px] font-mono text-primary uppercase tracking-widest">Reading Now</span>
+                        </div>
+                      )}
                     </div>
+
                     <div
                       className={cn(
                         "transition-all duration-500 ease-out p-4 rounded-sm border-l-2",
-                        isActive
-                          ? "bg-primary/5 border-primary/50 text-foreground"
-                          : isPast
+                        isSentenceActive
+                          ? translatedIsActive
+                            ? "bg-primary/5 border-primary text-foreground shadow-[0_0_20px_rgba(204,255,0,0.1)]"
+                            : "bg-primary/5 border-primary/50 text-foreground"
+                          : isPlayMode && isPast
                             ? "border-transparent text-muted-foreground/40 blur-[0.5px]"
-                            : "border-transparent text-muted-foreground opacity-70"
+                            : isPlayMode
+                              ? "border-transparent text-muted-foreground opacity-70"
+                              : "border-transparent text-foreground"
                       )}
                     >
-                      <p className={cn("leading-relaxed font-serif text-lg", isActive ? "font-medium" : "font-normal")}>
-                        {translated || <span className="text-muted-foreground/30 italic">...</span>}
+                      <p className={cn("leading-relaxed font-serif text-lg", isSentenceActive ? "font-medium" : "font-normal")}>
+                        {translatedHighlights.length === 0
+                          ? translated || <span className="text-muted-foreground/30 italic">...</span>
+                          : renderTextWithHighlightMarks(translated, translatedHighlights, (h) => {
+                              setEditingHighlight(h);
+                              setAnnotationOpen(true);
+                            })}
                       </p>
+                      {translatedIsReading && (
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="h-[1px] w-4 bg-primary/50" />
+                          <span className="text-[10px] font-mono text-primary uppercase tracking-widest">Reading Now</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto space-y-6 pb-20" onPointerUp={handlePointerUp}>
-              {(readingDisplayMode === "translated" && translatedSentences.length > 0 ? translatedSentences : sentences).map((text, index) => {
+            <div
+              ref={sentenceReadRef}
+              className="max-w-3xl mx-auto space-y-6 pb-20"
+              onPointerUp={canAnnotate ? handlePointerUp : undefined}
+            >
+              {displayedSentences.map((text, index) => {
                 const isActive = index === current;
+                const isSentenceActive = isActive && isPlayMode;
                 const isPast = index < current;
-                const showBothTranslation = isActive && isPlaying && playbackMode === "play-both" && translatedSentences[index];
+                const sentenceHighlights = getSentenceHighlights(index);
+                const showTranslatedUnderlay =
+                  isActive && isPlaying && isPlayMode && isBilingualMode && translatedSentences[index];
+
                 return (
                   <div
                     key={index}
                     id={`sentence-${index}`}
-                    ref={isActive ? activeRef : null}
+                    ref={isSentenceActive ? activeRef : null}
                     className={cn(
                       "transition-all duration-500 ease-out p-4 rounded-sm border-l-2",
-                      isActive
+                      isSentenceActive
                         ? "bg-primary/5 border-primary text-foreground shadow-[0_0_20px_rgba(204,255,0,0.1)] scale-[1.02]"
-                        : isPast
+                        : isPlayMode && isPast
                           ? "border-transparent text-muted-foreground/40 blur-[0.5px]"
-                          : "border-transparent text-muted-foreground opacity-70"
+                          : isPlayMode
+                            ? "border-transparent text-muted-foreground opacity-70"
+                            : "border-transparent text-foreground"
                     )}
                   >
-                    <p className={cn("leading-relaxed font-serif text-lg md:text-xl", isActive ? "font-medium" : "font-normal")}>
-                      {renderSentence(text, index, isActive)}
+                    <p className={cn("leading-relaxed font-serif text-lg md:text-xl", isSentenceActive ? "font-medium" : "font-normal")}>
+                      {isTranslatedMode
+                        ? sentenceHighlights.length === 0
+                          ? <span>{text}</span>
+                          : renderTextWithHighlightMarks(text, sentenceHighlights, (h) => {
+                              setEditingHighlight(h);
+                              setAnnotationOpen(true);
+                            })
+                        : renderSentence(text, index, isSentenceActive, sentenceHighlights)}
                     </p>
-                    {showBothTranslation && (
+                    {showTranslatedUnderlay && (
                       <p className={cn(
                         "leading-relaxed font-serif text-base md:text-lg mt-2 pl-3 border-l-2",
                         playBothPhase === "translated" ? "border-primary/50 text-foreground" : "border-muted text-muted-foreground/70"
@@ -517,13 +621,13 @@ export function Reader({
                         {translatedSentences[index]}
                       </p>
                     )}
-                    {isActive && (
+                    {isSentenceActive && (
                       <div className="mt-2 flex items-center gap-2">
                         <span className="h-[1px] w-4 bg-primary/50" />
                         <span className="text-[10px] font-mono text-primary uppercase tracking-widest">
-                          {isPlaying ? "Reading Now" : "Paused"}
+                          {activeStatusLabel}
                         </span>
-                        {isPlaying && wordTimestamps.length > 0 && (
+                        {shouldScrollWords && wordTimestamps.length > 0 && !isTranslatedMode && (
                           <span className="text-[10px] font-mono text-muted-foreground">
                             {currentWordIndex + 1}/{wordTimestamps.length}
                           </span>
@@ -535,21 +639,22 @@ export function Reader({
               })}
             </div>
           )}
+
+          {canAnnotate ? (
+            <SelectionMenu
+              selection={selectionInfo}
+              onHighlight={handleHighlight}
+              onAnnotate={handleAnnotateOpen}
+              askAIEnabled={askAIEnabled}
+              onAskAI={() => {
+                if (selectionInfo) {
+                  onAskAI?.(selectionInfo.selectedText);
+                }
+              }}
+            />
+          ) : null}
         </ScrollArea>
       </div>
-
-      {/* Floating selection menu */}
-      <SelectionMenu
-        selection={selectionInfo}
-        onHighlight={handleHighlight}
-        onAnnotate={handleAnnotateOpen}
-        askAIEnabled={askAIEnabled}
-        onAskAI={() => {
-          if (selectionInfo) {
-            onAskAI?.(selectionInfo.selectedText);
-          }
-        }}
-      />
 
       {/* Annotation dialog */}
       <AnnotationDialog

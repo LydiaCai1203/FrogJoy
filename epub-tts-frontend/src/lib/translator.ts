@@ -1,4 +1,4 @@
-// 翻译模块 - 改为调用后端 /api/ai/translate 接口
+// 翻译模块 - 调用后端 /api/ai/translate 接口（SSE 流式）
 
 import { aiService } from "@/api";
 
@@ -18,28 +18,14 @@ class Translator {
     this.config = config;
   }
 
-  async translate(
+  async *translate(
     bookId: string,
     chapterHref: string,
-    text: string,
+    sentences: string[],
     targetLang = "Chinese",
-  ): Promise<string> {
-    if (!this.config.enabled) {
-      return text;
-    }
-
-    try {
-      const result = await aiService.translateChapter(
-        bookId,
-        chapterHref,
-        text,
-        targetLang,
-      );
-      return result;
-    } catch (error) {
-      console.error("Translation failed:", error);
-      throw error;
-    }
+  ): AsyncGenerator<{ progress: number; sentences: string[]; partialSentence?: string; index?: number; total?: number; done: boolean }> {
+    if (!this.config.enabled) return;
+    yield* aiService.translateChapter(bookId, chapterHref, sentences, targetLang);
   }
 }
 
