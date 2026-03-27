@@ -29,14 +29,14 @@ function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider defaultTheme="day">
-          <AuthProvider>
+        <AuthProvider>
+          <ThemeProvider>
             <TooltipProvider>
               <Toaster />
               <AppRouter />
             </TooltipProvider>
-          </AuthProvider>
-        </ThemeProvider>
+          </ThemeProvider>
+        </AuthProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );
