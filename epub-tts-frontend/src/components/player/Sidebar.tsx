@@ -2,11 +2,16 @@ import { useState, useMemo } from "react";
 import type { NavItem } from "epubjs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Download, Loader2, FileArchive, FileAudio, MessageSquare, List } from "lucide-react";
+import { Download, Loader2, FileArchive, FileAudio, MessageSquare, List, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { API_URL } from "@/config";
-import { useBookHighlights } from "@/hooks/use-highlights";
+import { useBookHighlights, useDeleteHighlight } from "@/hooks/use-highlights";
 import type { Highlight, HighlightColor } from "@/api/types";
 
 const API_BASE = API_URL;
@@ -38,6 +43,15 @@ export function Sidebar({
   const [downloadingType, setDownloadingType] = useState<"mp3" | "zip" | null>(null);
 
   const { data: allHighlights = [] } = useBookHighlights(bookId ?? null);
+  const deleteHighlight = useDeleteHighlight();
+
+  const handleClearAllNotes = async () => {
+    if (allHighlights.length === 0) return;
+    for (const h of allHighlights) {
+      await deleteHighlight.mutateAsync({ id: h.id, bookId: h.book_id, chapterHref: h.chapter_href });
+    }
+    toast.success("已清除所有笔记");
+  };
 
   // Group highlights by chapter_href, only include those with notes or any highlight
   const highlightsByChapter = useMemo(() => {
@@ -175,6 +189,19 @@ export function Sidebar({
               <span className="text-[10px] opacity-60">{allHighlights.length}</span>
             )}
           </button>
+          {tab === "notes" && allHighlights.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={handleClearAllNotes}
+                  className="px-1.5 py-1.5 hover:bg-muted/50 rounded transition-colors"
+                >
+                  <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>清空所有笔记</TooltipContent>
+            </Tooltip>
+          )}
         </div>
 
         {/* Download buttons (only in TOC tab) */}

@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Book, Trash2, BrainCircuit, Github, User, LogOut, BarChart2 } from "lucide-react";
 import { toast } from "sonner";
 import { API_BASE, API_URL } from "@/config";
-import { TasksPanel } from "@/components/player/TasksPanel";
 import { useAuth } from "@/contexts/AuthContext";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { RegisterForm } from "@/components/auth/RegisterForm";
+import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -151,7 +151,7 @@ export default function Home() {
           </div>
           
           <div className="flex items-center gap-2">
-            <TasksPanel />
+            <ThemeSwitcher />
             
             {!isAuthLoading && (
               <>

@@ -55,7 +55,6 @@ export function useDeleteHighlight() {
     mutationFn: ({ id, bookId, chapterHref }: { id: string; bookId: string; chapterHref: string }) =>
       highlightService.delete(id),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["highlights", variables.bookId, variables.chapterHref] });
       queryClient.invalidateQueries({ queryKey: ["highlights", variables.bookId] });
     },
   });
