@@ -266,6 +266,11 @@ export default function BookReader() {
   useEffect(() => {
     if (!chapterData) return;
 
+    // Cancel any ongoing translation when switching chapters
+    cancelTranslationRef.current = true;
+    setIsTranslating(false);
+    setTranslationProgress(0);
+
     setOriginalSentences(chapterData.sentences);
 
     // Check cache for existing translation
@@ -275,8 +280,6 @@ export default function BookReader() {
       setTranslatedSentences([]);
     }
     setTranslateTrigger(0);
-    setIsTranslating(false);
-    setTranslationProgress(0);
   }, [chapterData, translatedCache]);
 
   // Background translation — triggered by translateTrigger button
