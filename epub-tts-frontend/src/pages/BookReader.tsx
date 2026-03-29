@@ -298,6 +298,9 @@ export default function BookReader() {
     let cancelled = false;
 
     const runTranslation = async () => {
+      // Check if still on the same chapter before starting
+      if (cancelTranslationRef.current) return;
+
       cancelTranslationRef.current = false;
       setIsTranslating(true);
       setTranslationProgress(0);
@@ -342,7 +345,7 @@ export default function BookReader() {
     runTranslation();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [translateTrigger, chapterData, bookId, targetLang, sourceLang]);
+  }, [translateTrigger, bookId, targetLang, sourceLang]);
 
   // 时间更新回调
   const handleTimeUpdate = useCallback((time: number) => {
