@@ -722,6 +722,7 @@ export default function BookReader() {
                   });
                 } else {
                   // Trigger translation
+                  cancelTranslationRef.current = false;
                   setTranslateTrigger(t => t + 1);
                 }
               }}
