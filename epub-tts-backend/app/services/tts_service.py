@@ -7,6 +7,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime
 import asyncio
 from collections import OrderedDict
+from loguru import logger
 
 from app.config import settings
 
