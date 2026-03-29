@@ -333,10 +333,8 @@ export default function BookReader() {
           setTranslatedSentences([]);
         }
       } finally {
-        if (!cancelled && !cancelTranslationRef.current) {
-          setIsTranslating(false);
-          setTranslationProgress(0);
-        }
+        setIsTranslating(false);
+        setTranslationProgress(0);
       }
     };
 
