@@ -73,7 +73,7 @@ async def upload_book(
     except Exception as e:
         import traceback
         error_detail = f"Unexpected error: {str(e)}"
-        print(f"Upload error: {error_detail}")
+        logger.error(f"Upload error: {error_detail}")
         traceback.print_exc()
         if book_id:
             book_dir = settings.get_user_book_dir(user_id, book_id)
@@ -178,7 +178,7 @@ async def get_book(
             if first_chapter:
                 toc = [first_chapter]
         except Exception as e:
-            print(f"Warning: Failed to get first chapter: {e}")
+            logger.warning(f"Failed to get first chapter: {e}")
 
     return {
         "bookId": book_id,
@@ -217,32 +217,41 @@ async def delete_book(
     book_id: str,
     user_id: str = Depends(get_current_user)
 ):
+    logger.info(f"[DeleteBook] Request to delete book_id={book_id}, user_id={user_id}")
+
     with get_db() as db:
         try:
             book_row = db.query(Book).filter(Book.id == book_id).first()
 
             if not book_row:
+                logger.warning(f"[DeleteBook] Book not found: book_id={book_id}")
                 raise HTTPException(status_code=404, detail="Book not found")
 
             if book_row.user_id != user_id:
+                logger.warning(f"[DeleteBook] Access denied: book_id={book_id}, owner={book_row.user_id}, requester={user_id}")
                 raise HTTPException(status_code=403, detail="You can only delete your own books")
+
+            logger.info(f"[DeleteBook] Book found: title='{book_row.title}', owner={book_row.user_id}")
 
             # Remove the entire per-book directory
             book_dir = settings.get_user_book_dir(user_id, book_id)
             if os.path.isdir(book_dir):
-                logger.info(f"Deleting book directory: {book_dir}")
+                logger.info(f"[DeleteBook] Removing directory: {book_dir}")
                 shutil.rmtree(book_dir)
+                logger.info(f"[DeleteBook] Directory removed successfully")
+            else:
+                logger.warning(f"[DeleteBook] Directory not found: {book_dir}")
 
-            logger.info(f"Deleting book record from database: {book_id}")
+            logger.info(f"[DeleteBook] Deleting database record: book_id={book_id}")
             db.delete(book_row)
             db.commit()
-            logger.info(f"Book {book_id} deleted successfully")
+            logger.info(f"[DeleteBook] Successfully deleted book: book_id={book_id}, title='{book_row.title}'")
         except HTTPException:
             raise
         except Exception as e:
             db.rollback()
-            import traceback
-            logger.error(f"Error deleting book {book_id}: {str(e)}\n{traceback.format_exc()}")
+            logger.error(f"[DeleteBook] Failed to delete book: book_id={book_id}, error={type(e).__name__}: {str(e)}")
+            logger.exception("Full traceback:")
             raise HTTPException(status_code=500, detail=str(e))
 
     return {"message": "Book deleted", "bookId": book_id}

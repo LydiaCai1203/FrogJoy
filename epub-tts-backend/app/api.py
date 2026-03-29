@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List
+from loguru import logger
 from app.services.book_service import BookService
 from app.services.tts_service import TTSService, AudioCache
 from app.services.task_service import task_manager, TaskStatus
@@ -70,7 +71,7 @@ class BookDownloadZipRequest(BaseModel):
 # --- TTS Routes ---
 @router.post("/tts/speak")
 async def speak(request: TTSRequest, user_id: str = Depends(get_current_user)):
-    print(f"[API] TTS request: text='{request.text[:100] if request.text else 'EMPTY'}...', voice={request.voice}")
+    logger.info(f"[API] TTS request: text='{request.text[:100] if request.text else 'EMPTY'}...', voice={request.voice}")
 
     if not request.text or not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
@@ -213,7 +214,7 @@ async def download_chapter_audio(request: DownloadRequest, user_id: str = Depend
     if not sentences:
         raise HTTPException(status_code=400, detail="All sentences are empty")
 
-    print(f"[API] Download request: {len(sentences)} sentences, voice={request.voice}")
+    logger.info(f"[API] Download request: {len(sentences)} sentences, voice={request.voice}")
 
     try:
         full_text = "\n".join(sentences)
@@ -246,7 +247,7 @@ async def download_chapter_audio_smart(request: ChapterDownloadRequest, user_id:
     if not sentences:
         raise HTTPException(status_code=400, detail="Chapter has no content")
 
-    print(f"[API] Smart download: book={request.book_id}, chapter={request.chapter_href}, {len(sentences)} paragraphs")
+    logger.info(f"[API] Smart download: book={request.book_id}, chapter={request.chapter_href}, {len(sentences)} paragraphs")
 
     try:
         result = await TTSService.generate_chapter_audio_smart(
@@ -434,7 +435,7 @@ async def download_book_audio(book_id: str, request: BookDownloadRequest, user_i
                         audio_file.flush()
 
                     except Exception as e:
-                        print(f"[Task] Skip chapter {chapter_info['href']}: {e}")
+                        logger.warning(f"[Task] Skip chapter {chapter_info['href']}: {e}")
 
                     processed += 1
                     progress = 5 + int((processed / total_chapters) * 90)
@@ -611,7 +612,7 @@ async def download_book_audio_zip(book_id: str, request: BookDownloadZipRequest,
                         total_generated += result.get("generatedParagraphs", 0)
 
                 except Exception as e:
-                    print(f"[Task] Skip chapter {chapter_info['href']}: {e}")
+                    logger.info(f"[Task] Skip chapter {chapter_info['href']}: {e}")
 
                 processed += 1
                 progress = 5 + int((processed / total_chapters) * 80)

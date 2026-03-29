@@ -5,6 +5,7 @@ import shutil
 import json
 import ebooklib
 from ebooklib import epub
+from loguru import logger
 from bs4 import BeautifulSoup
 from fastapi import UploadFile, HTTPException
 from typing import List, Dict, Optional, Any
@@ -106,10 +107,10 @@ class BookService:
                             f.write(cover_item.get_content())
                         cover_url = f"/api/files/{user_id}/{book_id}/cover.jpg"
                     except Exception as e:
-                        print(f"Warning: Failed to extract cover image: {e}")
+                        logger.warning(f" Failed to extract cover image: {e}")
                         cover_url = None
             except Exception as e:
-                print(f"Warning: Error while searching for cover: {e}")
+                logger.warning(f" Error while searching for cover: {e}")
                 cover_url = None
 
             return {"metadata": metadata, "coverUrl": cover_url}
@@ -183,10 +184,10 @@ class BookService:
                             if parsed:
                                 toc.append(parsed)
                         except Exception as e:
-                            print(f"Warning: Failed to parse TOC item: {e}")
+                            logger.warning(f" Failed to parse TOC item: {e}")
                             continue
             except Exception as e:
-                print(f"Warning: Error processing TOC: {e}")
+                logger.warning(f" Error processing TOC: {e}")
 
             has_real_structure = False
             toc_item_count = 0
@@ -229,7 +230,7 @@ class BookService:
                             return text
 
                 except Exception as e:
-                    print(f"Warning: Failed to extract title from HTML: {e}")
+                    logger.warning(f" Failed to extract title from HTML: {e}")
 
                 return None
 
@@ -252,7 +253,7 @@ class BookService:
                                     item_content = item.get_content()
                                     label = extract_title_from_html(item_content)
                                 except Exception as e:
-                                    print(f"Warning: Failed to get content for title extraction: {e}")
+                                    logger.warning(f" Failed to get content for title extraction: {e}")
 
                                 if not label:
                                     # 优先用 guide 里记录的标题（如 "Table of Contents"）
@@ -275,7 +276,7 @@ class BookService:
                                 })
                                 chapter_num += 1
                     except Exception as e:
-                        print(f"Warning: Failed to get spine item {item_id}: {e}")
+                        logger.warning(f" Failed to get spine item {item_id}: {e}")
                         continue
 
                 if spine_items:
@@ -286,7 +287,7 @@ class BookService:
                     else:
                         print(f"Keeping TOC ({original_toc_count} items), spine has {len(spine_items)} items")
             except Exception as e:
-                print(f"Warning: Error getting items from spine: {e}")
+                logger.warning(f" Error getting items from spine: {e}")
 
             if not toc:
                 try:
@@ -305,7 +306,7 @@ class BookService:
                                         item_content = item.get_content()
                                         label = extract_title_from_html(item_content)
                                     except Exception as e:
-                                        print(f"Warning: Failed to get content for title extraction: {e}")
+                                        logger.warning(f" Failed to get content for title extraction: {e}")
 
                                     if not label:
                                         label = os.path.basename(item_name)
@@ -324,14 +325,14 @@ class BookService:
                                     })
                                     chapter_num += 1
                         except Exception as e:
-                            print(f"Warning: Failed to process item: {e}")
+                            logger.warning(f" Failed to process item: {e}")
                             continue
 
                     if all_items:
                         toc = all_items
                         print(f"Using all items fallback: {len(toc)} chapters")
                 except Exception as e:
-                    print(f"Warning: Last resort failed: {e}")
+                    logger.warning(f" Last resort failed: {e}")
 
             print(f"TOC parsed: {len(toc)} items")
             if toc:
@@ -448,7 +449,7 @@ class BookService:
                     image_mapping[original_name[4:]] = server_url
 
             except Exception as e:
-                print(f"[BookService] Failed to extract image {item.get_name()}: {e}")
+                logger.info(f"[BookService] Failed to extract image {item.get_name()}: {e}")
 
         with open(mapping_file, 'w', encoding='utf-8') as f:
             json.dump(image_mapping, f, ensure_ascii=False, indent=2)
