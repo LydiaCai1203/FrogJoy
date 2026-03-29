@@ -266,10 +266,10 @@ export default function BookReader() {
   useEffect(() => {
     if (!chapterData) return;
 
-    // Cancel any ongoing translation when switching chapters
-    cancelTranslationRef.current = true;
+    // Immediately reset translation state before canceling
     setIsTranslating(false);
     setTranslationProgress(0);
+    cancelTranslationRef.current = true;
 
     setOriginalSentences(chapterData.sentences);
 
