@@ -71,6 +71,7 @@ export default function BookReader() {
   const [targetLang, setTargetLang] = useState("Chinese");
   const [translateTrigger, setTranslateTrigger] = useState(0);
   const cancelTranslationRef = useRef(false);
+  const translatingChapterRef = useRef<string | null>(null);
 
   // Unified reader mode
   const [unifiedMode, setUnifiedMode] = useState<UnifiedMode>("play-original");
@@ -270,6 +271,7 @@ export default function BookReader() {
     setIsTranslating(false);
     setTranslationProgress(0);
     cancelTranslationRef.current = true;
+    translatingChapterRef.current = null;
 
     setOriginalSentences(chapterData.sentences);
 
@@ -301,6 +303,7 @@ export default function BookReader() {
       // Check if still on the same chapter before starting
       if (cancelTranslationRef.current) return;
 
+      translatingChapterRef.current = href;
       cancelTranslationRef.current = false;
       setIsTranslating(true);
       setTranslationProgress(0);
@@ -337,8 +340,11 @@ export default function BookReader() {
           setTranslatedSentences([]);
         }
       } finally {
-        setIsTranslating(false);
-        setTranslationProgress(0);
+        if (translatingChapterRef.current === href) {
+          setIsTranslating(false);
+          setTranslationProgress(0);
+          translatingChapterRef.current = null;
+        }
       }
     };
 
