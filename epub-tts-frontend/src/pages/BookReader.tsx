@@ -296,8 +296,9 @@ export default function BookReader() {
     }
 
     let cancelled = false;
-    cancelTranslationRef.current = false;
+
     const runTranslation = async () => {
+      cancelTranslationRef.current = false;
       setIsTranslating(true);
       setTranslationProgress(0);
       try {
