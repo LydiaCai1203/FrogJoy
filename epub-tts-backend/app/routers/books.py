@@ -2,6 +2,7 @@ import os
 import shutil
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from sqlalchemy import func, case
+from loguru import logger
 from app.middleware.auth import get_current_user, get_optional_user
 from app.models.database import get_db
 from app.models.models import Book
@@ -229,19 +230,19 @@ async def delete_book(
             # Remove the entire per-book directory
             book_dir = settings.get_user_book_dir(user_id, book_id)
             if os.path.isdir(book_dir):
+                logger.info(f"Deleting book directory: {book_dir}")
                 shutil.rmtree(book_dir)
 
-            # Remove images directory
-            images_dir = settings.get_images_dir(book_id)
-            if os.path.isdir(images_dir):
-                shutil.rmtree(images_dir)
-
+            logger.info(f"Deleting book record from database: {book_id}")
             db.delete(book_row)
             db.commit()
+            logger.info(f"Book {book_id} deleted successfully")
         except HTTPException:
             raise
-        except Exception:
+        except Exception as e:
             db.rollback()
-            raise
+            import traceback
+            logger.error(f"Error deleting book {book_id}: {str(e)}\n{traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     return {"message": "Book deleted", "bookId": book_id}
