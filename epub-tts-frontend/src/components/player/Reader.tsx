@@ -34,6 +34,7 @@ interface ReaderProps {
   askAIEnabled?: boolean;
   onAskAI?: (selectedText: string) => void;
   onUnifiedModeChange?: (mode: UnifiedMode) => void;
+  onSentenceChange?: (index: number) => void;
 }
 
 const HIGHLIGHT_COLOR_MAP: Record<HighlightColor, string> = {
@@ -68,13 +69,14 @@ export function Reader({
   askAIEnabled = false,
   onAskAI,
   onUnifiedModeChange,
+  onSentenceChange,
 }: ReaderProps) {
   const [interactionMode, contentMode] = unifiedMode.split("-") as [InteractionMode, ContentMode];
   const isPlayMode = interactionMode === "play";
   const isReadMode = interactionMode === "read";
   const isTranslatedMode = contentMode === "translated";
   const isBilingualMode = contentMode === "bilingual";
-  const canAnnotate = isReadMode;
+  const canAnnotate = true;
   const hasTranslation = translatedSentences.length > 0;
   const availableContentModes = (["original", "translated", "bilingual"] as const).filter(
     (mode) => mode === "original" || hasTranslation
@@ -102,6 +104,10 @@ export function Reader({
   const shouldScrollWords = isPlayMode && isPlaying;
   const activeStatusLabel = isPlayMode ? (isPlaying ? "Reading Now" : "Paused") : "Reading";
   const currentReadHighlightMode = isBilingualMode ? "bilingual" : isTranslatedMode ? "translated" : "original";
+
+  // Track last current value to detect manual scroll vs auto-scroll
+  const lastCurrentRef = useRef(current);
+  const isAutoScrollingRef = useRef(false);
 
   type ReadHighlightMode = typeof currentReadHighlightMode;
 
@@ -147,12 +153,86 @@ export function Reader({
     }
   }, [sentences]);
 
+  // Scroll to current sentence on initial load or when current changes in read mode
+  useEffect(() => {
+    if (current > 0 && sentences.length > 0) {
+      const el = document.getElementById(`sentence-${current}`);
+      if (el) {
+        setTimeout(() => {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 300);
+      }
+    }
+  }, [current, sentences.length]);
+
   // Scroll to active sentence (play mode only)
   useEffect(() => {
     if (activeRef.current && isPlayMode && current > 0) {
+      isAutoScrollingRef.current = true;
       activeRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      setTimeout(() => { isAutoScrollingRef.current = false; }, 500);
     }
   }, [current, isPlayMode]);
+
+  // Scroll event listener to detect visible sentence on manual scroll
+  useEffect(() => {
+    if (!scrollRef.current) return;
+
+    const viewport = scrollRef.current.querySelector('[data-slot="scroll-area-viewport"]');
+    if (!viewport) return;
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const findMostVisibleSentence = () => {
+      if (isAutoScrollingRef.current) return;
+      if (sentences.length === 0) return;
+
+      const viewportRect = viewport.getBoundingClientRect();
+      const viewportCenter = viewportRect.top + viewportRect.height / 2;
+
+      let closestIndex = 0;
+      let closestDistance = Infinity;
+
+      for (let i = 0; i < sentences.length; i++) {
+        const el = document.getElementById(`sentence-${i}`);
+        if (!el) continue;
+
+        const rect = el.getBoundingClientRect();
+        const elCenter = rect.top + rect.height / 2;
+        const distance = Math.abs(elCenter - viewportCenter);
+
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestIndex = i;
+        }
+      }
+
+      // 如果没有找到任何 sentence 元素（HTML 渲染模式），根据滚动比例估算
+      if (closestDistance === Infinity && sentences.length > 0) {
+        const scrollTop = (viewport as HTMLElement).scrollTop;
+        const scrollHeight = (viewport as HTMLElement).scrollHeight;
+        const progress = scrollTop / Math.max(scrollHeight - viewport.clientHeight, 1);
+        closestIndex = Math.floor(progress * sentences.length);
+      }
+
+      if (closestIndex !== lastCurrentRef.current) {
+        lastCurrentRef.current = closestIndex;
+        onSentenceChange?.(closestIndex);
+      }
+    };
+
+    const handleScroll = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(findMostVisibleSentence, 150);
+    };
+
+    viewport.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      viewport.removeEventListener("scroll", handleScroll);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
+  }, [sentences, onSentenceChange]);
 
   // Scroll to active word
   useEffect(() => {

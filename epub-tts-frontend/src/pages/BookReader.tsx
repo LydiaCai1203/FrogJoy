@@ -8,7 +8,7 @@ import { useChapter } from "@/hooks/use-book";
 import { useChapterHighlights } from "@/hooks/use-highlights";
 import { useReadingTracker } from "@/hooks/use-reading-stats";
 import { useReadingProgress, useSaveReadingProgress } from "@/hooks/use-reading-progress";
-import { ttsService, aiService } from "@/api";
+import { ttsService, aiService, readingProgressService } from "@/api";
 import type { NavItem, WordTimestamp } from "@/api/types";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
@@ -31,15 +31,11 @@ export default function BookReader() {
 
   // Reading tracking & progress
   useReadingTracker(bookId);
-  const { data: savedProgress, isFetching: isProgressFetching } = useReadingProgress(token ? bookId : undefined);
+  const { data: savedProgress } = useReadingProgress(token ? bookId : undefined);
   const saveProgressMutation = useSaveReadingProgress();
-  const resumeSentenceRef = useRef<number>(0);
   const progressRestoredRef = useRef(false);
-  // 跳过初始章节加载时的首次保存，避免覆盖已有进度
   const skipInitialSaveRef = useRef(true);
-  // 跟踪当前 displayedSentences 属于哪个 chapter href
-  // 用于确保 resumeSentenceRef 只在正确章节内容加载完成后才被消费
-  const displayedSentencesHrefRef = useRef<string | null>(null);
+  const pendingRestoreIndexRef = useRef<number | null>(null);
   
   // Book State
   const [metadata, setMetadata] = useState<any>({});
@@ -77,7 +73,7 @@ export default function BookReader() {
   const cancelTranslationRef = useRef(false);
 
   // Unified reader mode
-  const [unifiedMode, setUnifiedMode] = useState<UnifiedMode>("read-original");
+  const [unifiedMode, setUnifiedMode] = useState<UnifiedMode>("play-original");
   const [playBothPhase, setPlayBothPhase] = useState<"original" | "translated">("original");
 
   const [interactionMode, contentMode] = unifiedMode.split("-") as [InteractionMode, ContentMode];
@@ -135,13 +131,12 @@ export default function BookReader() {
         setMetadata(data.metadata);
         setToc(data.toc || []);
         if (data.coverUrl) setCover(`${API_BASE}${data.coverUrl}`);
-        
-        // 查找第一个有效的章节
+
+        // 不在这里设置章节，让进度恢复逻辑处理
+        // 如果没有保存的进度，进度恢复逻辑会设置第一章
         if (data.toc && data.toc.length > 0) {
           const firstChapter = data.toc.find((item: NavItem) => item.href && item.href.trim());
-          if (firstChapter) {
-            setCurrentChapterHref(firstChapter.href);
-          } else {
+          if (!firstChapter) {
             console.warn("No valid chapter href found in TOC:", data.toc);
             // 尝试从所有 TOC 项中找到第一个有效的
             const anyValidChapter = data.toc.find((item: NavItem) => {
@@ -195,33 +190,31 @@ export default function BookReader() {
       });
   }, [bookId, navigate]);
 
-  // 书籍加载完成后，检查是否有保存的进度，提示恢复
+  // 书籍加载完成后，自动恢复阅读进度
   useEffect(() => {
-    // 进度还在请求中、或 toc/章节未就绪、或已经弹过 toast，跳过
-    if (isProgressFetching || savedProgress === undefined || !toc.length || !currentChapterHref || progressRestoredRef.current) return;
+    if (!toc.length || progressRestoredRef.current) return;
 
-    // null：后端没有记录，不需要恢复
-    if (!savedProgress) return;
-
-    // 已在第一章第 0 句（即默认起点），无需提示
     const firstHref = toc.find((item: NavItem) => item.href && item.href.trim())?.href;
-    if (savedProgress.chapter_href === firstHref && savedProgress.paragraph_index === 0) return;
+    if (!firstHref) return;
 
-    // 自动恢复上次阅读进度
-    progressRestoredRef.current = true;
+    // 如果有保存的进度且不是默认起点，则恢复
+    if (savedProgress && (savedProgress.chapter_href !== firstHref || savedProgress.paragraph_index !== 0)) {
+      progressRestoredRef.current = true;
+      skipInitialSaveRef.current = false;
 
-    if (savedProgress.chapter_href !== currentChapterHref) {
-      // 跨章节恢复：先存 ref，等章节内容加载完后由 chapter reset effect 消费
-      resumeSentenceRef.current = savedProgress.paragraph_index;
-      setCurrentChapterHref(savedProgress.chapter_href);
-    } else if (displayedSentencesHrefRef.current === currentChapterHref) {
-      // 同章节且内容已加载：直接定位，不走 ref 机制
-      setCurrentSentenceIndex(savedProgress.paragraph_index);
+      // 如果章节相同，直接设置索引；否则通过 ref 传递
+      if (savedProgress.chapter_href === currentChapterHref) {
+        setCurrentSentenceIndex(savedProgress.paragraph_index);
+      } else {
+        pendingRestoreIndexRef.current = savedProgress.paragraph_index;
+        setCurrentChapterHref(savedProgress.chapter_href);
+      }
     } else {
-      // 同章节但内容尚未加载：走 ref 机制，等 displayedSentences 变化时消费
-      resumeSentenceRef.current = savedProgress.paragraph_index;
+      // 没有保存的进度，设置第一章
+      progressRestoredRef.current = true;
+      setCurrentChapterHref(firstHref);
     }
-  }, [isProgressFetching, savedProgress, toc, currentChapterHref]);
+  }, [savedProgress, toc, currentChapterHref]);
 
   // 防抖保存阅读进度（跳过初始章节加载，避免覆盖已有进度）
   useEffect(() => {
@@ -237,9 +230,18 @@ export default function BookReader() {
         chapterHref: currentChapterHref,
         paragraphIndex: currentSentenceIndex,
       });
-    }, 3000);
+    }, 800);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId, currentChapterHref, currentSentenceIndex, token]);
+
+  // 组件卸载时立即保存进度（用户离开页面时）
+  useEffect(() => {
+    const handleUnmount = () => {
+      if (!bookId || !currentChapterHref || !token || skipInitialSaveRef.current) return;
+      readingProgressService.save(bookId, currentChapterHref, currentSentenceIndex);
+    };
+    return handleUnmount;
   }, [bookId, currentChapterHref, currentSentenceIndex, token]);
 
   // Load AI preferences on mount
@@ -263,18 +265,17 @@ export default function BookReader() {
   // Set original sentences when chapter loads
   useEffect(() => {
     if (!chapterData) return;
+
     setOriginalSentences(chapterData.sentences);
-    displayedSentencesHrefRef.current = chapterData.href;
+
     // Check cache for existing translation
     if (translatedCache[chapterData.href]) {
       setTranslatedSentences(translatedCache[chapterData.href]);
     } else {
       setTranslatedSentences([]);
     }
-    // Reset translation trigger to prevent auto-translation on chapter change
     setTranslateTrigger(0);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chapterData]);
+  }, [chapterData, translatedCache]);
 
   // Background translation — triggered by translateTrigger button
   useEffect(() => {
@@ -541,38 +542,32 @@ export default function BookReader() {
 
   }, [isPlaying, isPlayMode, isBilingualMode, isTranslatedMode, currentSentenceIndex, originalSentences, translatedSentences, playBothPhase, voice, speed, emotion, bookId, currentChapterHref, prefetchAudio]);
 
-  // 章节切换时重置句子索引并预加载前几个段落
+  // 章节切换时重置状态并预加载
   useEffect(() => {
-    // 先停止当前播放
+    if (!currentChapterHref) return;
+
     ttsService.stop();
-    // 更新章节 ref
     currentChapterHrefRef.current = currentChapterHref;
 
-    let startAt = 0;
-    if (
-      displayedSentencesHrefRef.current === currentChapterHref &&
-      resumeSentenceRef.current > 0
-    ) {
-      startAt = resumeSentenceRef.current;
-      resumeSentenceRef.current = 0;
-    }
+    // 检查是否有待恢复的索引
+    const startIndex = pendingRestoreIndexRef.current ?? 0;
+    pendingRestoreIndexRef.current = null;
 
-    // 重置所有状态
-    setCurrentSentenceIndex(startAt);
+    setCurrentSentenceIndex(startIndex);
     setIsPlaying(false);
     playingSentenceRef.current = -1;
     setWordTimestamps([]);
     setCurrentTime(0);
     setPlayBothPhase("original");
 
-    // 章节切换时，预加载前3个段落
+    // 预加载前3个段落
     if (originalSentences.length > 0) {
       setTimeout(() => {
         prefetchAudio(0, Math.min(3, originalSentences.length));
       }, 100);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentChapterHref, originalSentences]);
+  }, [currentChapterHref]);
 
   const handleUnifiedModeChange = useCallback((nextMode: UnifiedMode) => {
     const [, nextContent] = nextMode.split("-") as [InteractionMode, ContentMode];
@@ -588,6 +583,10 @@ export default function BookReader() {
     }
 
     setUnifiedMode(nextMode);
+  }, []);
+
+  const handleSentenceChange = useCallback((index: number) => {
+    setCurrentSentenceIndex(index);
   }, []);
 
   const togglePlay = () => {
@@ -789,6 +788,7 @@ export default function BookReader() {
                 setAskAIOpen(true);
               }}
               onUnifiedModeChange={handleUnifiedModeChange}
+              onSentenceChange={handleSentenceChange}
             />
           )}
         </div>
@@ -842,6 +842,7 @@ export default function BookReader() {
                     setAskAIOpen(true);
                   }}
                   onUnifiedModeChange={handleUnifiedModeChange}
+                  onSentenceChange={handleSentenceChange}
                 />
               )}
             </div>

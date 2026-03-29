@@ -333,6 +333,7 @@ export class ReadingProgressService {
     const response = await fetch(`${API_URL}/reading-progress/${bookId}`, {
       headers: this.getAuthHeaders(),
     });
+    if (response.status === 404) return null;
     if (!response.ok) throw new Error("Failed to load progress");
     return response.json();
   }
