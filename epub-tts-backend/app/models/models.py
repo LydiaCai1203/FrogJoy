@@ -23,6 +23,7 @@ class User(Base):
     reading_progress = relationship("ReadingProgress", back_populates="user")
     ai_model_config = relationship("AIModelConfig", back_populates="user", uselist=False)
     ai_preferences = relationship("UserAIPreferences", back_populates="user", uselist=False)
+    theme_preferences = relationship("UserThemePreferences", back_populates="user", uselist=False)
     book_translations = relationship("BookTranslation", back_populates="user")
 
 
@@ -137,6 +138,16 @@ class UserAIPreferences(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     user = relationship("User")
+
+
+class UserThemePreferences(Base):
+    __tablename__ = "user_theme_preferences"
+
+    user_id = Column(String, ForeignKey("users.id"), primary_key=True)
+    theme = Column(String, default="eye-care")
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="theme_preferences")
 
 
 class BookTranslation(Base):

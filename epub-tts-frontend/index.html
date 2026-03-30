@@ -4,6 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>EPUB-TTS Frontend (Decoupled)</title>
+    <script>
+      (function() {
+        var valid = ['day', 'night', 'eye-care'];
+        var theme = 'eye-care';
+        if (localStorage.getItem('auth_token')) {
+          var loggedInTheme = localStorage.getItem('bookreader-theme-logged-in');
+          if (loggedInTheme && valid.indexOf(loggedInTheme) !== -1) {
+            theme = loggedInTheme;
+          }
+        } else {
+          var stored = localStorage.getItem('bookreader-theme-anonymous');
+          if (stored && valid.indexOf(stored) !== -1) {
+            theme = stored;
+          }
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
