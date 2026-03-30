@@ -27,3 +27,11 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     user_id: Optional[str] = None
+
+
+class ThemeIn(BaseModel):
+    theme: str
+
+
+class ThemeOut(BaseModel):
+    theme: str

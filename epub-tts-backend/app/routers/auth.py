@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from sqlalchemy.exc import IntegrityError
-from app.models.user import UserCreate, UserLogin, UserResponse, Token
+from app.models.user import UserCreate, UserLogin, UserResponse, Token, ThemeIn, ThemeOut
 from app.models.database import get_db
-from app.models.models import User
+from app.models.models import User, UserThemePreferences
 from app.services.auth_service import AuthService
 from app.middleware.auth import get_current_user
 
@@ -69,3 +69,26 @@ async def get_me(user_id: str = Depends(get_current_user)):
             email=user.email,
             created_at=user.created_at.isoformat() if user.created_at else None,
         )
+
+@router.get("/theme", response_model=ThemeOut)
+async def get_theme(user_id: str = Depends(get_current_user)):
+    with get_db() as db:
+        row = db.query(UserThemePreferences).filter(UserThemePreferences.user_id == user_id).first()
+    if not row:
+        return ThemeOut(theme="eye-care")
+    return ThemeOut(theme=row.theme)
+
+@router.put("/theme", response_model=ThemeOut)
+async def save_theme(theme_data: ThemeIn, user_id: str = Depends(get_current_user)):
+    valid_themes = ["day", "night", "eye-care"]
+    if theme_data.theme not in valid_themes:
+        raise HTTPException(status_code=400, detail="Invalid theme")
+    with get_db() as db:
+        existing = db.query(UserThemePreferences).filter(UserThemePreferences.user_id == user_id).first()
+        if existing:
+            existing.theme = theme_data.theme
+        else:
+            existing = UserThemePreferences(user_id=user_id, theme=theme_data.theme)
+            db.add(existing)
+        db.commit()
+    return ThemeOut(theme=theme_data.theme)

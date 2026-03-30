@@ -73,6 +73,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("auth_token", data.access_token);
     setUser({ id: "", email });
     await fetchUser(data.access_token);
+
+    const themeRes = await fetch(`${API_URL}/auth/theme`, {
+      headers: { Authorization: `Bearer ${data.access_token}` },
+    });
+    if (themeRes.ok) {
+      const themeData = await themeRes.json();
+      localStorage.setItem("bookreader-theme-logged-in", themeData.theme);
+    }
   };
 
   const register = async (email: string, password: string) => {
