@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useLocation } from "wouter";
+import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/player/Sidebar";
 import { Reader } from "@/components/player/Reader";
 import type { ScrollToHighlight } from "@/components/player/Reader";
@@ -12,7 +13,7 @@ import { ttsService, aiService, readingProgressService } from "@/api";
 import type { NavItem, WordTimestamp } from "@/api/types";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
-import { Loader2, Menu, BrainCircuit, ArrowLeft, Languages } from "lucide-react";
+import { Loader2, Menu, BrainCircuit, ArrowLeft, Languages, PanelLeftClose, PanelLeft, Library } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -94,6 +95,19 @@ export default function BookReader() {
 
   // 移动端侧边栏状态
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // 桌面端目录折叠状态
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // 沉浸模式状态
+  const [immersiveMode, setImmersiveMode] = useState(false);
+
+  // 沉浸模式时关闭移动端菜单
+  useEffect(() => {
+    if (immersiveMode) {
+      setMobileMenuOpen(false);
+    }
+  }, [immersiveMode]);
 
   const isMobile = useIsMobile();
 
@@ -659,14 +673,22 @@ export default function BookReader() {
       bookId={bookId}
       selectedVoice={voice || undefined}
       speed={speed}
+      collapsible={true}
+      onCollapse={() => setSidebarCollapsed(true)}
     />
   );
 
   return (
     <>
-    <div className="h-[100dvh] flex flex-col bg-background overflow-hidden pb-[72px]">
+    <div className={cn(
+      "h-[100dvh] flex flex-col bg-background overflow-hidden",
+      immersiveMode ? "" : "pb-[72px]"
+    )}>
       {/* Header */}
-      <header className="border-b border-border bg-card/80 backdrop-blur-md py-2 px-4 flex items-center justify-between shrink-0">
+      <header className={cn(
+        "border-b border-border bg-card/80 backdrop-blur-md py-2 px-4 flex items-center justify-between shrink-0 transition-all duration-300",
+        immersiveMode ? "opacity-0 pointer-events-none translate-y-[-100%] absolute inset-x-0 z-30" : "relative"
+      )}>
         <div className="flex items-center gap-3">
           {/* 返回按钮 */}
           <Button
@@ -754,6 +776,15 @@ export default function BookReader() {
             </button>
           )}
           <ThemeSwitcher />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setImmersiveMode(true)}
+            className="h-8 w-8"
+            title="进入沉浸模式"
+          >
+            <Library className="w-4 h-4" />
+          </Button>
         </div>
       </header>
 
@@ -803,17 +834,34 @@ export default function BookReader() {
               }}
               onUnifiedModeChange={handleUnifiedModeChange}
               onSentenceChange={handleSentenceChange}
+              onDoubleClick={() => setImmersiveMode((v) => !v)}
+              immersiveMode={immersiveMode}
             />
           )}
         </div>
       ) : (
         <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
-          <ResizablePanel defaultSize={25} minSize={15} maxSize={40}>
-            {sidebarContent}
-          </ResizablePanel>
-          <ResizableHandle withHandle className="bg-border hover:bg-primary/50 transition-colors" />
-          <ResizablePanel defaultSize={75}>
-            <div className="h-full flex flex-col overflow-hidden">
+          {!sidebarCollapsed && !immersiveMode && (
+            <>
+              <ResizablePanel defaultSize={25} minSize={15} maxSize={40}>
+                {sidebarContent}
+              </ResizablePanel>
+              <ResizableHandle withHandle className="bg-border hover:bg-primary/50 transition-colors" />
+            </>
+          )}
+          <ResizablePanel defaultSize={(sidebarCollapsed || immersiveMode) ? 100 : 75}>
+            <div className="h-full flex flex-col overflow-hidden relative">
+              {sidebarCollapsed && !immersiveMode && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSidebarCollapsed(false)}
+                  className="absolute left-0 top-1/2 -translate-y-1/2 z-20 h-12 w-6 rounded-none rounded-r-md bg-card/80 backdrop-blur-md border border-l-0 border-border hover:bg-primary/10"
+                  title="展开目录"
+                >
+                  <PanelLeft className="w-4 h-4" />
+                </Button>
+              )}
               {isChapterLoading ? (
                 <div className="flex-1 flex items-center justify-center">
                   <div className="flex flex-col items-center gap-4 animate-pulse">
@@ -857,6 +905,8 @@ export default function BookReader() {
                   }}
                   onUnifiedModeChange={handleUnifiedModeChange}
                   onSentenceChange={handleSentenceChange}
+                  onDoubleClick={() => setImmersiveMode((v) => !v)}
+                  immersiveMode={immersiveMode}
                 />
               )}
             </div>
@@ -865,29 +915,32 @@ export default function BookReader() {
       )}
     </div>
 
-    <Controls
-      unifiedMode={effectiveUnifiedMode}
-      isPlaying={isPlaying}
-      onPlayPause={togglePlay}
-      onNext={handleNext}
-      onPrev={handlePrev}
-      onSeek={setCurrentSentenceIndex}
-      current={currentSentenceIndex}
-      total={originalSentences.length}
-      progress={originalSentences.length > 0 ? (currentSentenceIndex / originalSentences.length) * 100 : 0}
+    {/* 底部控制栏 */}
+    {!immersiveMode && (
+      <Controls
+        unifiedMode={effectiveUnifiedMode}
+        isPlaying={isPlaying}
+        onPlayPause={togglePlay}
+        onNext={handleNext}
+        onPrev={handlePrev}
+        onSeek={setCurrentSentenceIndex}
+        current={currentSentenceIndex}
+        total={originalSentences.length}
+        progress={originalSentences.length > 0 ? (currentSentenceIndex / originalSentences.length) * 100 : 0}
 
-      selectedVoice={voice}
-      onVoiceChange={setVoice}
-      emotion={emotion}
-      onEmotionChange={(e) => setEmotion(e)}
-      speed={speed}
-      onSpeedChange={setSpeed}
+        selectedVoice={voice}
+        onVoiceChange={setVoice}
+        emotion={emotion}
+        onEmotionChange={(e) => setEmotion(e)}
+        speed={speed}
+        onSpeedChange={setSpeed}
 
-      bookId={bookId}
-      chapterHref={currentChapterHref}
-      sentences={originalSentences}
-      chapterTitle={metadata?.title || "chapter"}
-    />
+        bookId={bookId}
+        chapterHref={currentChapterHref}
+        sentences={originalSentences}
+        chapterTitle={metadata?.title || "chapter"}
+      />
+    )}
 
     <AskAIDialog
       open={askAIOpen}

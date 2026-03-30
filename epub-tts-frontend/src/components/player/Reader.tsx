@@ -35,6 +35,8 @@ interface ReaderProps {
   onAskAI?: (selectedText: string) => void;
   onUnifiedModeChange?: (mode: UnifiedMode) => void;
   onSentenceChange?: (index: number) => void;
+  onDoubleClick?: () => void;
+  immersiveMode?: boolean;
 }
 
 const HIGHLIGHT_COLOR_MAP: Record<HighlightColor, string> = {
@@ -70,6 +72,8 @@ export function Reader({
   onAskAI,
   onUnifiedModeChange,
   onSentenceChange,
+  onDoubleClick,
+  immersiveMode = false,
 }: ReaderProps) {
   const [interactionMode, contentMode] = unifiedMode.split("-") as [InteractionMode, ContentMode];
   const isPlayMode = interactionMode === "play";
@@ -512,49 +516,51 @@ export function Reader({
   };
 
   return (
-    <div className="h-full w-full flex flex-col bg-background overflow-hidden" onClick={handleContainerClick}>
+    <div className="h-full w-full flex flex-col bg-background overflow-hidden" onClick={handleContainerClick} onDoubleClick={onDoubleClick}>
       {/* Unified mode selector */}
-      <div className="flex-shrink-0 flex flex-col items-center gap-2 py-3 border-b border-border bg-card/50">
-        <div className="inline-flex items-center rounded-lg bg-muted p-1 text-muted-foreground">
-          {([
-            ["play", "播放", Headphones],
-            ["read", "阅读", BookOpen],
-          ] as const).map(([mode, label, Icon]) => (
-            <button
-              key={mode}
-              onClick={() => setInteractionMode(mode)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all",
-                interactionMode === mode ? "bg-background text-foreground shadow-sm" : "hover:text-foreground"
-              )}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <div className="inline-flex items-center rounded-lg bg-muted p-1 text-muted-foreground">
-          {([
-            ["original", "原文"],
-            ["translated", "译文"],
-            ["bilingual", "原+译"],
-          ] as const)
-            .filter(([mode]) => availableContentModes.includes(mode))
-            .map(([mode, label]) => (
+      {!immersiveMode && (
+        <div className="flex-shrink-0 flex flex-col items-center gap-2 py-3 border-b border-border bg-card/50">
+          <div className="inline-flex items-center rounded-lg bg-muted p-1 text-muted-foreground">
+            {([
+              ["play", "播放", Headphones],
+              ["read", "阅读", BookOpen],
+            ] as const).map(([mode, label, Icon]) => (
               <button
                 key={mode}
-                onClick={() => setContentMode(mode)}
+                onClick={() => setInteractionMode(mode)}
                 className={cn(
-                  "inline-flex items-center rounded-md px-3 py-1.5 text-xs font-medium transition-all",
-                  contentMode === mode ? "bg-background text-foreground shadow-sm" : "hover:text-foreground"
+                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all",
+                  interactionMode === mode ? "bg-background text-foreground shadow-sm" : "hover:text-foreground"
                 )}
               >
+                <Icon className="w-3.5 h-3.5" />
                 {label}
               </button>
             ))}
+          </div>
+
+          <div className="inline-flex items-center rounded-lg bg-muted p-1 text-muted-foreground">
+            {([
+              ["original", "原文"],
+              ["translated", "译文"],
+              ["bilingual", "原+译"],
+            ] as const)
+              .filter(([mode]) => availableContentModes.includes(mode))
+              .map(([mode, label]) => (
+                <button
+                  key={mode}
+                  onClick={() => setContentMode(mode)}
+                  className={cn(
+                    "inline-flex items-center rounded-md px-3 py-1.5 text-xs font-medium transition-all",
+                    contentMode === mode ? "bg-background text-foreground shadow-sm" : "hover:text-foreground"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+          </div>
         </div>
-      </div>
+      )}
 
 
       <div className="flex-1 min-h-0 overflow-hidden">
