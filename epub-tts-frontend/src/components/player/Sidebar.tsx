@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import type { NavItem } from "epubjs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Download, Loader2, FileArchive, FileAudio, MessageSquare, List, Trash2 } from "lucide-react";
+import { Download, Loader2, FileArchive, FileAudio, MessageSquare, List, Trash2, PanelLeftClose, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -33,11 +33,16 @@ interface SidebarProps {
   bookId?: string;
   selectedVoice?: string;
   speed?: number;
+  onCollapse?: () => void;
+  collapsible?: boolean;
+  onClose?: () => void;
+  closable?: boolean;
 }
 
 export function Sidebar({
   toc, currentChapterHref, onSelectChapter, onGoToHighlight, coverUrl, title,
-  bookId, selectedVoice = "zh-CN-XiaoxiaoNeural", speed = 1.0
+  bookId, selectedVoice = "zh-CN-XiaoxiaoNeural", speed = 1.0,
+  onCollapse, collapsible = false, onClose, closable = false
 }: SidebarProps) {
   const [tab, setTab] = useState<"toc" | "notes">("toc");
   const [downloadingType, setDownloadingType] = useState<"mp3" | "zip" | null>(null);
@@ -138,25 +143,53 @@ export function Sidebar({
     <div className="h-full flex flex-col bg-card/50 border-r border-border backdrop-blur-md">
       {/* Book info header */}
       <div className="p-4 border-b border-border bg-card/80">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-12 h-16 bg-muted shrink-0 overflow-hidden border border-border">
-            {coverUrl ? (
-              <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5">
-                <span className="text-lg font-bold text-primary/60">{title?.charAt(0)}</span>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-16 bg-muted shrink-0 overflow-hidden border border-border">
+              {coverUrl ? (
+                <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5">
+                  <span className="text-lg font-bold text-primary/60">{title?.charAt(0)}</span>
+                </div>
+              )}
+            </div>
+            <div className="overflow-hidden">
+              <h2 className="font-display font-bold text-sm leading-tight line-clamp-2 uppercase tracking-wide">
+                {title || "Unknown Book"}
+              </h2>
+              <div className="flex items-center gap-1 mt-1">
+                <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                <span className="text-[10px] font-mono text-primary">ONLINE</span>
               </div>
-            )}
-          </div>
-          <div className="overflow-hidden">
-            <h2 className="font-display font-bold text-sm leading-tight line-clamp-2 uppercase tracking-wide">
-              {title || "Unknown Book"}
-            </h2>
-            <div className="flex items-center gap-1 mt-1">
-              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-              <span className="text-[10px] font-mono text-primary">ONLINE</span>
             </div>
           </div>
+          {(collapsible && onCollapse) || (closable && onClose) ? (
+            <div className="flex gap-1 shrink-0">
+              {closable && onClose && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onClose}
+                  className="h-8 w-8 md:hidden"
+                  title="关闭目录"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              )}
+              {collapsible && onCollapse && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onCollapse}
+                  className="h-8 w-8 hidden md:flex"
+                  title="折叠目录"
+                >
+                  <PanelLeftClose className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+          ) : null}
         </div>
 
         {/* Tab switcher */}
