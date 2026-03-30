@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -52,6 +53,11 @@ export function AIConfigPanel() {
   const [enabledTranslation, setEnabledTranslation] = useState(false);
   const [sourceLang, setSourceLang] = useState("Auto");
   const [targetLang, setTargetLang] = useState("Chinese");
+  const [translationPrompt, setTranslationPrompt] = useState("");
+  const [translationExpanded, setTranslationExpanded] = useState(false);
+
+  const DEFAULT_TRANSLATION_PROMPT =
+    "You are a professional translator. Translate the following text to {target_lang}. Keep the original meaning, tone, and formatting. Only output the translation, no explanations or commentary.";
 
   // Load saved config when dialog opens
   useEffect(() => {
@@ -67,6 +73,7 @@ export function AIConfigPanel() {
     setEnabledTranslation(prefs.enabledTranslation);
     setSourceLang(prefs.sourceLang || "Auto");
     setTargetLang(prefs.targetLang || "Chinese");
+    setTranslationPrompt(prefs.translationPrompt || "");
   }, [prefs]);
 
   // Fetch model list — prefer already-selected model, fallback to first from API or savedModel
@@ -164,6 +171,7 @@ export function AIConfigPanel() {
         translation_mode: "current-page",
         source_lang: sourceLang,
         target_lang: targetLang,
+        translation_prompt: translationPrompt || null,
       });
       toast.success("AI 配置已保存");
       setApiKey("");
@@ -339,36 +347,80 @@ export function AIConfigPanel() {
 
                   {enabledTranslation && (
                     <div className="pl-3 border-l-2 border-primary/20 space-y-2">
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">源语言 (FROM)</Label>
-                        <Select value={sourceLang} onValueChange={setSourceLang}>
-                          <SelectTrigger className="text-xs h-8">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {LANGUAGE_OPTIONS.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">目标语言 (TO)</Label>
-                        <Select value={targetLang} onValueChange={setTargetLang}>
-                          <SelectTrigger className="text-xs h-8">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {LANGUAGE_OPTIONS.filter((o) => o.value !== "Auto").map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      {!translationExpanded ? (
+                        <button
+                          type="button"
+                          onClick={() => setTranslationExpanded(true)}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          展开翻译设置
+                        </button>
+                      ) : (
+                        <>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">源语言 (FROM)</Label>
+                            <Select value={sourceLang} onValueChange={setSourceLang}>
+                              <SelectTrigger className="text-xs h-8">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {LANGUAGE_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">目标语言 (TO)</Label>
+                            <Select value={targetLang} onValueChange={setTargetLang}>
+                              <SelectTrigger className="text-xs h-8">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {LANGUAGE_OPTIONS.filter((o) => o.value !== "Auto").map((opt) => (
+                                  <SelectItem key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs text-muted-foreground">翻译 Prompt</Label>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setTranslationPrompt(
+                                    DEFAULT_TRANSLATION_PROMPT.replace("{target_lang}", targetLang)
+                                  )
+                                }
+                                className="text-[10px] text-primary hover:underline"
+                              >
+                                恢复默认
+                              </button>
+                            </div>
+                            <Textarea
+                              value={translationPrompt}
+                              onChange={(e) => setTranslationPrompt(e.target.value)}
+                              placeholder={DEFAULT_TRANSLATION_PROMPT.replace("{target_lang}", targetLang)}
+                              className="text-xs min-h-[80px] resize-y"
+                            />
+                            <p className="text-[10px] text-muted-foreground">
+                              设置翻译规则，如专业术语保留、语气风格等。如不设置，将使用默认 prompt。
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setTranslationExpanded(false)}
+                            className="text-xs text-muted-foreground hover:underline"
+                          >
+                            收起
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

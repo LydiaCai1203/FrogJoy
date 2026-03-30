@@ -41,6 +41,7 @@ export interface UserAIPreferences {
   translation_mode: TranslationMode;
   source_lang: string;
   target_lang: string;
+  translation_prompt?: string | null;
 }
 
 // 多轮对话消息
