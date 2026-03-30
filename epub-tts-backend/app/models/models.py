@@ -146,6 +146,7 @@ class UserThemePreferences(Base):
 
     user_id = Column(String, ForeignKey("users.id"), primary_key=True)
     theme = Column(String, default="eye-care")
+    font_size = Column(Integer, default=18)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     user = relationship("User", back_populates="theme_preferences")

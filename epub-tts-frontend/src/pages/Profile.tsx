@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, BrainCircuit, Book, Clock, Flame, BookOpen } from "lucide-react";
 import { API_BASE } from "@/config";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
+import { FontSizeSwitcher } from "@/components/FontSizeSwitcher";
 import { TasksPanel } from "@/components/player/TasksPanel";
 
 function formatDuration(seconds: number): string {
@@ -49,6 +50,7 @@ export default function Profile() {
           <BrainCircuit className="w-6 h-6 text-primary" />
           <span className="font-display text-lg font-bold tracking-tight">个人中心</span>
           <div className="flex-1" />
+          <FontSizeSwitcher />
           <ThemeSwitcher />
           <TasksPanel />
         </div>

@@ -9,6 +9,10 @@ import { SelectionMenu, type SelectionInfo } from "@/components/highlight/Select
 import { AnnotationDialog } from "@/components/highlight/AnnotationDialog";
 import { useCreateHighlight, useUpdateHighlight, useDeleteHighlight } from "@/hooks/use-highlights";
 import { toast } from "sonner";
+import { useSentenceOffsets } from "@/hooks/useSentenceOffsets";
+import { useBilingualOffsets } from "@/hooks/useBilingualOffsets";
+import { useLineLayout } from "@/hooks/useLineLayout";
+import { KaraokeLines } from "@/components/player/KaraokeLines";
 
 export interface ScrollToHighlight {
   paragraphIndex: number;
@@ -113,6 +117,57 @@ export function Reader({
   const lastCurrentRef = useRef(current);
   const isAutoScrollingRef = useRef(false);
 
+  const { offsets: singleOffsets, findVisibleIndex, disabled: offsetsDisabled } = useSentenceOffsets(
+    displayedSentences,
+    sentenceReadRef,
+    { disabled: shouldRenderHtmlReadMode || shouldRenderBilingual }
+  );
+
+  const { offsets: bilingualOffsets, findVisibleIndex: findBilingualIndex, disabled: bilingualOffsetsDisabled } = useBilingualOffsets(
+    sentences,
+    translatedSentences,
+    bilingualReadRef,
+    { disabled: !shouldRenderBilingual }
+  );
+
+  // Karaoke line layout: split the active sentence into rendered lines
+  const activeText = isPlayMode && isPlaying ? displayedSentences[current] ?? '' : ''
+  const karaokeLines = useLineLayout(activeText, sentenceReadRef, {
+    disabled: !isPlayMode || !isPlaying || wordTimestamps.length === 0
+      || shouldRenderHtmlReadMode || shouldRenderBilingual || isTranslatedMode
+  })
+
+  // Keep a ref to whichever offsets are active so scrollToSentence stays stable
+  const activeOffsetsRef = useRef<number[]>([0]);
+  useEffect(() => {
+    if (!offsetsDisabled) {
+      activeOffsetsRef.current = singleOffsets;
+    } else if (!bilingualOffsetsDisabled) {
+      activeOffsetsRef.current = bilingualOffsets;
+    } else {
+      activeOffsetsRef.current = [0];
+    }
+  }, [singleOffsets, bilingualOffsets, offsetsDisabled, bilingualOffsetsDisabled]);
+
+  // Computed scroll: use pretext offsets to calculate target scrollTop (zero DOM queries)
+  // Falls back to scrollIntoView when offsets are unavailable (HTML read mode)
+  const scrollToSentence = useCallback((index: number, behavior: ScrollBehavior = "smooth") => {
+    const viewport = scrollRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement | null;
+    if (!viewport) return;
+
+    const offsets = activeOffsetsRef.current;
+    if (offsets.length > index + 1) {
+      const itemTop = offsets[index];
+      const itemHeight = offsets[index + 1] - offsets[index];
+      const targetTop = itemTop - viewport.clientHeight / 2 + itemHeight / 2;
+      viewport.scrollTo({ top: Math.max(0, targetTop), behavior });
+    } else {
+      // Fallback for HTML mode or when offsets haven't computed yet
+      const el = document.getElementById(`sentence-${index}`);
+      el?.scrollIntoView({ behavior, block: "center" });
+    }
+  }, []);
+
   type ReadHighlightMode = typeof currentReadHighlightMode;
 
   const getSentenceHighlights = useCallback(
@@ -160,29 +215,26 @@ export function Reader({
   // Scroll to current sentence on initial load or when current changes in read mode
   useEffect(() => {
     if (current > 0 && sentences.length > 0) {
-      const el = document.getElementById(`sentence-${current}`);
-      if (el) {
-        setTimeout(() => {
-          el.scrollIntoView({ behavior: "smooth", block: "center" });
-        }, 300);
-      }
+      setTimeout(() => {
+        scrollToSentence(current);
+      }, 300);
     }
-  }, [current, sentences.length]);
+  }, [current, sentences.length, scrollToSentence]);
 
   // Scroll to active sentence (play mode only)
   useEffect(() => {
-    if (activeRef.current && isPlayMode && current > 0) {
+    if (isPlayMode && current > 0) {
       isAutoScrollingRef.current = true;
-      activeRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      scrollToSentence(current);
       setTimeout(() => { isAutoScrollingRef.current = false; }, 500);
     }
-  }, [current, isPlayMode]);
+  }, [current, isPlayMode, scrollToSentence]);
 
   // Scroll event listener to detect visible sentence on manual scroll
   useEffect(() => {
     if (!scrollRef.current) return;
 
-    const viewport = scrollRef.current.querySelector('[data-slot="scroll-area-viewport"]');
+    const viewport = scrollRef.current.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement | null;
     if (!viewport) return;
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -191,33 +243,47 @@ export function Reader({
       if (isAutoScrollingRef.current) return;
       if (sentences.length === 0) return;
 
-      const viewportRect = viewport.getBoundingClientRect();
-      const viewportCenter = viewportRect.top + viewportRect.height / 2;
+      let closestIndex: number;
 
-      let closestIndex = 0;
-      let closestDistance = Infinity;
+      if (!offsetsDisabled) {
+        // ✅ pretext binary search — zero DOM queries
+        closestIndex = findVisibleIndex(viewport.scrollTop, viewport.clientHeight);
+      } else if (!bilingualOffsetsDisabled) {
+        // ✅ bilingual pretext binary search — zero DOM queries
+        closestIndex = findBilingualIndex(viewport.scrollTop, viewport.clientHeight);
+      } else if (shouldRenderHtmlReadMode) {
+        // HTML render mode — scroll ratio estimation (original logic)
+        const scrollTop = viewport.scrollTop;
+        const scrollHeight = viewport.scrollHeight;
+        const progress = scrollTop / Math.max(scrollHeight - viewport.clientHeight, 1);
+        closestIndex = Math.floor(progress * sentences.length);
+      } else {
+        // Bilingual mode etc. — keep original DOM traversal as fallback
+        const viewportRect = viewport.getBoundingClientRect();
+        const viewportCenter = viewportRect.top + viewportRect.height / 2;
+        closestIndex = 0;
+        let closestDistance = Infinity;
 
-      for (let i = 0; i < sentences.length; i++) {
-        const el = document.getElementById(`sentence-${i}`);
-        if (!el) continue;
+        for (let i = 0; i < sentences.length; i++) {
+          const el = document.getElementById(`sentence-${i}`);
+          if (!el) continue;
+          const rect = el.getBoundingClientRect();
+          const elCenter = rect.top + rect.height / 2;
+          const distance = Math.abs(elCenter - viewportCenter);
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            closestIndex = i;
+          }
+        }
 
-        const rect = el.getBoundingClientRect();
-        const elCenter = rect.top + rect.height / 2;
-        const distance = Math.abs(elCenter - viewportCenter);
-
-        if (distance < closestDistance) {
-          closestDistance = distance;
-          closestIndex = i;
+        // HTML fallback when no sentence elements found
+        if (closestDistance === Infinity && sentences.length > 0) {
+          const progress = viewport.scrollTop / Math.max(viewport.scrollHeight - viewport.clientHeight, 1);
+          closestIndex = Math.floor(progress * sentences.length);
         }
       }
 
-      // 如果没有找到任何 sentence 元素（HTML 渲染模式），根据滚动比例估算
-      if (closestDistance === Infinity && sentences.length > 0) {
-        const scrollTop = (viewport as HTMLElement).scrollTop;
-        const scrollHeight = (viewport as HTMLElement).scrollHeight;
-        const progress = scrollTop / Math.max(scrollHeight - viewport.clientHeight, 1);
-        closestIndex = Math.floor(progress * sentences.length);
-      }
+      closestIndex = Math.max(0, Math.min(closestIndex, sentences.length - 1));
 
       if (closestIndex !== lastCurrentRef.current) {
         lastCurrentRef.current = closestIndex;
@@ -236,7 +302,7 @@ export function Reader({
       viewport.removeEventListener("scroll", handleScroll);
       if (debounceTimer) clearTimeout(debounceTimer);
     };
-  }, [sentences, onSentenceChange]);
+  }, [sentences, onSentenceChange, findVisibleIndex, offsetsDisabled, findBilingualIndex, bilingualOffsetsDisabled, shouldRenderHtmlReadMode]);
 
   // Scroll to active word
   useEffect(() => {
@@ -259,9 +325,10 @@ export function Reader({
 
     const doScroll = () => {
       if (isPlayMode) {
+        // ✅ Use pretext offsets when available, flash the sentence element for visual feedback
+        scrollToSentence(paragraphIndex);
         const el = document.getElementById(`sentence-${paragraphIndex}`);
         if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "center" });
           el.style.transition = "box-shadow 0.3s ease";
           el.style.boxShadow = "0 0 0 2px hsl(var(--primary))";
           setTimeout(() => { el.style.boxShadow = ""; }, 1400);
@@ -450,6 +517,16 @@ export function Reader({
   const renderSentence = (text: string, sentenceIndex: number, isActive: boolean, sentenceHighlights: Highlight[] = getSentenceHighlights(sentenceIndex)) => {
     // Get highlights for this sentence
 
+    // Karaoke line-by-line reveal: active + playing + has timestamps + has line layout
+    if (isActive && isPlaying && wordTimestamps.length > 0 && karaokeLines.length > 0 && sentenceHighlights.length === 0) {
+      return <KaraokeLines
+        lines={karaokeLines}
+        wordTimestamps={wordTimestamps}
+        currentWordIndex={currentWordIndex}
+        activeWordRef={activeWordRef}
+      />
+    }
+
     if (!isActive || !isPlaying || wordTimestamps.length === 0) {
       // No TTS highlight, only user highlight marks
       if (sentenceHighlights.length === 0) return <span>{text}</span>;
@@ -569,11 +646,11 @@ export function Reader({
             <div
               ref={readModeRef}
               onPointerUp={canAnnotate ? handlePointerUp : undefined}
-              className="max-w-3xl mx-auto pb-20
-                [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:text-primary [&_h1]:my-6
-                [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-primary [&_h2]:my-5
-                [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:text-primary [&_h3]:my-4
-                [&_p]:text-foreground [&_p]:leading-relaxed [&_p]:my-4 [&_p]:text-lg
+              className="html-read-mode max-w-3xl mx-auto pb-20
+                [&_h1]:font-bold [&_h1]:text-primary [&_h1]:my-6
+                [&_h2]:font-bold [&_h2]:text-primary [&_h2]:my-5
+                [&_h3]:font-semibold [&_h3]:text-primary [&_h3]:my-4
+                [&_p]:text-foreground [&_p]:leading-relaxed [&_p]:my-4
                 [&_img]:rounded-lg [&_img]:shadow-lg [&_img]:mx-auto [&_img]:my-6 [&_img]:max-w-full
                 [&_a]:text-primary [&_a]:underline-offset-2 hover:[&_a]:underline
                 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-4
@@ -615,7 +692,7 @@ export function Reader({
                               : "border-transparent text-foreground"
                       )}
                     >
-                      <p className={cn("leading-relaxed font-serif text-lg", isSentenceActive ? "font-medium" : "font-normal")}>
+                      <p className={cn("reading-text", isSentenceActive ? "font-medium" : "font-normal")}>
                         {renderSentence(text, index, isSentenceActive && !translatedIsActive, originalHighlights)}
                       </p>
                       {originalIsReading && (
@@ -640,7 +717,7 @@ export function Reader({
                               : "border-transparent text-foreground"
                       )}
                     >
-                      <p className={cn("leading-relaxed font-serif text-lg", isSentenceActive ? "font-medium" : "font-normal")}>
+                      <p className={cn("reading-text", isSentenceActive ? "font-medium" : "font-normal")}>
                         {translatedHighlights.length === 0
                           ? translated || <span className="text-muted-foreground/30 italic">...</span>
                           : renderTextWithHighlightMarks(translated, translatedHighlights, (h) => {
@@ -689,7 +766,7 @@ export function Reader({
                             : "border-transparent text-foreground"
                     )}
                   >
-                    <p className={cn("leading-relaxed font-serif text-lg md:text-xl", isSentenceActive ? "font-medium" : "font-normal")}>
+                    <p className={cn("reading-text", isSentenceActive ? "font-medium" : "font-normal")}>
                       {isTranslatedMode
                         ? sentenceHighlights.length === 0
                           ? <span>{text}</span>
@@ -701,7 +778,7 @@ export function Reader({
                     </p>
                     {showTranslatedUnderlay && (
                       <p className={cn(
-                        "leading-relaxed font-serif text-base md:text-lg mt-2 pl-3 border-l-2",
+                        "reading-text mt-2 pl-3 border-l-2",
                         playBothPhase === "translated" ? "border-primary/50 text-foreground" : "border-muted text-muted-foreground/70"
                       )}>
                         {translatedSentences[index]}

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from sqlalchemy.exc import IntegrityError
-from app.models.user import UserCreate, UserLogin, UserResponse, Token, ThemeIn, ThemeOut
+from app.models.user import UserCreate, UserLogin, UserResponse, Token, ThemeIn, ThemeOut, FontSizeIn, FontSizeOut
 from app.models.database import get_db
 from app.models.models import User, UserThemePreferences
 from app.services.auth_service import AuthService
@@ -92,3 +92,26 @@ async def save_theme(theme_data: ThemeIn, user_id: str = Depends(get_current_use
             db.add(existing)
         db.commit()
     return ThemeOut(theme=theme_data.theme)
+
+@router.get("/font-size", response_model=FontSizeOut)
+async def get_font_size(user_id: str = Depends(get_current_user)):
+    with get_db() as db:
+        row = db.query(UserThemePreferences).filter(UserThemePreferences.user_id == user_id).first()
+    if not row:
+        return FontSizeOut(font_size=18)
+    return FontSizeOut(font_size=row.font_size)
+
+@router.put("/font-size", response_model=FontSizeOut)
+async def save_font_size(font_size_data: FontSizeIn, user_id: str = Depends(get_current_user)):
+    font_size = font_size_data.font_size
+    if font_size < 12 or font_size > 32:
+        raise HTTPException(status_code=400, detail="Font size must be between 12 and 32")
+    with get_db() as db:
+        existing = db.query(UserThemePreferences).filter(UserThemePreferences.user_id == user_id).first()
+        if existing:
+            existing.font_size = font_size
+        else:
+            existing = UserThemePreferences(user_id=user_id, font_size=font_size)
+            db.add(existing)
+        db.commit()
+    return FontSizeOut(font_size=font_size)

@@ -23,6 +23,7 @@ import { API_BASE, API_URL } from "@/config";
 import { useAuth } from "@/contexts/AuthContext";
 import { AskAIDialog } from "@/components/highlight/AskAIDialog";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
+import { FontSizeSwitcher } from "@/components/FontSizeSwitcher";
 import type { UnifiedMode, ContentMode, InteractionMode } from "@/lib/ai/types";
 
 export default function BookReader() {
@@ -748,7 +749,7 @@ export default function BookReader() {
                   setTranslateTrigger(t => t + 1);
                 }
               }}
-              className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
+              className={`flex items-center gap-1 px-2 h-8 rounded-md transition-colors text-xs ${
                 translatedSentences.length > 0 || isTranslating
                   ? "bg-primary/10 text-primary"
                   : "bg-muted text-muted-foreground hover:text-foreground"
@@ -757,34 +758,26 @@ export default function BookReader() {
             >
               {isTranslating ? (
                 <>
-                  <Languages className="w-3.5 h-3.5" />
-                  <span>翻译中</span>
-                  <div className="w-16 h-1.5 bg-primary/20 rounded-full overflow-hidden">
+                  <Languages className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="hidden sm:inline">翻译中</span>
+                  <div className="w-12 h-1 bg-primary/20 rounded-full overflow-hidden hidden sm:block">
                     <div
                       className="h-full bg-primary rounded-full transition-all duration-300"
                       style={{ width: `${translationProgress}%` }}
                     />
                   </div>
-                  <span className="tabular-nums">{translationProgress}%</span>
+                  <span className="tabular-nums text-[11px] hidden sm:inline">{translationProgress}%</span>
                 </>
               ) : (
                 <>
-                  <Languages className="w-3.5 h-3.5" />
-                  <span>{translatedSentences.length > 0 ? "翻译 ✓" : "翻译"}</span>
+                  <Languages className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="hidden sm:inline">{translatedSentences.length > 0 ? "翻译 ✓" : "翻译"}</span>
                 </>
               )}
             </button>
           )}
           <ThemeSwitcher />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setImmersiveMode(true)}
-            className="h-8 w-8"
-            title="进入沉浸模式"
-          >
-            <Library className="w-4 h-4" />
-          </Button>
+          <FontSizeSwitcher />
         </div>
       </header>
 
