@@ -135,6 +135,7 @@ class UserAIPreferences(Base):
     translation_mode = Column(String, default="current-page")
     source_lang = Column(String, default="Auto")
     target_lang = Column(String, default="Chinese")
+    translation_prompt = Column(Text, nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     user = relationship("User")

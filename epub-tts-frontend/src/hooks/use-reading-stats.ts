@@ -59,6 +59,7 @@ export interface AIActiveFeatures {
   translationMode: TranslationMode;
   sourceLang: string;
   targetLang: string;
+  translationPrompt?: string | null;
 }
 
 export function useAIPreferences() {
@@ -73,6 +74,7 @@ export function useAIPreferences() {
         translationMode: prefs.translation_mode as TranslationMode,
         sourceLang: prefs.source_lang || "Auto",
         targetLang: prefs.target_lang || "Chinese",
+        translationPrompt: prefs.translation_prompt ?? null,
       };
     },
     enabled: !!token,

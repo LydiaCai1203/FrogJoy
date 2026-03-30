@@ -242,7 +242,9 @@ class AIService:
     # ----- Translation helpers -----
 
     @staticmethod
-    def build_translation_system_prompt(target_lang: str = "Chinese") -> str:
+    def build_translation_system_prompt(target_lang: str = "Chinese", custom_prompt: Optional[str] = None) -> str:
+        if custom_prompt:
+            return custom_prompt
         return (
             f"You are a professional translator. Translate the following text to {target_lang}. "
             "Keep the original meaning, tone, and formatting. "
@@ -250,9 +252,9 @@ class AIService:
         )
 
     @staticmethod
-    def build_translation_messages(text: str, target_lang: str = "Chinese") -> list[ChatMessage]:
+    def build_translation_messages(text: str, target_lang: str = "Chinese", custom_prompt: Optional[str] = None) -> list[ChatMessage]:
         return [
-            ChatMessage(role="system", content=AIService.build_translation_system_prompt(target_lang)),
+            ChatMessage(role="system", content=AIService.build_translation_system_prompt(target_lang, custom_prompt)),
             ChatMessage(role="user", content=text),
         ]
 

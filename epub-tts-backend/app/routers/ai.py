@@ -42,9 +42,10 @@ class AIModelConfigOut(BaseModel):
 class UserAIPrefsIn(BaseModel):
     enabled_ask_ai: bool = False
     enabled_translation: bool = False
-    translation_mode: str = "current-page"  # "current-page" | "whole-book"
+    translation_mode: str = "current-page"
     source_lang: str = "Auto"
     target_lang: str = "Chinese"
+    translation_prompt: Optional[str] = None
 
 
 class UserAIPrefsOut(BaseModel):
@@ -53,6 +54,7 @@ class UserAIPrefsOut(BaseModel):
     translation_mode: str
     source_lang: str
     target_lang: str
+    translation_prompt: Optional[str] = None
 
 
 class ChatMessageIn(BaseModel):
@@ -101,6 +103,22 @@ def _build_ai_config(user_id: str) -> AIConfig:
         base_url=row.base_url,
         api_key=decrypted_key,
         model=row.model,
+    )
+
+
+def _load_ai_prefs(user_id: str) -> Optional[UserAIPreferences]:
+    with get_db() as db:
+        return db.query(UserAIPreferences).filter(UserAIPreferences.user_id == user_id).first()
+
+
+def _get_translation_prompt(user_id: str, target_lang: str) -> str:
+    prefs = _load_ai_prefs(user_id)
+    if prefs and prefs.translation_prompt:
+        return prefs.translation_prompt
+    return (
+        f"You are a professional translator. Translate the following text to {target_lang}. "
+        "Keep the original meaning, tone, and formatting. "
+        "Only output the translation, no explanations or commentary."
     )
 
 
@@ -169,6 +187,7 @@ async def get_ai_preferences(user_id: str = Depends(get_current_user)):
             translation_mode="current-page",
             source_lang="Auto",
             target_lang="Chinese",
+            translation_prompt=None,
         )
     return UserAIPrefsOut(
         enabled_ask_ai=row.enabled_ask_ai,
@@ -176,6 +195,7 @@ async def get_ai_preferences(user_id: str = Depends(get_current_user)):
         translation_mode=row.translation_mode,
         source_lang=row.source_lang or "Auto",
         target_lang=row.target_lang or "Chinese",
+        translation_prompt=row.translation_prompt,
     )
 
 
@@ -189,6 +209,7 @@ async def save_ai_preferences(prefs_in: UserAIPrefsIn, user_id: str = Depends(ge
             existing.translation_mode = prefs_in.translation_mode
             existing.source_lang = prefs_in.source_lang
             existing.target_lang = prefs_in.target_lang
+            existing.translation_prompt = prefs_in.translation_prompt
         else:
             existing = UserAIPreferences(
                 user_id=user_id,
@@ -197,6 +218,7 @@ async def save_ai_preferences(prefs_in: UserAIPrefsIn, user_id: str = Depends(ge
                 translation_mode=prefs_in.translation_mode,
                 source_lang=prefs_in.source_lang,
                 target_lang=prefs_in.target_lang,
+                translation_prompt=prefs_in.translation_prompt,
             )
             db.add(existing)
         db.commit()
@@ -206,6 +228,7 @@ async def save_ai_preferences(prefs_in: UserAIPrefsIn, user_id: str = Depends(ge
         translation_mode=prefs_in.translation_mode,
         source_lang=prefs_in.source_lang,
         target_lang=prefs_in.target_lang,
+        translation_prompt=prefs_in.translation_prompt,
     )
 
 
@@ -325,9 +348,10 @@ async def translate_chapter(request: TranslateChapterRequest, user_id: str = Dep
 
     async def generate():
         translated_parts = []
+        custom_prompt = _get_translation_prompt(user_id, request.target_lang)
         for i, sentence in enumerate(sentences):
             try:
-                messages = AIService.build_translation_messages(sentence, request.target_lang)
+                messages = AIService.build_translation_messages(sentence, request.target_lang, custom_prompt)
                 result = await service.chat_once(messages, temperature=0.3, max_tokens=2048)
                 translated_parts.append(result.strip())
             except Exception as e:
@@ -401,6 +425,8 @@ async def _run_book_translation(
 
         task_manager.update_progress(task_id, 2, f"共 {total} 章，开始翻译...")
 
+        custom_prompt = _get_translation_prompt(user_id, "Chinese")
+
         for i, ch in enumerate(chapters):
             href = ch["href"]
             task_manager.update_progress(task_id, int((i / total) * 90), f"翻译第 {i+1}/{total} 章...")
@@ -413,7 +439,7 @@ async def _run_book_translation(
                 text = " ".join(sentences)
 
                 translated = await service.chat_once(
-                    AIService.build_translation_messages(text, "Chinese"),
+                    AIService.build_translation_messages(text, "Chinese", custom_prompt),
                     temperature=0.3,
                     max_tokens=8192,
                 )
