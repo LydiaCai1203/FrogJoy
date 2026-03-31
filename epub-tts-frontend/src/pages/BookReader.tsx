@@ -143,7 +143,6 @@ export default function BookReader() {
         return res.json();
       })
       .then(data => {
-        console.log("Book data loaded:", data);
         setMetadata(data.metadata);
         setToc(data.toc || []);
         if (data.coverUrl) setCover(`${API_BASE}${data.coverUrl}`);
@@ -452,7 +451,6 @@ export default function BookReader() {
           end_index: actualEnd,
         }),
       });
-      console.log(`[Prefetch] Loaded paragraphs ${actualStart}-${actualEnd}`);
     } catch (error) {
       console.warn("[Prefetch] Failed to prefetch audio:", error);
     }

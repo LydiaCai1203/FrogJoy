@@ -97,7 +97,7 @@ async def save_theme(theme_data: ThemeIn, user_id: str = Depends(get_current_use
 async def get_font_size(user_id: str = Depends(get_current_user)):
     with get_db() as db:
         row = db.query(UserThemePreferences).filter(UserThemePreferences.user_id == user_id).first()
-    if not row:
+    if not row or row.font_size is None:
         return FontSizeOut(font_size=18)
     return FontSizeOut(font_size=row.font_size)
 
