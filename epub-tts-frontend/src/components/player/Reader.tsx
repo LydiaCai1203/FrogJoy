@@ -212,23 +212,19 @@ export function Reader({
     }
   }, [sentences]);
 
-  // Scroll to current sentence on initial load or when current changes in read mode
+  // ✅ Unified auto-scroll logic for play mode
+  // Scrolls to current sentence including the first sentence (current === 0)
   useEffect(() => {
-    if (current > 0 && sentences.length > 0) {
-      setTimeout(() => {
-        scrollToSentence(current);
-      }, 300);
-    }
-  }, [current, sentences.length, scrollToSentence]);
-
-  // Scroll to active sentence (play mode only)
-  useEffect(() => {
-    if (isPlayMode && current > 0) {
+    if (isPlayMode && sentences.length > 0) {
+      // In play mode, any change to current triggers scroll (including from 0)
       isAutoScrollingRef.current = true;
-      scrollToSentence(current);
+      // Give offsets a bit of time to compute
+      setTimeout(() => {
+        scrollToSentence(current, "smooth");
+      }, 50);
       setTimeout(() => { isAutoScrollingRef.current = false; }, 500);
     }
-  }, [current, isPlayMode, scrollToSentence]);
+  }, [current, isPlayMode, sentences.length, scrollToSentence]);
 
   // Scroll event listener to detect visible sentence on manual scroll
   useEffect(() => {
@@ -304,12 +300,32 @@ export function Reader({
     };
   }, [sentences, onSentenceChange, findVisibleIndex, offsetsDisabled, findBilingualIndex, bilingualOffsetsDisabled, shouldRenderHtmlReadMode]);
 
-  // Scroll to active word
+  // ✅ Improved word-level scrolling (Karaoke mode)
   useEffect(() => {
-    if (activeWordRef.current && isPlaying) {
-      activeWordRef.current.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+    if (!activeWordRef.current || !isPlaying || !shouldScrollWords) {
+      return;
     }
-  }, [currentWordIndex, isPlaying]);
+
+    const viewport = scrollRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement | null;
+    if (!viewport) {
+      // Fallback: use scrollIntoView when viewport is not found
+      activeWordRef.current.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+      return;
+    }
+
+    // Calculate word position relative to viewport
+    const rect = activeWordRef.current.getBoundingClientRect();
+    const viewportRect = viewport.getBoundingClientRect();
+
+    // Only scroll if word is outside the visible area
+    if (rect.top < viewportRect.top || rect.bottom > viewportRect.bottom) {
+      activeWordRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "nearest"
+      });
+    }
+  }, [currentWordIndex, isPlaying, shouldScrollWords]);
 
   // Process HTML content image URLs
   const processedHtml = useMemo(() => {
