@@ -190,3 +190,49 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Custom reading font - applied to reading content */
+/* Chinese: YouYuan (幼圆) takes priority, fallback to serif fonts */
+:root {
+  --reading-font-family: "YouYuan", "幼圆", "Times New Roman", "Georgia", serif;
+  --font-size-mobile: 18px;
+  --font-size-desktop: 18px;
+}
+
+/* Reading content text styling - uses CSS variables for dynamic font size */
+.reading-text {
+  font-family: var(--reading-font-family) !important;
+  font-size: var(--font-size-mobile) !important;
+  line-height: 1.625 !important;
+}
+
+/* Bilingual reading text */
+.reading-text-bilingual {
+  font-family: var(--reading-font-family) !important;
+  font-size: var(--font-size-mobile) !important;
+  line-height: 1.625 !important;
+}
+
+/* HTML reading mode: override prose styles to use CSS variables */
+.html-read-mode p,
+.html-read-mode li,
+.html-read-mode blockquote {
+  font-family: var(--reading-font-family) !important;
+  font-size: var(--font-size-mobile) !important;
+  line-height: 1.8 !important;
+}
+
+.html-read-mode h1 {
+  font-size: calc(var(--font-size-mobile) * 1.5) !important;
+  font-family: var(--reading-font-family) !important;
+}
+
+.html-read-mode h2 {
+  font-size: calc(var(--font-size-mobile) * 1.3) !important;
+  font-family: var(--reading-font-family) !important;
+}
+
+.html-read-mode h3 {
+  font-size: calc(var(--font-size-mobile) * 1.15) !important;
+  font-family: var(--reading-font-family) !important;
+}

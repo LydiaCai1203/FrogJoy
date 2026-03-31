@@ -35,3 +35,11 @@ class ThemeIn(BaseModel):
 
 class ThemeOut(BaseModel):
     theme: str
+
+
+class FontSizeIn(BaseModel):
+    font_size: int
+
+
+class FontSizeOut(BaseModel):
+    font_size: int
