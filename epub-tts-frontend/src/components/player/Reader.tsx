@@ -152,8 +152,21 @@ export function Reader({
   // Computed scroll: use pretext offsets to calculate target scrollTop (zero DOM queries)
   // Falls back to scrollIntoView when offsets are unavailable (HTML read mode)
   const scrollToSentence = useCallback((index: number, behavior: ScrollBehavior = "smooth") => {
-    const viewport = scrollRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement | null;
-    if (!viewport) return;
+    const el = document.getElementById(`sentence-${index}`);
+    if (el) {
+      el.scrollIntoView({ behavior, block: "center" });
+      return;
+    }
+    
+    let viewport = scrollRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement | null;
+    
+    if (!viewport) {
+      if (scrollRef.current) {
+        viewport = scrollRef.current;
+      } else {
+        return;
+      }
+    }
 
     const offsets = activeOffsetsRef.current;
     if (offsets.length > index + 1) {
@@ -161,10 +174,6 @@ export function Reader({
       const itemHeight = offsets[index + 1] - offsets[index];
       const targetTop = itemTop - viewport.clientHeight / 2 + itemHeight / 2;
       viewport.scrollTo({ top: Math.max(0, targetTop), behavior });
-    } else {
-      // Fallback for HTML mode or when offsets haven't computed yet
-      const el = document.getElementById(`sentence-${index}`);
-      el?.scrollIntoView({ behavior, block: "center" });
     }
   }, []);
 
@@ -212,19 +221,16 @@ export function Reader({
     }
   }, [sentences]);
 
-  // ✅ Unified auto-scroll logic for play mode
-  // Scrolls to current sentence including the first sentence (current === 0)
+  // ✅ Auto-scroll logic - scrolls to current sentence whenever it changes
   useEffect(() => {
-    if (isPlayMode && sentences.length > 0) {
-      // In play mode, any change to current triggers scroll (including from 0)
+    if (sentences.length > 0) {
       isAutoScrollingRef.current = true;
-      // Give offsets a bit of time to compute
       setTimeout(() => {
         scrollToSentence(current, "smooth");
       }, 50);
       setTimeout(() => { isAutoScrollingRef.current = false; }, 500);
     }
-  }, [current, isPlayMode, sentences.length, scrollToSentence]);
+  }, [current, sentences.length, scrollToSentence]);
 
   // Scroll event listener to detect visible sentence on manual scroll
   useEffect(() => {
