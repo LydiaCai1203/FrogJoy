@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.exc import IntegrityError
@@ -8,6 +9,7 @@ from app.services.auth_service import AuthService
 from app.services.email_service import EmailService
 from app.middleware.auth import get_current_user
 from app.config import settings
+from app.services.system_settings import get_system_setting, get_system_setting_bool
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -22,6 +24,11 @@ class ResendRequest(BaseModel):
 
 @router.post("/register")
 async def register(user_data: UserCreate):
+    if not get_system_setting_bool("allow_registration", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="系统暂不开放注册",
+        )
     with get_db() as db:
         try:
             existing = db.query(User).filter(User.email == user_data.email).first()
@@ -121,11 +128,20 @@ async def login(user_data: UserLogin):
                 detail="邮箱或密码错误"
             )
 
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="账户已被禁用",
+            )
+
         if not user.is_verified:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="请先验证邮箱"
             )
+
+        user.last_login_at = datetime.utcnow()
+        db.commit()
 
         access_token = AuthService.create_access_token(user.id)
         return Token(access_token=access_token)
@@ -153,7 +169,7 @@ async def get_theme(user_id: str = Depends(get_current_user)):
     with get_db() as db:
         row = db.query(UserThemePreferences).filter(UserThemePreferences.user_id == user_id).first()
     if not row:
-        return ThemeOut(theme="eye-care")
+        return ThemeOut(theme=get_system_setting("default_theme", "eye-care"))
     return ThemeOut(theme=row.theme)
 
 @router.put("/theme", response_model=ThemeOut)
@@ -176,7 +192,8 @@ async def get_font_size(user_id: str = Depends(get_current_user)):
     with get_db() as db:
         row = db.query(UserThemePreferences).filter(UserThemePreferences.user_id == user_id).first()
     if not row or row.font_size is None:
-        return FontSizeOut(font_size=18)
+        from app.services.system_settings import get_system_setting_int
+        return FontSizeOut(font_size=get_system_setting_int("default_font_size", 18))
     return FontSizeOut(font_size=row.font_size)
 
 @router.put("/font-size", response_model=FontSizeOut)

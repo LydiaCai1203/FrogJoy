@@ -4,6 +4,7 @@ from fastapi import HTTPException, Request, status
 from app.config import settings
 from app.models.database import get_db
 from app.models.models import User
+from app.services.system_settings import get_system_setting_int
 
 # {user_id: {action: [timestamp, ...]}}
 _call_log: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
@@ -11,14 +12,31 @@ _call_log: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(l
 # {ip: [timestamp, ...]}  用于游客 TTS 按 IP 限频
 _guest_tts_ip_log: dict[str, list[float]] = defaultdict(list)
 
-# action -> (max_calls, window_seconds)
-RATE_LIMITS = {
+# Defaults (used when DB has no value)
+_DEFAULT_LIMITS = {
     "tts_speak": (5, 60),
     "translate": (1, 60),
     "chat": (1, 60),
 }
 
+# Maps action names to system_settings keys
+_LIMIT_KEYS = {
+    "tts_speak": "guest_rate_limit_tts",
+    "translate": "guest_rate_limit_translation",
+    "chat": "guest_rate_limit_chat",
+}
+
 _guest_user_id: str | None = None
+
+
+def _get_rate_limit(action: str) -> tuple[int, int]:
+    default_max, window = _DEFAULT_LIMITS.get(action, (5, 60))
+    key = _LIMIT_KEYS.get(action)
+    if key:
+        max_calls = get_system_setting_int(key, default_max)
+    else:
+        max_calls = default_max
+    return max_calls, window
 
 
 def _get_guest_user_id() -> str | None:
@@ -43,8 +61,8 @@ def get_client_ip(request: Request) -> str:
 
 
 def check_guest_tts_rate_limit(ip: str) -> None:
-    """按 IP 检查游客 TTS 请求频率，1 分钟内超过 5 次则抛出 429。"""
-    max_calls, window = RATE_LIMITS["tts_speak"]
+    """按 IP 检查游客 TTS 请求频率。"""
+    max_calls, window = _get_rate_limit("tts_speak")
     now = time.time()
     cutoff = now - window
 
@@ -65,10 +83,10 @@ def check_guest_rate_limit(user_id: str, action: str) -> None:
     if not guest_id or user_id != guest_id:
         return
 
-    if action not in RATE_LIMITS:
+    if action not in _DEFAULT_LIMITS:
         return
 
-    max_calls, window = RATE_LIMITS[action]
+    max_calls, window = _get_rate_limit(action)
     now = time.time()
     calls = _call_log[user_id][action]
 

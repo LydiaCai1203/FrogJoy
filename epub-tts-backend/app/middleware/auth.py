@@ -1,10 +1,26 @@
+from datetime import datetime, timezone
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.services.auth_service import AuthService
+from app.redis_client import get_redis
 from typing import Optional
 
 security = HTTPBearer()
 optional_security = HTTPBearer(auto_error=False)
+
+ACTIVE_KEY_PREFIX = "user:last_active:"
+ACTIVE_TTL = 86400 * 30  # 30 days
+
+
+def _track_active(user_id: str) -> None:
+    """Record user activity timestamp in Redis. Fire-and-forget."""
+    try:
+        r = get_redis()
+        r.set(f"{ACTIVE_KEY_PREFIX}{user_id}", datetime.now(timezone.utc).isoformat(), ex=ACTIVE_TTL)
+    except Exception:
+        pass  # Redis down should not break the app
+
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -19,6 +35,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    _track_active(user_id)
     return user_id
 
 async def get_optional_user(
