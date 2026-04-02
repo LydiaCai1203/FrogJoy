@@ -182,6 +182,42 @@ class VoiceCloneService:
             logger.error(f"[VoiceClone] Voice clone error: {e}")
             raise
 
+    # MiniMax WebSocket API limit per task_continue message
+    _MINIMAX_CHUNK_SIZE = 2000
+
+    @staticmethod
+    def _split_text_for_tts(text: str, max_len: int) -> List[str]:
+        """Split text into chunks at sentence boundaries, each <= max_len chars."""
+        import re
+        if len(text) <= max_len:
+            return [text]
+
+        chunks = []
+        remaining = text
+        # Split on sentence-ending punctuation (Chinese and English)
+        sentence_pattern = re.compile(r'(?<=[。！？.!?\n])')
+
+        while remaining:
+            if len(remaining) <= max_len:
+                chunks.append(remaining)
+                break
+
+            # Try to split at sentence boundary within max_len
+            segment = remaining[:max_len]
+            splits = list(sentence_pattern.finditer(segment))
+            if splits:
+                cut = splits[-1].end()
+            else:
+                # Fallback: split at last comma/space
+                cut = max(segment.rfind('，'), segment.rfind(','), segment.rfind(' '), segment.rfind('、'))
+                if cut <= 0:
+                    cut = max_len
+
+            chunks.append(remaining[:cut])
+            remaining = remaining[cut:]
+
+        return [c for c in chunks if c.strip()]
+
     @staticmethod
     async def generate_speech_minimax(
         api_key: str,
@@ -194,19 +230,22 @@ class VoiceCloneService:
     ) -> bytes:
         """
         Generate speech using MiniMax TTS API via WebSocket.
-        Follows the official documentation exactly.
+        Splits long text into chunks to avoid server-side disconnects.
         """
         import ssl
         import websockets
 
-        effective_base_url = VoiceCloneService._get_base_url(base_url)
         ws_url = "wss://api.minimaxi.com/ws/v1/t2a_v2"
         headers = {"Authorization": f"Bearer {api_key}"}
 
-        # SSL context matching official docs
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
+
+        text_chunks = VoiceCloneService._split_text_for_tts(
+            text, VoiceCloneService._MINIMAX_CHUNK_SIZE
+        )
+        logger.info(f"[VoiceClone] Text length={len(text)}, split into {len(text_chunks)} chunks")
 
         audio_data = b""
 
@@ -214,6 +253,9 @@ class VoiceCloneService:
             ws_url,
             additional_headers=headers,
             ssl=ssl_context,
+            ping_interval=20,
+            ping_timeout=60,
+            close_timeout=30,
         )
         try:
             # 1. Receive connection confirmation
@@ -246,11 +288,13 @@ class VoiceCloneService:
             if response.get("event") != "task_started":
                 raise Exception(f"Task start failed: {response}")
 
-            # 3. Send text
-            await ws.send(json.dumps({
-                "event": "task_continue",
-                "text": text,
-            }))
+            # 3. Send text in chunks
+            for i, chunk in enumerate(text_chunks):
+                logger.debug(f"[VoiceClone] Sending chunk {i+1}/{len(text_chunks)}, len={len(chunk)}")
+                await ws.send(json.dumps({
+                    "event": "task_continue",
+                    "text": chunk,
+                }))
 
             # 4. Send task_finish to signal end of input
             await ws.send(json.dumps({"event": "task_finish"}))

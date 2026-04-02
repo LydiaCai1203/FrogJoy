@@ -121,6 +121,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(data.detail || "Registration failed");
     }
 
+    // If server returned a token, email verification was skipped — auto login
+    if (data.access_token) {
+      setToken(data.access_token);
+      setGuestToken(null);
+      localStorage.setItem("auth_token", data.access_token);
+      localStorage.removeItem("guest_token");
+      await fetchUser(data.access_token);
+      return "__auto_login__";
+    }
+
     return data.message;
   };
 

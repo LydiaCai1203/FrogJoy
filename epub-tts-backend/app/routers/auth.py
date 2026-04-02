@@ -31,13 +31,20 @@ async def register(user_data: UserCreate):
         )
     with get_db() as db:
         try:
+            smtp_available = bool(settings.smtp_host and settings.smtp_user)
+
             existing = db.query(User).filter(User.email == user_data.email).first()
             if existing:
                 if not existing.is_verified:
-                    # Resend verification for unverified user
-                    token = AuthService.create_verification_token(user_data.email)
-                    EmailService.send_verification_email(user_data.email, token)
-                    return {"message": "验证邮件已重新发送，请查收邮箱"}
+                    if smtp_available:
+                        token = AuthService.create_verification_token(user_data.email)
+                        EmailService.send_verification_email(user_data.email, token)
+                        return {"message": "验证邮件已重新发送，请查收邮箱"}
+                    else:
+                        existing.is_verified = True
+                        db.commit()
+                        access_token = AuthService.create_access_token(existing.id)
+                        return Token(access_token=access_token)
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="该邮箱已注册"
@@ -50,15 +57,19 @@ async def register(user_data: UserCreate):
                 id=user_id,
                 email=user_data.email,
                 password_hash=password_hash,
-                is_verified=False,
+                is_verified=not smtp_available,
             )
             db.add(user)
             db.commit()
 
-            token = AuthService.create_verification_token(user_data.email)
-            EmailService.send_verification_email(user_data.email, token)
-
-            return {"message": "验证邮件已发送，请查收邮箱"}
+            if smtp_available:
+                token = AuthService.create_verification_token(user_data.email)
+                EmailService.send_verification_email(user_data.email, token)
+                return {"message": "验证邮件已发送，请查收邮箱"}
+            else:
+                # No email service, activate directly
+                access_token = AuthService.create_access_token(user_id)
+                return Token(access_token=access_token)
         except HTTPException:
             raise
         except IntegrityError:

@@ -43,9 +43,14 @@ export function RegisterForm({ open, onOpenChange, onSwitchToLogin }: RegisterFo
 
     setIsLoading(true);
     try {
-      await register(email, password);
-      setEmailSent(true);
-      startResendCountdown();
+      const result = await register(email, password);
+      if (result === "__auto_login__") {
+        toast.success("注册成功");
+        handleClose(false);
+      } else {
+        setEmailSent(true);
+        startResendCountdown();
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "注册失败");
     } finally {
