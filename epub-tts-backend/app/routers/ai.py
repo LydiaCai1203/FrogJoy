@@ -3,6 +3,7 @@ AI 路由 - 模型配置、用户偏好、多轮对话、翻译
 """
 import asyncio
 import json
+import os
 import httpx
 import uuid
 from fastapi import APIRouter, HTTPException, Depends, Query
@@ -18,6 +19,7 @@ from app.services.auth_service import AuthService
 from app.services.ai_service import AIService, AIConfig, ChatMessage, OpenAIChatProvider, AnthropicProvider
 from app.services.book_service import BookService
 from app.services.task_service import task_manager, TaskStatus
+from app.config import settings
 
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -30,6 +32,11 @@ class AIModelConfigIn(BaseModel):
     base_url: str
     api_key: str = ""  # Empty means keep existing key
     model: str
+    # Translation-specific config (optional - only used when separate translation config is provided)
+    translation_provider_type: Optional[str] = None
+    translation_base_url: Optional[str] = None
+    translation_api_key: Optional[str] = ""  # Empty means keep existing key
+    translation_model: Optional[str] = None
 
 
 class AIModelConfigOut(BaseModel):
@@ -37,6 +44,11 @@ class AIModelConfigOut(BaseModel):
     base_url: str
     model: str
     has_key: bool  # True if key is configured
+    # Translation config fields
+    translation_provider_type: Optional[str] = None
+    translation_base_url: Optional[str] = None
+    translation_model: Optional[str] = None
+    translation_has_key: bool = False
 
 
 class UserAIPrefsIn(BaseModel):
@@ -93,17 +105,42 @@ def _load_ai_config(user_id: str) -> Optional[AIModelConfig]:
         return db.query(AIModelConfig).filter(AIModelConfig.user_id == user_id).first()
 
 
-def _build_ai_config(user_id: str) -> AIConfig:
+def _build_ai_config(user_id: str, config_type: str = "chat") -> AIConfig:
+    """
+    Build AI config for a given purpose.
+    config_type: 'chat' (Ask AI) or 'translation'
+    """
     row = _load_ai_config(user_id)
     if not row:
         raise HTTPException(status_code=400, detail="AI model not configured. Please configure in Profile.")
-    decrypted_key = AuthService.decrypt_api_key(row.api_key_encrypted)
-    return AIConfig(
-        provider_type=row.provider_type,
-        base_url=row.base_url,
-        api_key=decrypted_key,
-        model=row.model,
-    )
+
+    if config_type == "translation":
+        # Use translation-specific config if set
+        if row.translation_provider_type and row.translation_base_url and row.translation_api_key_encrypted and row.translation_model:
+            decrypted_key = AuthService.decrypt_api_key(row.translation_api_key_encrypted)
+            return AIConfig(
+                provider_type=row.translation_provider_type,
+                base_url=row.translation_base_url,
+                api_key=decrypted_key,
+                model=row.translation_model,
+            )
+        # Fall back to chat config if translation config is not set
+        decrypted_key = AuthService.decrypt_api_key(row.api_key_encrypted)
+        return AIConfig(
+            provider_type=row.provider_type,
+            base_url=row.base_url,
+            api_key=decrypted_key,
+            model=row.model,
+        )
+    else:
+        # Chat config
+        decrypted_key = AuthService.decrypt_api_key(row.api_key_encrypted)
+        return AIConfig(
+            provider_type=row.provider_type,
+            base_url=row.base_url,
+            api_key=decrypted_key,
+            model=row.model,
+        )
 
 
 def _load_ai_prefs(user_id: str) -> Optional[UserAIPreferences]:
@@ -134,6 +171,10 @@ async def get_ai_config(user_id: str = Depends(get_current_user)):
         base_url=row.base_url,
         model=row.model,
         has_key=True,
+        translation_provider_type=row.translation_provider_type,
+        translation_base_url=row.translation_base_url,
+        translation_model=row.translation_model,
+        translation_has_key=bool(row.translation_api_key_encrypted),
     )
 
 
@@ -149,6 +190,15 @@ async def save_ai_config(config_in: AIModelConfigIn, user_id: str = Depends(get_
                 # Only update key if a new one is provided
                 if config_in.api_key:
                     existing.api_key_encrypted = AuthService.encrypt_api_key(config_in.api_key)
+                # Translation config
+                if config_in.translation_provider_type is not None:
+                    existing.translation_provider_type = config_in.translation_provider_type
+                if config_in.translation_base_url is not None:
+                    existing.translation_base_url = config_in.translation_base_url
+                if config_in.translation_model is not None:
+                    existing.translation_model = config_in.translation_model
+                if config_in.translation_api_key:
+                    existing.translation_api_key_encrypted = AuthService.encrypt_api_key(config_in.translation_api_key)
             else:
                 if not config_in.api_key:
                     raise HTTPException(status_code=400, detail="API key is required for initial setup")
@@ -159,14 +209,24 @@ async def save_ai_config(config_in: AIModelConfigIn, user_id: str = Depends(get_
                     base_url=config_in.base_url,
                     api_key_encrypted=encrypted_key,
                     model=config_in.model,
+                    translation_provider_type=config_in.translation_provider_type,
+                    translation_base_url=config_in.translation_base_url,
+                    translation_api_key_encrypted=AuthService.encrypt_api_key(config_in.translation_api_key) if config_in.translation_api_key else None,
+                    translation_model=config_in.translation_model,
                 )
                 db.add(existing)
             db.commit()
+            db.refresh(existing)
+            translation_has_key = bool(existing.translation_api_key_encrypted)
         return AIModelConfigOut(
             provider_type=config_in.provider_type,
             base_url=config_in.base_url,
             model=config_in.model,
             has_key=True,
+            translation_provider_type=config_in.translation_provider_type,
+            translation_base_url=config_in.translation_base_url,
+            translation_model=config_in.translation_model,
+            translation_has_key=translation_has_key,
         )
     except HTTPException:
         raise
@@ -337,7 +397,7 @@ async def chat(request: ChatRequest, user_id: str = Depends(get_current_user)):
 @router.post("/translate/chapter")
 async def translate_chapter(request: TranslateChapterRequest, user_id: str = Depends(get_current_user)):
     """Translate a single chapter as SSE stream, sentence by sentence."""
-    ai_config = _build_ai_config(user_id)
+    ai_config = _build_ai_config(user_id, config_type="translation")
     service = AIService(ai_config)
 
     sentences = [s.strip() for s in request.sentences if s.strip()]
@@ -366,6 +426,25 @@ async def translate_chapter(request: TranslateChapterRequest, user_id: str = Dep
                 "full_translated": " ".join(translated_parts) if (i + 1) == total else "",
             }, ensure_ascii=False)
             yield f"data: {payload}\n\n"
+
+        # Persist translated pairs to file
+        try:
+            file_path = settings.get_translation_path(user_id, request.book_id, request.target_lang, request.chapter_href)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            pairs = [
+                {"original": s, "translated": t}
+                for s, t in zip(sentences, translated_parts)
+            ]
+            data = {
+                "chapter_href": request.chapter_href,
+                "target_lang": request.target_lang,
+                "pairs": pairs,
+            }
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            import traceback
+            traceback.print_exc()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -405,7 +484,7 @@ async def _run_book_translation(
     """Background task: translate all chapters of a book."""
     try:
         task_manager.start_task(task_id)
-        ai_config = _build_ai_config(user_id)
+        ai_config = _build_ai_config(user_id, config_type="translation")
         service = AIService(ai_config)
 
         # Get TOC
@@ -497,6 +576,25 @@ async def _run_book_translation(
         task_manager.fail_task(task_id, str(e))
     finally:
         task_manager.unregister_running_task(task_id)
+
+
+@router.get("/translate/{book_id}/chapter")
+async def get_chapter_translation(
+    book_id: str,
+    chapter_href: str = Query(..., description="Chapter href"),
+    target_lang: str = Query(default="Chinese", description="Target language"),
+    user_id: str = Depends(get_current_user),
+):
+    """Get saved translation for a single chapter from file."""
+    file_path = settings.get_translation_path(user_id, book_id, target_lang, chapter_href)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="No translation found")
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data
+    except Exception:
+        raise HTTPException(status_code=404, detail="No translation found")
 
 
 @router.get("/translate/{book_id}")

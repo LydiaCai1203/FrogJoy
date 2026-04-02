@@ -25,6 +25,10 @@ class User(Base):
     ai_preferences = relationship("UserAIPreferences", back_populates="user", uselist=False)
     theme_preferences = relationship("UserThemePreferences", back_populates="user", uselist=False)
     book_translations = relationship("BookTranslation", back_populates="user")
+    tts_provider_config = relationship("TTSProviderConfig", back_populates="user", uselist=False)
+    voice_preferences = relationship("VoicePreferences", back_populates="user", uselist=False)
+    cloned_voices = relationship("ClonedVoice", back_populates="user", cascade="all, delete-orphan")
+    user_feature_setup = relationship("UserFeatureSetup", back_populates="user", uselist=False)
 
 
 class Book(Base):
@@ -116,10 +120,16 @@ class AIModelConfig(Base):
     __tablename__ = "ai_model_configs"
 
     user_id = Column(String, ForeignKey("users.id"), primary_key=True)
+    # Chat / Ask AI config
     provider_type = Column(String, nullable=False, default="openai-chat")
     base_url = Column(String, nullable=False)
     api_key_encrypted = Column(String, nullable=False)
     model = Column(String, nullable=False)
+    # Translation-specific config
+    translation_provider_type = Column(String, nullable=True)
+    translation_base_url = Column(String, nullable=True)
+    translation_api_key_encrypted = Column(String, nullable=True)
+    translation_model = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -174,3 +184,69 @@ class BookTranslation(Base):
                          name="uq_translation_user_book_chapter"),
         Index("idx_translation_book", "user_id", "book_id"),
     )
+
+
+class TTSProviderConfig(Base):
+    """TTS Provider configuration per user"""
+    __tablename__ = "tts_provider_configs"
+
+    user_id = Column(String, ForeignKey("users.id"), primary_key=True)
+    provider_type = Column(String, nullable=False, default="edge-tts")  # "edge-tts" | "minimax-tts"
+    base_url = Column(String, nullable=True)  # MiniMax uses this
+    api_key_encrypted = Column(String, nullable=True)  # MiniMax uses this
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="tts_provider_config")
+
+
+class ClonedVoice(Base):
+    """Cloned voice samples per user"""
+    __tablename__ = "cloned_voices"
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    voice_id = Column(String, nullable=False)  # Voice ID from MiniMax API
+    name = Column(String, nullable=False)  # User-defined name
+    audio_sample_path = Column(String, nullable=False)  # Stored sample file path
+    lang = Column(String, default="zh")
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User", back_populates="cloned_voices")
+
+    __table_args__ = (
+        Index("idx_cloned_voices_user", "user_id"),
+    )
+
+
+class VoicePreferences(Base):
+    """Voice selection preferences per user"""
+    __tablename__ = "voice_preferences"
+
+    user_id = Column(String, ForeignKey("users.id"), primary_key=True)
+    active_voice_type = Column(String, default="edge")  # "edge" | "minimax" | "cloned"
+    active_edge_voice = Column(String, default="zh-CN-XiaoxiaoNeural")
+    active_minimax_voice = Column(String, nullable=True)
+    active_cloned_voice_id = Column(String, nullable=True)
+    speed = Column(Integer, default=100)  # 50-200
+    pitch = Column(Integer, default=0)  # -50 to 50
+    emotion = Column(String, default="neutral")  # neutral, warm, excited, serious, suspense
+    audio_persistent = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="voice_preferences")
+
+
+class UserFeatureSetup(Base):
+    """Tracks which features have been configured by user"""
+    __tablename__ = "user_feature_setup"
+
+    user_id = Column(String, ForeignKey("users.id"), primary_key=True)
+    ai_chat_configured = Column(Boolean, default=False)
+    ai_translation_configured = Column(Boolean, default=False)
+    voice_selection_configured = Column(Boolean, default=False)
+    voice_synthesis_configured = Column(Boolean, default=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="user_feature_setup")

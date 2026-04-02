@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { translator } from "@/lib/translator";
 import { TTSService } from "@/api/services";
+import { getVoicePreferences, saveVoicePreferences } from "@/api/tts";
 import { API_BASE, API_URL } from "@/config";
 import { useAuth } from "@/contexts/AuthContext";
 import { AskAIDialog } from "@/components/highlight/AskAIDialog";
@@ -57,8 +58,30 @@ export default function BookReader() {
   const playingSentenceRef = useRef<number>(-1);
   const currentChapterHrefRef = useRef<string | null>(null); // 用于追踪当前播放的章节
   const [voice, setVoice] = useState<string | null>(null);
+  const [voiceType, setVoiceType] = useState<"edge" | "minimax" | "cloned">("edge");
   const [speed, setSpeed] = useState(1.0);
   const [emotion, setEmotion] = useState<"neutral" | "warm" | "excited" | "serious" | "suspense">("neutral");
+  const [preferredClonedVoiceId, setPreferredClonedVoiceId] = useState<string | null>(null);
+
+  // 从用户偏好加载默认音色设置
+  useEffect(() => {
+    getVoicePreferences().then((prefs) => {
+      const type = prefs.active_voice_type as "edge" | "minimax" | "cloned";
+      setVoiceType(type);
+
+      if (type === "edge" && prefs.active_edge_voice) {
+        setVoice(prefs.active_edge_voice);
+      } else if (type === "minimax" && prefs.active_minimax_voice) {
+        setVoice(prefs.active_minimax_voice);
+      } else if (type === "cloned" && prefs.active_cloned_voice_id) {
+        // 克隆音色：传 DB UUID 给 Controls，Controls 加载 voice list 后匹配
+        setPreferredClonedVoiceId(prefs.active_cloned_voice_id);
+      }
+
+      if (prefs.speed) setSpeed(prefs.speed / 100);
+      if (prefs.emotion) setEmotion(prefs.emotion as typeof emotion);
+    }).catch(() => {});
+  }, []);
 
   // 字词同步高亮状态
   const [wordTimestamps, setWordTimestamps] = useState<WordTimestamp[]>([]);
@@ -279,7 +302,7 @@ export default function BookReader() {
 
   // Set original sentences when chapter loads
   useEffect(() => {
-    if (!chapterData) return;
+    if (!chapterData || !bookId) return;
 
     // Immediately reset translation state before canceling
     setIsTranslating(false);
@@ -288,15 +311,28 @@ export default function BookReader() {
     translatingChapterRef.current = null;
 
     setOriginalSentences(chapterData.sentences);
-
-    // Check cache for existing translation
-    if (translatedCache[chapterData.href]) {
-      setTranslatedSentences(translatedCache[chapterData.href]);
-    } else {
-      setTranslatedSentences([]);
-    }
+    setTranslatedSentences([]);
     setTranslateTrigger(0);
-  }, [chapterData, translatedCache]);
+
+    // Try loading saved translation: in-memory cache first, then file
+    const href = chapterData.href;
+    setTranslatedCache(prev => {
+      if (prev[href]) {
+        setTranslatedSentences(prev[href]);
+      } else if (translationEnabled) {
+        // Load from file asynchronously
+        aiService.getChapterTranslation(bookId, href, targetLang).then((pairs) => {
+          if (pairs && pairs.length > 0) {
+            const translated = pairs.map(p => p.translated);
+            setTranslatedCache(cache => ({ ...cache, [href]: translated }));
+            setTranslatedSentences(translated);
+          }
+        }).catch(() => {});
+      }
+      return prev;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chapterData, bookId, translationEnabled, targetLang]);
 
   // Background translation — triggered by translateTrigger button
   useEffect(() => {
@@ -400,10 +436,6 @@ export default function BookReader() {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
 
-  // 监听 voice 变化
-  useEffect(() => {
-    // voice changed — no action needed
-  }, [voice]);
 
   // 预加载音频函数
   const prefetchAudio = useCallback(async (
@@ -445,6 +477,7 @@ export default function BookReader() {
           chapter_href: currentChapterHref,
           sentences: originalSentences,
           voice: voice || "zh-CN-XiaoxiaoNeural",
+          voice_type: voiceType,
           rate: params.rate,
           pitch: params.pitch,
           start_index: actualStart,
@@ -454,7 +487,7 @@ export default function BookReader() {
     } catch (error) {
       console.warn("[Prefetch] Failed to prefetch audio:", error);
     }
-  }, [bookId, currentChapterHref, originalSentences, voice, speed, emotion]);
+  }, [bookId, currentChapterHref, originalSentences, voice, voiceType, speed, emotion]);
 
   // TTS Loop
   useEffect(() => {
@@ -520,15 +553,50 @@ export default function BookReader() {
 
     const params = getEmotionParams(emotion);
 
-    const prefetchStart = Math.max(0, thisSentenceIndex - 1);
-    const prefetchEnd = Math.min(originalSentences.length, thisSentenceIndex + 3);
-    prefetchAudio(prefetchStart, prefetchEnd);
-
     ttsService.stop();
     playingSentenceRef.current = playKey;
 
+    // Preload upcoming sentences into browser while current one plays
+    const makeOpts = (idx: number, translated: boolean) => ({
+      voice: voice || undefined,
+      voice_type: voiceType,
+      rate: params.rate,
+      pitch: params.pitch,
+      book_id: bookId || undefined,
+      chapter_href: currentChapterHref || undefined,
+      paragraph_index: idx,
+      is_translated: translated,
+    });
+
+    for (let ahead = 1; ahead <= 3; ahead++) {
+      const futureIdx = thisSentenceIndex + ahead;
+      if (futureIdx < originalSentences.length) {
+        let futureText: string | undefined;
+        let futureTranslated = false;
+
+        if (isBilingualMode) {
+          // 双语模式：预加载原文和译文
+          const origText = originalSentences[futureIdx];
+          if (origText) (ttsService as TTSService).preload(origText, makeOpts(futureIdx, false));
+          const transText = translatedSentences[futureIdx];
+          if (transText) (ttsService as TTSService).preload(transText, makeOpts(futureIdx, true));
+          continue;
+        } else if (isTranslatedMode && translatedSentences[futureIdx]) {
+          futureText = translatedSentences[futureIdx];
+          futureTranslated = true;
+        } else {
+          futureText = originalSentences[futureIdx];
+        }
+
+        if (futureText) {
+          (ttsService as TTSService).preload(futureText, makeOpts(futureIdx, futureTranslated));
+        }
+      }
+    }
+
     ttsService.speak(text, {
       voice: voice || undefined,
+      voice_type: voiceType,
       rate: params.rate,
       pitch: params.pitch,
       book_id: bookId || undefined,
@@ -552,10 +620,6 @@ export default function BookReader() {
         if (isBilingualMode) {
           setPlayBothPhase("original");
         }
-        const nextIndex = thisSentenceIndex + 1;
-        if (nextIndex < originalSentences.length) {
-          prefetchAudio(nextIndex, nextIndex + 2);
-        }
         setCurrentSentenceIndex(prev => prev + 1);
       }
     }).catch(e => {
@@ -566,13 +630,14 @@ export default function BookReader() {
       }
     });
 
-  }, [isPlaying, isPlayMode, isBilingualMode, isTranslatedMode, currentSentenceIndex, originalSentences, translatedSentences, playBothPhase, voice, speed, emotion, bookId, currentChapterHref, prefetchAudio]);
+  }, [isPlaying, isPlayMode, isBilingualMode, isTranslatedMode, currentSentenceIndex, originalSentences, translatedSentences, playBothPhase, voice, voiceType, speed, emotion, bookId, currentChapterHref, prefetchAudio]);
 
   // 章节切换时重置状态并预加载
   useEffect(() => {
     if (!currentChapterHref) return;
 
     ttsService.stop();
+    (ttsService as TTSService).clearPreload();
     currentChapterHrefRef.current = currentChapterHref;
 
     // 检查是否有待恢复的索引
@@ -734,9 +799,15 @@ export default function BookReader() {
                   return;
                 }
                 if (translatedSentences.length > 0) {
-                  // Clear translations
+                  // Clear translations (only current chapter, keep file on disk)
                   setTranslatedSentences([]);
-                  setTranslatedCache({});
+                  if (currentChapterHref) {
+                    setTranslatedCache(prev => {
+                      const next = { ...prev };
+                      delete next[currentChapterHref];
+                      return next;
+                    });
+                  }
                   setUnifiedMode((prev) => {
                     const [currentInteraction] = prev.split("-") as [InteractionMode, ContentMode];
                     return `${currentInteraction}-original` as UnifiedMode;
@@ -920,11 +991,12 @@ export default function BookReader() {
         progress={originalSentences.length > 0 ? (currentSentenceIndex / originalSentences.length) * 100 : 0}
 
         selectedVoice={voice}
-        onVoiceChange={setVoice}
+        onVoiceChange={(name, type) => { setVoice(name); setVoiceType(type); (ttsService as TTSService).clearPreload(); }}
         emotion={emotion}
         onEmotionChange={(e) => setEmotion(e)}
         speed={speed}
         onSpeedChange={setSpeed}
+        preferredClonedVoiceId={preferredClonedVoiceId}
 
         bookId={bookId}
         chapterHref={currentChapterHref}

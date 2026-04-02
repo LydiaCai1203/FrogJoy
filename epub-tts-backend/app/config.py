@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     # ElevenLabs API Configuration
     elevenlabs_api_key: str = ""
 
+    # MiniMax TTS Configuration
+    minimax_base_url: str = "https://api.minimaxi.com"
+
     # AI API Key Encryption
     fernet_key: str = ""
 

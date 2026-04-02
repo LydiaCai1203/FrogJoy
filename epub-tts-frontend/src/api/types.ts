@@ -22,6 +22,7 @@ export interface ChapterContent {
 
 export interface TTSOptions {
   voice?: string;
+  voice_type?: "edge" | "minimax" | "cloned";
   rate?: number;
   pitch?: number;
   volume?: number;

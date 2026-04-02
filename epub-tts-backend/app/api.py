@@ -8,7 +8,7 @@ from app.services.tts_service import TTSService, AudioCache
 from app.services.task_service import task_manager, TaskStatus
 from app.middleware.auth import get_current_user, get_optional_user
 from app.models.database import get_db
-from app.models.models import Book
+from app.models.models import Book, VoicePreferences
 from app.config import settings
 import asyncio
 import os
@@ -34,6 +34,7 @@ def _get_book_owner(book_id: str, current_user_id: str) -> str:
 class TTSRequest(BaseModel):
     text: str
     voice: Optional[str] = "en-US-ChristopherNeural"
+    voice_type: Optional[str] = "edge"  # "edge" | "minimax" | "cloned"
     rate: Optional[float] = 1.0
     pitch: Optional[float] = 1.0
     volume: Optional[float] = 1.0
@@ -69,17 +70,29 @@ class BookDownloadZipRequest(BaseModel):
 
 
 # --- TTS Routes ---
+def _is_audio_persistent(user_id: str) -> bool:
+    """Check if user has audio persistence enabled."""
+    with get_db() as db:
+        prefs = db.query(VoicePreferences).filter(
+            VoicePreferences.user_id == user_id
+        ).first()
+        return prefs.audio_persistent if prefs and prefs.audio_persistent else False
+
+
 @router.post("/tts/speak")
 async def speak(request: TTSRequest, user_id: str = Depends(get_current_user)):
-    logger.info(f"[API] TTS request: text='{request.text[:100] if request.text else 'EMPTY'}...', voice={request.voice}")
+    logger.info(f"[API] TTS request: text='{request.text[:100] if request.text else 'EMPTY'}...', voice={request.voice}, voice_type={request.voice_type}")
 
     if not request.text or not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
+
+    persistent = _is_audio_persistent(user_id)
 
     try:
         result = await TTSService.generate_audio(
             text=request.text,
             voice=request.voice,
+            voice_type=request.voice_type,
             rate=request.rate,
             pitch=request.pitch,
             user_id=user_id,
@@ -87,6 +100,7 @@ async def speak(request: TTSRequest, user_id: str = Depends(get_current_user)):
             chapter_href=request.chapter_href,
             paragraph_index=request.paragraph_index,
             is_translated=request.is_translated or False,
+            persistent=persistent,
         )
         return result
     except Exception as e:
@@ -94,18 +108,13 @@ async def speak(request: TTSRequest, user_id: str = Depends(get_current_user)):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/tts/voices")
-async def get_voices(lang: str = None):
-    voices = await TTSService.get_voices()
-    if lang:
-        voices = [v for v in voices if v["lang"].lower().startswith(lang.lower())]
-    return voices
 
 class PrefetchRequest(BaseModel):
     book_id: str
     chapter_href: str
     sentences: List[str]
     voice: Optional[str] = "zh-CN-XiaoxiaoNeural"
+    voice_type: Optional[str] = "edge"  # "edge" | "minimax" | "cloned"
     rate: Optional[float] = 1.0
     pitch: Optional[float] = 1.0
     start_index: int
@@ -116,6 +125,8 @@ async def prefetch_audio(request: PrefetchRequest, user_id: str = Depends(get_cu
     try:
         from app.services.tts_service import memory_cache
 
+        persistent = _is_audio_persistent(user_id)
+
         await memory_cache.prefetch_range(
             book_id=request.book_id,
             chapter_href=request.chapter_href,
@@ -123,9 +134,11 @@ async def prefetch_audio(request: PrefetchRequest, user_id: str = Depends(get_cu
             end_index=request.end_index,
             sentences=request.sentences,
             voice=request.voice,
+            voice_type=request.voice_type or "edge",
             rate=request.rate,
             pitch=request.pitch,
-            user_id=user_id
+            user_id=user_id,
+            persistent=persistent,
         )
 
         return {
@@ -138,51 +151,16 @@ async def prefetch_audio(request: PrefetchRequest, user_id: str = Depends(get_cu
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/tts/voices/chinese")
-async def get_chinese_voices():
-    voices = await TTSService.get_voices()
-    chinese_voices = [v for v in voices if v["lang"].startswith("zh")]
+# --- 临时音频 Route ---
+@router.get("/tts/tmp/{filename}")
+async def serve_tmp_audio(filename: str):
+    """Serve temporary (non-persistent) audio files."""
+    from app.services.tts_service import _tmp_audio_dir
+    filepath = os.path.join(_tmp_audio_dir, filename)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Temporary audio file not found")
+    return FileResponse(filepath, media_type="audio/mpeg")
 
-    display_names = {
-        "zh-CN-XiaoxiaoNeural": "晓晓（活泼女声）⭐",
-        "zh-CN-XiaoyiNeural": "晓伊（温柔女声）",
-        "zh-CN-YunjianNeural": "云健（成熟男声）",
-        "zh-CN-YunxiNeural": "云希（年轻男声）⭐",
-        "zh-CN-YunxiaNeural": "云夏（少年音）",
-        "zh-CN-YunyangNeural": "云扬（新闻播报）",
-        "zh-CN-liaoning-XiaobeiNeural": "晓北（东北话）",
-        "zh-CN-shaanxi-XiaoniNeural": "晓妮（陕西话）",
-        "zh-HK-HiuGaaiNeural": "曉佳（粤语女声）",
-        "zh-HK-HiuMaanNeural": "曉曼（粤语女声）",
-        "zh-HK-WanLungNeural": "雲龍（粤语男声）",
-        "zh-TW-HsiaoChenNeural": "曉臻（台湾女声）",
-        "zh-TW-HsiaoYuNeural": "曉雨（台湾女声）",
-        "zh-TW-YunJheNeural": "雲哲（台湾男声）",
-    }
-
-    def sort_key(v):
-        name = v["name"]
-        if "zh-CN-liaoning" in name or "zh-CN-shaanxi" in name:
-            return (1, name)
-        elif name.startswith("zh-CN"):
-            return (0, name)
-        elif name.startswith("zh-HK"):
-            return (2, name)
-        else:
-            return (3, name)
-
-    chinese_voices.sort(key=sort_key)
-
-    result = []
-    for v in chinese_voices:
-        result.append({
-            "name": v["name"],
-            "displayName": display_names.get(v["name"], v["name"]),
-            "gender": v["gender"],
-            "lang": v["lang"]
-        })
-
-    return result
 
 # --- 缓存管理 Routes ---
 @router.get("/tts/cache/stats")

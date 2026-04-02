@@ -1,14 +1,19 @@
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useReadingHeatmap, useBookReadingStats, useReadingSummary } from "@/hooks/use-reading-stats";
 import { ReadingHeatmap } from "@/components/profile/ReadingHeatmap";
-import { AIConfigPanel } from "@/components/profile/AIConfigPanel";
+import { AIChatPanel } from "@/components/profile/AIChatPanel";
+import { AITranslationPanel } from "@/components/profile/AITranslationPanel";
+import { VoiceConfigPanel } from "@/components/profile/VoiceConfigPanel";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, BrainCircuit, Book, Clock, Flame, BookOpen } from "lucide-react";
 import { API_BASE } from "@/config";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { FontSizeSwitcher } from "@/components/FontSizeSwitcher";
 import { TasksPanel } from "@/components/player/TasksPanel";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { Bot, Languages, Mic } from "lucide-react";
 
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -16,6 +21,47 @@ function formatDuration(seconds: number): string {
   if (hours > 0) return `${hours} 小时 ${minutes} 分钟`;
   if (minutes > 0) return `${minutes} 分钟`;
   return `${seconds} 秒`;
+}
+
+interface ConfigCardProps {
+  title: string;
+  icon: typeof Bot;
+  badge?: string;
+  isExpanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}
+
+function ConfigCard({ title, icon: Icon, badge, isExpanded, onToggle, children }: ConfigCardProps) {
+  return (
+    <div className="border border-border rounded-sm overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full bg-card p-4 flex items-center justify-between hover:bg-accent/50 transition-colors text-left"
+      >
+        <div className="flex items-center gap-2">
+          <Icon className="w-5 h-5 text-primary" />
+          <span className="text-sm font-display font-bold tracking-wide">{title}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {badge && (
+            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">{badge}</span>
+          )}
+          {isExpanded ? (
+            <ChevronUp className="w-4 h-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-muted-foreground" />
+          )}
+        </div>
+      </button>
+      {isExpanded && (
+        <div className="p-4 border-t border-border bg-card">
+          {children}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Profile() {
@@ -26,6 +72,13 @@ export default function Profile() {
   const { data: heatmapData = [] } = useReadingHeatmap(year);
   const { data: bookStats = [] } = useBookReadingStats();
   const { data: summary } = useReadingSummary();
+
+  // Track which section is expanded
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+
+  const toggleSection = (section: string) => {
+    setExpandedSection(expandedSection === section ? null : section);
+  };
 
   if (!user) {
     return (
@@ -138,8 +191,40 @@ export default function Profile() {
           )}
         </div>
 
-        {/* AI Config */}
-        <AIConfigPanel />
+        {/* Configuration Panels - Four Collapsible Cards */}
+        <div className="space-y-3">
+          <h2 className="text-sm font-display font-bold tracking-wide">功能配置</h2>
+
+          {/* AI Chat Panel */}
+          <ConfigCard
+            title="AI 对话"
+            icon={Bot}
+            isExpanded={expandedSection === "ai-chat"}
+            onToggle={() => toggleSection("ai-chat")}
+          >
+            <AIChatPanel />
+          </ConfigCard>
+
+          {/* AI Translation Panel */}
+          <ConfigCard
+            title="AI 翻译"
+            icon={Languages}
+            isExpanded={expandedSection === "ai-translation"}
+            onToggle={() => toggleSection("ai-translation")}
+          >
+            <AITranslationPanel />
+          </ConfigCard>
+
+          {/* Voice Selection Panel */}
+          <ConfigCard
+            title="音色与语音合成"
+            icon={Mic}
+            isExpanded={expandedSection === "voice-selection"}
+            onToggle={() => toggleSection("voice-selection")}
+          >
+            <VoiceConfigPanel />
+          </ConfigCard>
+        </div>
       </main>
     </div>
   );
