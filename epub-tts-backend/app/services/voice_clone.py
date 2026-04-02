@@ -252,7 +252,10 @@ class VoiceCloneService:
                 "text": text,
             }))
 
-            # 4. Receive audio chunks
+            # 4. Send task_finish to signal end of input
+            await ws.send(json.dumps({"event": "task_finish"}))
+
+            # 5. Receive audio chunks
             while True:
                 response = json.loads(await ws.recv())
 
@@ -263,9 +266,6 @@ class VoiceCloneService:
 
                 if response.get("is_final"):
                     break
-
-            # 5. Send task_finish
-            await ws.send(json.dumps({"event": "task_finish"}))
 
         finally:
             await ws.close()
