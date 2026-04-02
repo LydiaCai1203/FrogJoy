@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List
@@ -7,10 +7,10 @@ from app.services.book_service import BookService
 from app.services.tts_service import TTSService, AudioCache
 from app.services.task_service import task_manager, TaskStatus
 from app.middleware.auth import get_current_user, get_optional_user
+from app.middleware.rate_limit import get_client_ip, check_guest_tts_rate_limit, is_guest_user
 from app.models.database import get_db
-from app.models.models import Book, VoicePreferences
+from app.models.models import Book, User, VoicePreferences
 from app.config import settings
-from app.middleware.rate_limit import check_guest_rate_limit
 import asyncio
 import os
 import edge_tts
@@ -81,13 +81,16 @@ def _is_audio_persistent(user_id: str) -> bool:
 
 
 @router.post("/tts/speak")
-async def speak(request: TTSRequest, user_id: str = Depends(get_current_user)):
+async def speak(request: TTSRequest, raw_request: Request, user_id: str = Depends(get_current_user)):
     logger.info(f"[API] TTS request: text='{request.text[:100] if request.text else 'EMPTY'}...', voice={request.voice}, voice_type={request.voice_type}")
+
+    # 游客限频：同一 IP 的游客用户 1 分钟内最多 5 次
+    if is_guest_user(user_id):
+        client_ip = get_client_ip(raw_request)
+        check_guest_tts_rate_limit(client_ip)
 
     if not request.text or not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
-
-    check_guest_rate_limit(user_id, "tts_speak")
     persistent = _is_audio_persistent(user_id)
 
     try:
