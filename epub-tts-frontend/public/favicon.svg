@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Head with gentle breathing -->
+  <g>
+    <animateTransform attributeName="transform" type="scale" values="1,1;1,1.02;1,1" dur="3s" repeatCount="indefinite" additive="sum" origin="32 34"/>
+    <ellipse cx="32" cy="34" rx="22" ry="18" fill="#4CAF50"/>
+    <!-- Belly highlight -->
+    <ellipse cx="32" cy="40" rx="12" ry="8" fill="#A5D6A7" opacity="0.5"/>
+    <!-- Nostrils -->
+    <circle cx="27" cy="32" r="1.2" fill="#2E7D32"/>
+    <circle cx="37" cy="32" r="1.2" fill="#2E7D32"/>
+    <!-- Mouth -->
+    <path d="M 18 38 Q 32 46 46 38" stroke="#2E7D32" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <!-- Left cheek blush -->
+    <ellipse cx="14" cy="36" rx="4" ry="2.5" fill="#FF8A80" opacity="0.5"/>
+    <!-- Right cheek blush -->
+    <ellipse cx="50" cy="36" rx="4" ry="2.5" fill="#FF8A80" opacity="0.5"/>
+  </g>
+
+  <!-- Left eye bump -->
+  <circle cx="20" cy="18" r="10" fill="#4CAF50"/>
+  <!-- Right eye bump -->
+  <circle cx="44" cy="18" r="10" fill="#4CAF50"/>
+
+  <!-- Left eye white -->
+  <ellipse cx="20" cy="17" rx="7" ry="7">
+    <animate attributeName="ry" values="7;0.5;7" dur="4s" begin="0s" repeatCount="indefinite" keyTimes="0;0.05;0.1" keySplines="0.4 0 0.2 1;0.4 0 0.2 1" calcMode="spline" fill="freeze"/>
+    <set attributeName="fill" to="white"/>
+  </ellipse>
+  <!-- Right eye white -->
+  <ellipse cx="44" cy="17" rx="7" ry="7">
+    <animate attributeName="ry" values="7;0.5;7" dur="4s" begin="0s" repeatCount="indefinite" keyTimes="0;0.05;0.1" keySplines="0.4 0 0.2 1;0.4 0 0.2 1" calcMode="spline" fill="freeze"/>
+    <set attributeName="fill" to="white"/>
+  </ellipse>
+
+  <!-- Left pupil -->
+  <ellipse cx="21.5" cy="16" rx="3.5" ry="3.5" fill="#1a1a1a">
+    <animate attributeName="ry" values="3.5;0.3;3.5" dur="4s" begin="0s" repeatCount="indefinite" keyTimes="0;0.05;0.1" keySplines="0.4 0 0.2 1;0.4 0 0.2 1" calcMode="spline"/>
+  </ellipse>
+  <!-- Right pupil -->
+  <ellipse cx="45.5" cy="16" rx="3.5" ry="3.5" fill="#1a1a1a">
+    <animate attributeName="ry" values="3.5;0.3;3.5" dur="4s" begin="0s" repeatCount="indefinite" keyTimes="0;0.05;0.1" keySplines="0.4 0 0.2 1;0.4 0 0.2 1" calcMode="spline"/>
+  </ellipse>
+
+  <!-- Left eye shine -->
+  <circle cx="23" cy="14.5" r="1.2" fill="white">
+    <animate attributeName="opacity" values="1;0;1" dur="4s" begin="0s" repeatCount="indefinite" keyTimes="0;0.05;0.1" keySplines="0.4 0 0.2 1;0.4 0 0.2 1" calcMode="spline"/>
+  </circle>
+  <!-- Right eye shine -->
+  <circle cx="47" cy="14.5" r="1.2" fill="white">
+    <animate attributeName="opacity" values="1;0;1" dur="4s" begin="0s" repeatCount="indefinite" keyTimes="0;0.05;0.1" keySplines="0.4 0 0.2 1;0.4 0 0.2 1" calcMode="spline"/>
+  </circle>
+</svg>
