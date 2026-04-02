@@ -1,6 +1,6 @@
 
 import { useState, useRef, useEffect } from "react";
-import { Bot, Send, Loader2, X } from "lucide-react";
+import { Bot, Send, Loader2, X, Square } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,6 +83,7 @@ export function AskAIDialog({
       let assistantContent = "";
       for await (const chunk of aiService.streamChat(
         chatMessages, bookId, chapterHref, chapterTitle,
+        abortRef.current.signal,
       )) {
         assistantContent += chunk;
         setMessages([...currentMessages, { role: "assistant", content: assistantContent }]);
@@ -92,6 +93,7 @@ export function AskAIDialog({
         setError((e as Error).message || "请求失败");
         toast.error("AI 回复失败: " + (e as Error).message);
       }
+      // Abort 时保留已收到的部分回复，不清除 messages
     } finally {
       setLoading(false);
       abortRef.current = null;
@@ -164,7 +166,7 @@ export function AskAIDialog({
               </div>
             ))}
 
-            {loading && (
+            {loading && visibleMessages[visibleMessages.length - 1]?.role !== "assistant" && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 <span>AI 正在思考...</span>
@@ -188,20 +190,26 @@ export function AskAIDialog({
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  handleSend();
+                  if (!loading) handleSend();
                 }
               }}
               placeholder="输入问题，按 Enter 发送..."
-              disabled={loading}
               className="flex-1 text-sm"
             />
-            <Button onClick={handleSend} disabled={loading || !input.trim()} size="sm">
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
+            {loading ? (
+              <Button
+                onClick={() => abortRef.current?.abort()}
+                size="sm"
+                variant="destructive"
+                title="停止生成"
+              >
+                <Square className="w-3.5 h-3.5" />
+              </Button>
+            ) : (
+              <Button onClick={handleSend} disabled={!input.trim()} size="sm">
                 <Send className="w-4 h-4" />
-              )}
-            </Button>
+              </Button>
+            )}
           </div>
         </div>
       </div>

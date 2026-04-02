@@ -500,11 +500,13 @@ export class AIService {
     bookId?: string,
     chapterHref?: string,
     chapterTitle?: string,
+    signal?: AbortSignal,
   ): AsyncGenerator<string, void, unknown> {
     const res = await fetch(`${API_URL}/ai/chat`, {
       method: "POST",
       headers: this.getAuthHeaders(),
       body: JSON.stringify({ messages, book_id: bookId, chapter_href: chapterHref, chapter_title: chapterTitle }),
+      signal,
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Chat failed" }));
