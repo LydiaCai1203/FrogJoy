@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>霓虹按钮特效</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 40px;
+      background: #0a0a0f;
+      font-family: 'Segoe UI', sans-serif;
+      overflow: hidden;
+    }
+
+    .container {
+      display: flex;
+      gap: 30px;
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 40px;
+    }
+
+    .neon-btn {
+      position: relative;
+      padding: 18px 45px;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #fff;
+      background: transparent;
+      border: 2px solid;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      overflow: hidden;
+    }
+
+    .neon-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.5s ease;
+    }
+
+    .neon-btn:hover::before {
+      left: 100%;
+    }
+
+    .neon-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 30px currentColor;
+    }
+
+    .neon-btn.pink {
+      color: #ff00ff;
+      border-color: #ff00ff;
+    }
+
+    .neon-btn.pink:hover {
+      background: #ff00ff;
+      color: #000;
+    }
+
+    .neon-btn.cyan {
+      color: #00ffff;
+      border-color: #00ffff;
+    }
+
+    .neon-btn.cyan:hover {
+      background: #00ffff;
+      color: #000;
+    }
+
+    .neon-btn.green {
+      color: #00ff88;
+      border-color: #00ff88;
+    }
+
+    .neon-btn.green:hover {
+      background: #00ff88;
+      color: #000;
+    }
+
+    .neon-btn.orange {
+      color: #ff8800;
+      border-color: #ff8800;
+    }
+
+    .neon-btn.orange:hover {
+      background: #ff8800;
+      color: #000;
+    }
+
+    .neon-btn.purple {
+      color: #aa00ff;
+      border-color: #aa00ff;
+    }
+
+    .neon-btn.purple:hover {
+      background: #aa00ff;
+      color: #000;
+    }
+
+    h1 {
+      color: #fff;
+      font-size: 2.5rem;
+      font-weight: 300;
+      letter-spacing: 0.3em;
+      text-shadow: 0 0 30px rgba(0, 200, 255, 0.5);
+      animation: titlePulse 2s ease-in-out infinite;
+    }
+
+    @keyframes titlePulse {
+      0%, 100% { opacity: 0.8; }
+      50% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <h1>NEON BUTTONS</h1>
+  <div class="container">
+    <button class="neon-btn pink">Hover Me</button>
+    <button class="neon-btn cyan">Hover Me</button>
+    <button class="neon-btn green">Hover Me</button>
+    <button class="neon-btn orange">Hover Me</button>
+    <button class="neon-btn purple">Hover Me</button>
+  </div>
+
+  <script>
+    document.querySelectorAll('.neon-btn').forEach(btn => {
+      btn.addEventListener('click', function(e) {
+        const ripple = document.createElement('span');
+        ripple.style.cssText = `
+          position: absolute;
+          background: rgba(255,255,255,0.8);
+          border-radius: 50%;
+          transform: scale(0);
+          animation: ripple 0.6s linear;
+          pointer-events: none;
+        `;
+        
+        const rect = this.getBoundingClientRect();
+        const size = Math.max(rect.width, rect.height);
+        ripple.style.width = ripple.style.height = size + 'px';
+        ripple.style.left = e.clientX - rect.left - size/2 + 'px';
+        ripple.style.top = e.clientY - rect.top - size/2 + 'px';
+        
+        this.appendChild(ripple);
+        setTimeout(() => ripple.remove(), 600);
+      });
+    });
+
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes ripple {
+        to { transform: scale(4); opacity: 0; }
+      }
+    `;
+    document.head.appendChild(style);
+  </script>
+</body>
+</html>
