@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>炫酷粒子连线特效</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      overflow: hidden;
+      background: #0a0a0f;
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    canvas {
+      display: block;
+      position: fixed;
+      top: 0;
+      left: 0;
+    }
+
+    .title {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 4rem;
+      font-weight: 300;
+      letter-spacing: 0.5em;
+      text-transform: uppercase;
+      pointer-events: none;
+      z-index: 10;
+      text-shadow: 0 0 60px rgba(0, 200, 255, 0.5);
+      animation: titleGlow 3s ease-in-out infinite;
+    }
+
+    @keyframes titleGlow {
+      0%, 100% { opacity: 0.7; text-shadow: 0 0 60px rgba(0, 200, 255, 0.5); }
+      50% { opacity: 1; text-shadow: 0 0 100px rgba(0, 200, 255, 0.8), 0 0 150px rgba(255, 100, 200, 0.4); }
+    }
+
+    .hint {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 0.9rem;
+      letter-spacing: 0.2em;
+      z-index: 10;
+    }
+
+    .stats {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 0.8rem;
+      z-index: 10;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div class="title">Particles</div>
+  <div class="hint">移动鼠标创建连接 | 滚轮缩放</div>
+  <div class="stats">
+    <div>Particles: <span id="particleCount">0</span></div>
+    <div>Connections: <span id="connectionCount">0</span></div>
+    <div>FPS: <span id="fps">0</span></div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const particleCountEl = document.getElementById('particleCount');
+    const connectionCountEl = document.getElementById('connectionCount');
+    const fpsEl = document.getElementById('fps');
+
+    let width, height;
+    let particles = [];
+    let mouse = { x: null, y: null, radius: 150 };
+    let connectionCount = 0;
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let fps = 0;
+
+    function resize() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+
+    class Particle {
+      constructor() {
+        this.x = Math.random() * width;
+        this.y = Math.random() * height;
+        this.vx = (Math.random() - 0.5) * 1.5;
+        this.vy = (Math.random() - 0.5) * 1.5;
+        this.radius = Math.random() * 2 + 1;
+        this.color = this.getRandomColor();
+        this.baseColor = this.color;
+      }
+
+      getRandomColor() {
+        const colors = [
+          `rgba(0, 200, 255, ${Math.random() * 0.5 + 0.5})`,
+          `rgba(255, 100, 200, ${Math.random() * 0.5 + 0.5})`,
+          `rgba(100, 255, 150, ${Math.random() * 0.5 + 0.5})`,
+          `rgba(255, 200, 50, ${Math.random() * 0.5 + 0.5})`,
+        ];
+        return colors[Math.floor(Math.random() * colors.length)];
+      }
+
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+
+        if (this.x < 0 || this.x > width) this.vx *= -1;
+        if (this.y < 0 || this.y > height) this.vy *= -1;
+
+        if (mouse.x !== null) {
+          const dx = mouse.x - this.x;
+          const dy = mouse.y - this.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          if (distance < mouse.radius) {
+            const force = (mouse.radius - distance) / mouse.radius;
+            this.vx -= (dx / distance) * force * 0.5;
+            this.vy -= (dy / distance) * force * 0.5;
+          }
+        }
+
+        this.x = Math.max(this.radius, Math.min(width - this.radius, this.x));
+        this.y = Math.max(this.radius, Math.min(height - this.radius, this.y));
+      }
+
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+      }
+    }
+
+    function init() {
+      resize();
+      particles = [];
+      const count = Math.min(150, Math.floor((width * height) / 15000));
+      for (let i = 0; i < count; i++) {
+        particles.push(new Particle());
+      }
+      particleCountEl.textContent = particles.length;
+    }
+
+    function drawConnections() {
+      connectionCount = 0;
+      
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          const maxDistance = 120;
+
+          if (distance < maxDistance) {
+            const opacity = 1 - (distance / maxDistance);
+            const gradient = ctx.createLinearGradient(
+              particles[i].x, particles[i].y,
+              particles[j].x, particles[j].y
+            );
+            
+            const color1 = particles[i].baseColor.replace(/[\d.]+\)$/, `${opacity * 0.6})`);
+            const color2 = particles[j].baseColor.replace(/[\d.]+\)$/, `${opacity * 0.6})`);
+            
+            gradient.addColorStop(0, color1);
+            gradient.addColorStop(1, color2);
+            
+            ctx.beginPath();
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.strokeStyle = gradient;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            connectionCount++;
+          }
+        }
+      }
+
+      if (mouse.x !== null) {
+        for (const particle of particles) {
+          const dx = mouse.x - particle.x;
+          const dy = mouse.y - particle.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance < mouse.radius) {
+            const opacity = 1 - (distance / mouse.radius);
+            ctx.beginPath();
+            ctx.moveTo(mouse.x, mouse.y);
+            ctx.lineTo(particle.x, particle.y);
+            ctx.strokeStyle = `rgba(255, 255, 255, ${opacity * 0.3})`;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        }
+      }
+    }
+
+    function animate() {
+      ctx.fillStyle = 'rgba(10, 10, 15, 0.15)';
+      ctx.fillRect(0, 0, width, height);
+
+      for (const particle of particles) {
+        particle.update();
+        particle.draw();
+      }
+
+      drawConnections();
+      connectionCountEl.textContent = connectionCount;
+
+      frameCount++;
+      const currentTime = performance.now();
+      if (currentTime - lastTime >= 1000) {
+        fps = frameCount;
+        frameCount = 0;
+        lastTime = currentTime;
+        fpsEl.textContent = fps;
+      }
+
+      requestAnimationFrame(animate);
+    }
+
+    window.addEventListener('resize', init);
+
+    canvas.addEventListener('mousemove', (e) => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      mouse.x = null;
+      mouse.y = null;
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      mouse.radius = Math.max(50, Math.min(300, mouse.radius - e.deltaY * 0.5));
+    }, { passive: false });
+
+    init();
+    animate();
+  </script>
+</body>
+</html>
