@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 from typing import List, Dict, Optional, Any
 from datetime import datetime
 import asyncio
@@ -10,6 +11,10 @@ from collections import OrderedDict
 from loguru import logger
 
 from app.config import settings
+
+# 临时音频目录（非持久化模式）
+_tmp_audio_dir = os.path.join(tempfile.gettempdir(), "bookreader_audio")
+os.makedirs(_tmp_audio_dir, exist_ok=True)
 
 
 def _audio_url(user_id: str, book_id: str, filename: str) -> str:
@@ -19,6 +24,11 @@ def _audio_url(user_id: str, book_id: str, filename: str) -> str:
     if user_id and book_id:
         return f"/api/files/{uid}/{bid}/audio/{filename}"
     return f"/api/tts/download/{uid}/{bid}/{filename}"
+
+
+def _tmp_audio_url(filename: str) -> str:
+    """Build URL for temporary (non-persistent) audio files."""
+    return f"/api/tts/tmp/{filename}"
 
 
 class AudioCache:
@@ -214,7 +224,8 @@ class AudioMemoryCache:
     async def prefetch_range(self, book_id: str, chapter_href: str,
                             start_index: int, end_index: int,
                             sentences: List[str], voice: str, rate: float, pitch: float,
-                            user_id: str = None):
+                            user_id: str = None, voice_type: str = "edge",
+                            persistent: bool = False):
         tasks = []
         for idx in range(start_index, min(end_index, len(sentences))):
             cached = await self.get(book_id, chapter_href, idx, voice, rate, pitch)
@@ -222,22 +233,46 @@ class AudioMemoryCache:
                 continue
 
             text = sentences[idx]
-            cache_key = AudioCache.generate_cache_key(text, voice, rate, pitch, book_id, chapter_href, idx)
-            disk_cached = AudioCache.get_cached_entry(cache_key, user_id, book_id)
+            if persistent:
+                cache_key = AudioCache.generate_cache_key(text, voice, rate, pitch, book_id, chapter_href, idx)
+                disk_cached = AudioCache.get_cached_entry(cache_key, user_id, book_id)
 
-            if disk_cached:
-                audio_data = {
-                    "audioUrl": _audio_url(user_id, book_id, disk_cached['filename']),
-                    "cached": True,
-                    "wordTimestamps": disk_cached.get('word_timestamps', [])
-                }
-                await self.put(book_id, chapter_href, idx, voice, rate, pitch, audio_data)
-            else:
-                tasks.append((idx, text))
+                if disk_cached:
+                    audio_data = {
+                        "audioUrl": _audio_url(user_id, book_id, disk_cached['filename']),
+                        "cached": True,
+                        "wordTimestamps": disk_cached.get('word_timestamps', [])
+                    }
+                    await self.put(book_id, chapter_href, idx, voice, rate, pitch, audio_data)
+                    continue
+
+            tasks.append((idx, text))
 
         if tasks:
-            audio_dir = AudioCache._audio_dir(user_id, book_id)
+            audio_dir = AudioCache._audio_dir(user_id, book_id) if persistent else _tmp_audio_dir
             os.makedirs(audio_dir, exist_ok=True)
+
+            # Load MiniMax credentials once if needed
+            minimax_api_key = None
+            minimax_base_url = None
+            if voice_type in ("minimax", "cloned") and user_id:
+                try:
+                    from app.models.database import get_db
+                    from app.models.models import TTSProviderConfig
+                    from app.services.auth_service import AuthService
+
+                    with get_db() as db:
+                        config = db.query(TTSProviderConfig).filter(
+                            TTSProviderConfig.user_id == user_id
+                        ).first()
+                    if config and config.api_key_encrypted:
+                        minimax_api_key = AuthService.decrypt_api_key(config.api_key_encrypted)
+                        minimax_base_url = config.base_url
+                    else:
+                        raise ValueError("MiniMax TTS 未配置，无法使用克隆音色")
+                except Exception as e:
+                    logger.warning(f"[Prefetch] Failed to load MiniMax config: {e}")
+                    raise
 
             async def generate_and_cache(idx: int, text: str):
                 try:
@@ -245,21 +280,36 @@ class AudioMemoryCache:
                     filename = f"{cache_key}.mp3"
                     filepath = os.path.join(audio_dir, filename)
 
-                    rate_pct = int((rate - 1.0) * 100)
-                    rate_str = f"{rate_pct:+d}%"
-                    pitch_hz = int((pitch - 1.0) * 50)
-                    pitch_str = f"{pitch_hz:+d}Hz"
+                    if voice_type in ("minimax", "cloned") and minimax_api_key:
+                        from app.services.voice_clone import VoiceCloneService
+                        pitch_hz = int((pitch - 1.0) * 50)
+                        audio_bytes = await VoiceCloneService.generate_speech_minimax(
+                            api_key=minimax_api_key,
+                            text=text,
+                            voice_id=voice,
+                            speed=rate,
+                            pitch=pitch_hz,
+                            base_url=minimax_base_url,
+                        )
+                        with open(filepath, 'wb') as f:
+                            f.write(audio_bytes)
+                    else:
+                        rate_pct = int((rate - 1.0) * 100)
+                        rate_str = f"{rate_pct:+d}%"
+                        pitch_hz = int((pitch - 1.0) * 50)
+                        pitch_str = f"{pitch_hz:+d}Hz"
+                        communicate = edge_tts.Communicate(text, voice, rate=rate_str, pitch=pitch_str)
+                        await communicate.save(filepath)
 
-                    communicate = edge_tts.Communicate(text, voice, rate=rate_str, pitch=pitch_str)
-                    await communicate.save(filepath)
+                    if persistent:
+                        AudioCache.save_to_cache(
+                            cache_key, filename, text, voice, rate, pitch, [],
+                            user_id=user_id, book_id=book_id, chapter_href=chapter_href, paragraph_index=idx
+                        )
 
-                    AudioCache.save_to_cache(
-                        cache_key, filename, text, voice, rate, pitch, [],
-                        user_id=user_id, book_id=book_id, chapter_href=chapter_href, paragraph_index=idx
-                    )
-
+                    audio_url = _audio_url(user_id, book_id, filename) if persistent else _tmp_audio_url(filename)
                     result = {
-                        "audioUrl": _audio_url(user_id, book_id, filename),
+                        "audioUrl": audio_url,
                         "cached": False,
                         "wordTimestamps": []
                     }
@@ -267,13 +317,18 @@ class AudioMemoryCache:
                 except Exception as e:
                     logger.info(f"[MemoryCache] Failed to prefetch paragraph {idx}: {e}")
 
-            semaphore = asyncio.Semaphore(3)
-
-            async def limited_generate(idx, text):
-                async with semaphore:
+            # MiniMax WebSocket is sequential; Edge can be parallel
+            if voice_type in ("minimax", "cloned"):
+                for idx, text in tasks:
                     await generate_and_cache(idx, text)
+            else:
+                semaphore = asyncio.Semaphore(3)
 
-            await asyncio.gather(*[limited_generate(idx, text) for idx, text in tasks])
+                async def limited_generate(idx, text):
+                    async with semaphore:
+                        await generate_and_cache(idx, text)
+
+                await asyncio.gather(*[limited_generate(idx, text) for idx, text in tasks])
 
     async def clear(self):
         async with self.lock:
@@ -330,6 +385,7 @@ class TTSService:
     async def generate_audio(
         text: str,
         voice: str,
+        voice_type: str = "edge",
         rate: float = 1.0,
         pitch: float = 1.0,
         user_id: str = None,
@@ -337,23 +393,30 @@ class TTSService:
         chapter_href: str = None,
         paragraph_index: int = None,
         is_translated: bool = False,
+        persistent: bool = False,
     ) -> Dict[str, Any]:
-        if user_id and book_id:
-            audio_dir = settings.get_audio_dir(user_id, book_id)
+        if persistent:
+            if user_id and book_id:
+                audio_dir = settings.get_audio_dir(user_id, book_id)
+            else:
+                audio_dir = os.path.join(settings.data_dir, "users", user_id or "_anon", "_misc", "audio")
         else:
-            audio_dir = os.path.join(settings.data_dir, "users", user_id or "_anon", "_misc", "audio")
+            audio_dir = _tmp_audio_dir
         os.makedirs(audio_dir, exist_ok=True)
 
         if not text or not text.strip():
             raise ValueError("Text cannot be empty")
 
-        detected_lang = TTSService.detect_language(text)
-        voice_lang = voice.split("-")[0].lower() if voice else ""
+        # Only do language-mismatch detection for Edge TTS voices (they have locale prefixes like "zh-CN-...")
+        # MiniMax and cloned voices don't follow this naming convention
+        if voice_type == "edge":
+            detected_lang = TTSService.detect_language(text)
+            voice_lang = voice.split("-")[0].lower() if voice else ""
 
-        if voice_lang != detected_lang:
-            suggested_voice = TTSService.get_default_voice(text)
-            logger.info(f"[TTS] Language mismatch: text is '{detected_lang}', voice is '{voice_lang}'. Using '{suggested_voice}' instead.")
-            voice = suggested_voice
+            if voice_lang != detected_lang:
+                suggested_voice = TTSService.get_default_voice(text)
+                logger.info(f"[TTS] Language mismatch: text is '{detected_lang}', voice is '{voice_lang}'. Using '{suggested_voice}' instead.")
+                voice = suggested_voice
 
         # 1. 优先检查内存缓存
         if book_id and chapter_href is not None and paragraph_index is not None:
@@ -362,19 +425,20 @@ class TTSService:
                 logger.info(f"[TTS] Memory cache hit: paragraph {paragraph_index} (translated={is_translated})")
                 return memory_cached
 
-        # 2. 检查磁盘缓存
+        # 2. 检查磁盘缓存（仅持久化模式）
         cache_key = AudioCache.generate_cache_key(text, voice, rate, pitch, book_id, chapter_href, paragraph_index, is_translated)
-        cached_entry = AudioCache.get_cached_entry(cache_key, user_id, book_id)
+        if persistent:
+            cached_entry = AudioCache.get_cached_entry(cache_key, user_id, book_id)
 
-        if cached_entry:
-            result = {
-                "audioUrl": _audio_url(user_id, book_id, cached_entry['filename']),
-                "cached": True,
-                "wordTimestamps": cached_entry.get('word_timestamps', [])
-            }
-            if book_id and chapter_href is not None and paragraph_index is not None:
-                await memory_cache.put(book_id, chapter_href, paragraph_index, voice, rate, pitch, result, is_translated)
-            return result
+            if cached_entry:
+                result = {
+                    "audioUrl": _audio_url(user_id, book_id, cached_entry['filename']),
+                    "cached": True,
+                    "wordTimestamps": cached_entry.get('word_timestamps', [])
+                }
+                if book_id and chapter_href is not None and paragraph_index is not None:
+                    await memory_cache.put(book_id, chapter_href, paragraph_index, voice, rate, pitch, result, is_translated)
+                return result
 
         # 缓存未命中，生成新音频
         rate_pct = int((rate - 1.0) * 100)
@@ -382,15 +446,69 @@ class TTSService:
         pitch_hz = int((pitch - 1.0) * 50)
         pitch_str = f"{pitch_hz:+d}Hz"
 
-        logger.info(f"[TTS] Generating audio: text='{text[:50]}...', voice={voice}, rate={rate_str}, pitch={pitch_str}")
-
-        communicate = edge_tts.Communicate(text, voice, rate=rate_str, pitch=pitch_str)
+        logger.info(f"[TTS] Generating audio: text='{text[:50]}...', voice={voice}, voice_type={voice_type}, rate={rate_str}, pitch={pitch_str}")
 
         filename = f"{cache_key}.mp3"
         filepath = os.path.join(audio_dir, filename)
 
         word_timestamps = []
         audio_chunks = []
+
+        # Route to appropriate TTS provider
+        if voice_type in ("minimax", "cloned") and user_id:
+            # Use MiniMax TTS
+            try:
+                from app.models.database import get_db
+                from app.models.models import TTSProviderConfig
+                from app.services.auth_service import AuthService
+
+                with get_db() as db:
+                    config = db.query(TTSProviderConfig).filter(
+                        TTSProviderConfig.user_id == user_id
+                    ).first()
+
+                if not config or not config.api_key_encrypted:
+                    raise ValueError("MiniMax TTS 未配置，无法使用克隆音色。请先在设置中配置 MiniMax API Key。")
+
+                api_key = AuthService.decrypt_api_key(config.api_key_encrypted)
+                from app.services.voice_clone import VoiceCloneService
+
+                audio_data = await VoiceCloneService.generate_speech_minimax(
+                    api_key=api_key,
+                    text=text,
+                    voice_id=voice,
+                    speed=rate,
+                    pitch=pitch_hz,
+                    emotion="neutral",
+                    base_url=config.base_url,
+                )
+
+                with open(filepath, 'wb') as f:
+                    f.write(audio_data)
+
+                if persistent:
+                    AudioCache.save_to_cache(
+                        cache_key, filename, text, voice, rate, pitch, word_timestamps,
+                        user_id=user_id, book_id=book_id, chapter_href=chapter_href, paragraph_index=paragraph_index
+                    )
+
+                audio_url = _audio_url(user_id, book_id, filename) if persistent else _tmp_audio_url(filename)
+                result = {
+                    "audioUrl": audio_url,
+                    "cached": False,
+                    "wordTimestamps": word_timestamps
+                }
+
+                if book_id and chapter_href is not None and paragraph_index is not None:
+                    await memory_cache.put(book_id, chapter_href, paragraph_index, voice, rate, pitch, result, is_translated)
+
+                return result
+            except Exception as e:
+                logger.error(f"[TTS] MiniMax TTS failed: {e}")
+                raise
+
+        # Default: Use Edge TTS
+        communicate = edge_tts.Communicate(text, voice, rate=rate_str, pitch=pitch_str)
 
         try:
             async for chunk in communicate.stream():
@@ -437,13 +555,15 @@ class TTSService:
         else:
             await communicate.save(filepath)
 
-        AudioCache.save_to_cache(
-            cache_key, filename, text, voice, rate, pitch, word_timestamps,
-            user_id=user_id, book_id=book_id, chapter_href=chapter_href, paragraph_index=paragraph_index
-        )
+        if persistent:
+            AudioCache.save_to_cache(
+                cache_key, filename, text, voice, rate, pitch, word_timestamps,
+                user_id=user_id, book_id=book_id, chapter_href=chapter_href, paragraph_index=paragraph_index
+            )
 
+        audio_url = _audio_url(user_id, book_id, filename) if persistent else _tmp_audio_url(filename)
         result = {
-            "audioUrl": _audio_url(user_id, book_id, filename),
+            "audioUrl": audio_url,
             "cached": False,
             "wordTimestamps": word_timestamps
         }

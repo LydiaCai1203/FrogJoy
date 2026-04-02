@@ -47,6 +47,12 @@ export class BookService implements IBookService {
   }
 }
 
+interface PreloadEntry {
+  audioUrl: string;
+  wordTimestamps: WordTimestamp[];
+  audio: HTMLAudioElement; // browser-preloaded
+}
+
 export class TTSService implements ITTSService {
   // 复用同一个 Audio 元素，避免移动端浏览器阻止新建 Audio
   private audio: HTMLAudioElement;
@@ -62,6 +68,10 @@ export class TTSService implements ITTSService {
   private timeUpdateCallback: ((time: number) => void) | null = null;
   private timestampsReadyCallback: ((timestamps: WordTimestamp[]) => void) | null = null;
   private _currentWordTimestamps: WordTimestamp[] = [];
+
+  // Preload buffer: key = "bookId|chapterHref|paragraphIndex"
+  private preloadCache = new Map<string, PreloadEntry>();
+  private preloadInFlight = new Set<string>();
 
   constructor() {
     // 在构造函数中创建 Audio 元素，后续复用
@@ -134,48 +144,128 @@ export class TTSService implements ITTSService {
     return this.audio.currentTime * 1000;
   }
 
+  /**
+   * Build a cache key for preload lookups
+   */
+  private preloadKey(options?: TTSOptions): string | null {
+    if (options?.book_id && options?.chapter_href && options?.paragraph_index != null) {
+      const translatedFlag = options.is_translated ? "|t" : "";
+      return `${options.book_id}|${options.chapter_href}|${options.paragraph_index}${translatedFlag}`;
+    }
+    return null;
+  }
+
+  /**
+   * Preload audio for a sentence: call backend, get URL, start browser download.
+   * Does NOT play. Call this for upcoming sentences while current one plays.
+   */
+  async preload(text: string, options?: TTSOptions): Promise<void> {
+    const key = this.preloadKey(options);
+    if (!key || this.preloadCache.has(key) || this.preloadInFlight.has(key)) return;
+
+    this.preloadInFlight.add(key);
+    try {
+      const response = await fetch(`${API_URL}/tts/speak`, {
+        method: "POST",
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({
+          text,
+          voice: options?.voice || "en-US-ChristopherNeural",
+          voice_type: options?.voice_type || "edge",
+          rate: options?.rate || 1.0,
+          pitch: options?.pitch || 1.0,
+          volume: options?.volume || 1.0,
+          book_id: options?.book_id,
+          chapter_href: options?.chapter_href,
+          paragraph_index: options?.paragraph_index,
+          is_translated: options?.is_translated ?? false,
+        }),
+      });
+
+      if (!response.ok) return;
+
+      const data = await response.json();
+      const audioUrl = `${API_BASE}${data.audioUrl}`;
+      const wordTimestamps: WordTimestamp[] = data.wordTimestamps || [];
+
+      // Preload into browser cache
+      const preloadAudio = new Audio();
+      preloadAudio.preload = "auto";
+      preloadAudio.src = audioUrl;
+      preloadAudio.load();
+
+      this.preloadCache.set(key, { audioUrl, wordTimestamps, audio: preloadAudio });
+    } catch {
+      // Preload failure is non-fatal
+    } finally {
+      this.preloadInFlight.delete(key);
+    }
+  }
+
+  /**
+   * Clear preload cache (e.g. when switching chapters or voices)
+   */
+  clearPreload(): void {
+    this.preloadCache.clear();
+    this.preloadInFlight.clear();
+  }
+
   async speak(text: string, options?: TTSOptions): Promise<TTSResponse> {
     // 停止当前播放（但不销毁 Audio 元素）
     this.stopPlayback();
 
-    const response = await fetch(`${API_URL}/tts/speak`, {
-      method: "POST",
-      headers: this.getAuthHeaders(),
-      body: JSON.stringify({
-        text,
-        voice: options?.voice || "en-US-ChristopherNeural",
-        rate: options?.rate || 1.0,
-        pitch: options?.pitch || 1.0,
-        volume: options?.volume || 1.0,
-        // 可选的书籍/章节/段落信息（用于结构化缓存）
-        book_id: options?.book_id,
-        chapter_href: options?.chapter_href,
-        paragraph_index: options?.paragraph_index,
-        is_translated: options?.is_translated ?? false,
-      }),
-    });
+    let audioUrl: string;
+    let wordTimestamps: WordTimestamp[];
 
-    if (!response.ok) {
-      throw new Error("TTS failed");
+    // Check preload cache first
+    const key = this.preloadKey(options);
+    const cached = key ? this.preloadCache.get(key) : null;
+
+    if (cached) {
+      audioUrl = cached.audioUrl;
+      wordTimestamps = cached.wordTimestamps;
+      this.preloadCache.delete(key!);
+    } else {
+      // No preload hit — fetch from backend
+      const response = await fetch(`${API_URL}/tts/speak`, {
+        method: "POST",
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({
+          text,
+          voice: options?.voice || "en-US-ChristopherNeural",
+          voice_type: options?.voice_type || "edge",
+          rate: options?.rate || 1.0,
+          pitch: options?.pitch || 1.0,
+          volume: options?.volume || 1.0,
+          book_id: options?.book_id,
+          chapter_href: options?.chapter_href,
+          paragraph_index: options?.paragraph_index,
+          is_translated: options?.is_translated ?? false,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("TTS failed");
+      }
+
+      const data = await response.json();
+      audioUrl = `${API_BASE}${data.audioUrl}`;
+      wordTimestamps = data.wordTimestamps || [];
     }
 
-    const data = await response.json();
-    const audioUrl = `${API_BASE}${data.audioUrl}`;
-    const wordTimestamps: WordTimestamp[] = data.wordTimestamps || [];
-    
     // 保存时间戳供外部使用
     this._currentWordTimestamps = wordTimestamps;
-    
+
     // 立即通知时间戳就绪（在开始播放前）
     if (this.timestampsReadyCallback) {
       this.timestampsReadyCallback(wordTimestamps);
     }
-    
+
     // 复用 Audio 元素播放新的音频
     return new Promise((resolve, reject) => {
       this.currentResolve = () => resolve({
         audioUrl,
-        cached: data.cached,
+        cached: true,
         wordTimestamps,
       });
       this.currentReject = reject;
@@ -549,6 +639,22 @@ export class AIService {
     });
     if (!res.ok) throw new Error("Failed to start book translation");
     return res.json();
+  }
+
+  async getChapterTranslation(
+    bookId: string,
+    chapterHref: string,
+    targetLang = "Chinese",
+  ): Promise<{ original: string; translated: string }[] | null> {
+    const res = await fetch(
+      `${API_URL}/ai/translate/${bookId}/chapter?chapter_href=${encodeURIComponent(chapterHref)}&target_lang=${encodeURIComponent(targetLang)}`,
+      { headers: this.getAuthHeaders() },
+    );
+    if (res.status === 404) return null;
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.pairs && Array.isArray(data.pairs)) return data.pairs;
+    return null;
   }
 
   async getBookTranslations(bookId: string): Promise<ChapterTranslation[]> {

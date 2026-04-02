@@ -32,6 +32,12 @@ export interface AIModelConfig {
   api_key: string;
   model: string;
   has_key?: boolean;
+  // Translation-specific config
+  translation_provider_type?: AIProviderType | null;
+  translation_base_url?: string | null;
+  translation_api_key?: string;
+  translation_model?: string | null;
+  translation_has_key?: boolean;
 }
 
 // 用户 AI 偏好

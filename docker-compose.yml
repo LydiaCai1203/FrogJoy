@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-bookreader}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ./postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     networks:
       - epub-tts-network
@@ -79,6 +79,3 @@ services:
 networks:
   epub-tts-network:
     driver: bridge
-
-volumes:
-  pgdata:

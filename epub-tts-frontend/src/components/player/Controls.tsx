@@ -1,24 +1,20 @@
 import { useState, useEffect } from "react";
 import { Play, Pause, SkipBack, SkipForward, Settings2, Download, Loader2 } from "lucide-react";
 import type { UnifiedMode } from "@/lib/ai/types";
+import type { VoiceOption } from "@/lib/tts/types";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { getVoices } from "@/api/tts";
+import { API_BASE, API_URL } from "@/config";
 
 export type EmotionType = "neutral" | "warm" | "excited" | "serious" | "suspense";
-
-// 后端返回的语音类型
-interface VoiceOption {
-  name: string;
-  displayName: string;
-  gender: string;
-  lang: string;
-}
 
 interface ControlsProps {
   unifiedMode: UnifiedMode;
@@ -30,15 +26,18 @@ interface ControlsProps {
   progress: number; // 0-100
   total: number;
   current: number;
-  
+
   // Settings props
   selectedVoice: string | null;
-  onVoiceChange: (voice: string) => void;
+  onVoiceChange: (voice: string, voiceType: "edge" | "minimax" | "cloned") => void;
   emotion: EmotionType;
   onEmotionChange: (emotion: EmotionType) => void;
   speed: number;
   onSpeedChange: (speed: number) => void;
-  
+
+  // 用户偏好中的克隆音色 DB ID（用于在 voice list 中匹配默认值）
+  preferredClonedVoiceId?: string | null;
+
   // Download props (智能下载)
   bookId?: string | null;      // 书籍 ID
   chapterHref?: string | null; // 章节 href
@@ -46,12 +45,11 @@ interface ControlsProps {
   chapterTitle?: string;       // 章节标题（用于文件名）
 }
 
-import { API_BASE, API_URL } from "@/config";
-
 export function Controls({
   unifiedMode,
   isPlaying, onPlayPause, onNext, onPrev, onSeek, progress, current, total,
   selectedVoice, onVoiceChange, emotion, onEmotionChange, speed, onSpeedChange,
+  preferredClonedVoiceId,
   bookId, chapterHref, sentences = [], chapterTitle = "chapter"
 }: ControlsProps) {
   const isPlayMode = unifiedMode.startsWith("play-");
@@ -61,19 +59,12 @@ export function Controls({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const isMobile = useIsMobile();
 
-  // 从后端 API 获取中文语音列表
+  // 从后端 API 获取语音列表（包含 Edge、MiniMax、克隆音色）
   useEffect(() => {
     const loadVoices = async () => {
       try {
-        const response = await fetch(`${API_URL}/tts/voices/chinese`);
-        if (response.ok) {
-          const data = await response.json();
-          setVoices(data);
-          // 如果还没选择语音，默认选择第一个（晓晓）
-          if (!selectedVoice && data.length > 0) {
-            onVoiceChange(data[0].name);
-          }
-        }
+        const data = await getVoices();
+        setVoices(data);
       } catch (error) {
         console.error("Failed to load voices:", error);
       } finally {
@@ -83,17 +74,77 @@ export function Controls({
     loadVoices();
   }, []);
 
-  // 按地区分组语音
+  // voice list 或偏好就绪后，设置默认音色
+  useEffect(() => {
+    if (selectedVoice || voices.length === 0) return;
+
+    if (preferredClonedVoiceId) {
+      const cloned = voices.find(v => v.type === "cloned" && v.id === preferredClonedVoiceId);
+      if (cloned) {
+        onVoiceChange(cloned.name, "cloned");
+        return;
+      }
+    }
+    // 兜底：选第一个 Edge 音色
+    const firstEdge = voices.find(v => v.type === "edge");
+    const defaultVoice = firstEdge || voices[0];
+    onVoiceChange(defaultVoice.name, defaultVoice.type as "edge" | "minimax" | "cloned");
+  }, [voices, preferredClonedVoiceId, selectedVoice]);
+
+  // 按类型分组语音
   const groupedVoices = voices.reduce((acc, voice) => {
-    let group = "普通话";
-    if (voice.lang.includes("HK")) group = "粤语";
-    else if (voice.lang.includes("TW")) group = "台湾";
-    else if (voice.lang.includes("liaoning") || voice.lang.includes("shaanxi")) group = "方言";
-    
+    let group = "Edge TTS";
+    if (voice.type === "minimax") group = "MiniMax";
+    else if (voice.type === "cloned") group = "我的音色";
+
     if (!acc[group]) acc[group] = [];
     acc[group].push(voice);
     return acc;
   }, {} as Record<string, VoiceOption[]>);
+
+  const selectedVoiceDisplay = voices.find(v => v.name === selectedVoice)?.displayName || selectedVoice || "未选择";
+
+  const handleVoiceClick = (v: VoiceOption) => {
+    onVoiceChange(v.name, v.type as "edge" | "minimax" | "cloned");
+  };
+
+  const renderVoiceAccordion = (compact?: boolean) => (
+    <Accordion type="single" collapsible className="w-full">
+      {Object.entries(groupedVoices).map(([group, vs]) => (
+        <AccordionItem key={group} value={group} className="border-border">
+          <AccordionTrigger className={compact ? "py-2 text-xs" : "py-2.5 text-sm"}>
+            <span className="flex items-center gap-2">
+              {group}
+              <span className="text-muted-foreground text-xs font-normal">({vs.length})</span>
+            </span>
+          </AccordionTrigger>
+          <AccordionContent>
+            <div className={`grid gap-1 ${compact ? "max-h-[200px]" : "max-h-[30vh]"} overflow-y-auto`}>
+              {vs.map(v => (
+                <button
+                  key={`${v.type}-${v.name}`}
+                  type="button"
+                  onClick={() => handleVoiceClick(v)}
+                  className={`
+                    w-full text-left px-3 py-2 rounded-md text-sm transition-colors
+                    ${selectedVoice === v.name
+                      ? "bg-primary/10 text-primary font-medium"
+                      : "hover:bg-accent text-foreground"
+                    }
+                  `}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="text-muted-foreground text-xs">{v.gender === "Female" ? "♀" : "♂"}</span>
+                    <span>{v.displayName}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      ))}
+    </Accordion>
+  );
 
   // 下载章节音频（智能复用已缓存的段落）
   const handleDownload = async () => {
@@ -135,12 +186,12 @@ export function Controls({
       }
 
       const data = await response.json();
-      
+
       // 显示缓存复用信息
-      const cacheInfo = data.cachedParagraphs > 0 
-        ? `（复用了 ${data.cachedParagraphs}/${data.totalParagraphs} 段已缓存内容）` 
+      const cacheInfo = data.cachedParagraphs > 0
+        ? `（复用了 ${data.cachedParagraphs}/${data.totalParagraphs} 段已缓存内容）`
         : "";
-      
+
       // 触发下载
       const downloadUrl = `${API_BASE}${data.downloadUrl}`;
       const link = document.createElement("a");
@@ -165,7 +216,7 @@ export function Controls({
 
   return (
     <div className="fixed bottom-0 inset-x-0 bg-card border-t border-border p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] flex items-center gap-6 shadow-[0_-5px_20px_rgba(0,0,0,0.3)] z-[100]">
-      
+
       {/* Playback / Navigation Controls */}
       <div className="flex items-center gap-2">
         <Button variant="outline" size="icon" onClick={onPrev} className="rounded-lg border-primary/20 hover:border-primary hover:text-primary hover:bg-primary/10">
@@ -209,9 +260,9 @@ export function Controls({
       {/* Download & Settings */}
       <div className="flex items-center gap-2">
         {/* Download Button */}
-        <Button 
-          variant="ghost" 
-          size="icon" 
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={handleDownload}
           disabled={isDownloading || sentences.length === 0 || !bookId || !chapterHref}
           className="hover:bg-primary/10 hover:text-primary transition-colors"
@@ -269,11 +320,11 @@ export function Controls({
                     <Label className="text-sm font-medium">语速调节</Label>
                     <span className="text-sm font-mono text-primary font-bold">{speed.toFixed(1)}x</span>
                   </div>
-                  <Slider 
-                    value={[speed]} 
-                    onValueChange={([v]) => onSpeedChange(v)} 
-                    min={0.5} 
-                    max={2.0} 
+                  <Slider
+                    value={[speed]}
+                    onValueChange={([v]) => onSpeedChange(v)}
+                    min={0.5}
+                    max={2.0}
                     step={0.1}
                     className="py-2"
                   />
@@ -284,35 +335,19 @@ export function Controls({
                   </div>
                 </div>
 
-                {/* Voice Selection */}
+                {/* Voice Selection - Accordion by Type */}
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium">语音选择</Label>
-                  <Select value={selectedVoice || ""} onValueChange={onVoiceChange}>
-                    <SelectTrigger className="h-12 text-base">
-                      <SelectValue placeholder={isLoadingVoices ? "加载中..." : "选择语音"} />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[40vh] z-[250]">
-                      {Object.entries(groupedVoices).map(([group, vs]) => (
-                        <div key={group}>
-                          <div className="px-2 py-2 text-xs bg-secondary font-medium text-muted-foreground sticky top-0">
-                            {group}
-                          </div>
-                          {vs.map(v => (
-                            <SelectItem 
-                              key={v.name} 
-                              value={v.name} 
-                              className="text-base py-3"
-                            >
-                              <span className="flex items-center gap-2">
-                                <span className="text-muted-foreground">{v.gender === "Female" ? "♀" : "♂"}</span>
-                                <span>{v.displayName}</span>
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </div>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-sm font-medium">
+                    语音选择
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">当前: {selectedVoiceDisplay}</span>
+                  </Label>
+                  {isLoadingVoices ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : (
+                    renderVoiceAccordion()
+                  )}
                 </div>
               </div>
             </SheetContent>
@@ -324,9 +359,9 @@ export function Controls({
                 <Settings2 className="w-5 h-5" />
               </Button>
             </PopoverTrigger>
-            <PopoverContent 
-              className="w-80 p-0 border border-primary/20 bg-card/95 backdrop-blur-xl shadow-[0_0_30px_rgba(0,0,0,0.5)] rounded-none max-h-[70vh] overflow-y-auto z-[200]" 
-              side="top" 
+            <PopoverContent
+              className="w-80 p-0 border border-primary/20 bg-card/95 backdrop-blur-xl shadow-[0_0_30px_rgba(0,0,0,0.5)] rounded-none max-h-[70vh] overflow-y-auto z-[200]"
+              side="top"
               align="end"
               sideOffset={8}
               collisionPadding={16}
@@ -366,45 +401,29 @@ export function Controls({
                     <Label className="text-xs font-mono text-muted-foreground">语速调节</Label>
                     <span className="text-xs font-mono text-primary">{speed.toFixed(1)}x</span>
                   </div>
-                  <Slider 
-                    value={[speed]} 
-                    onValueChange={([v]) => onSpeedChange(v)} 
-                    min={0.5} 
-                    max={2.0} 
+                  <Slider
+                    value={[speed]}
+                    onValueChange={([v]) => onSpeedChange(v)}
+                    min={0.5}
+                    max={2.0}
                     step={0.1}
-                    className="[&_.range-thumb]:bg-primary [&_.range-track]:bg-secondary [&_.range-range]:bg-primary" 
+                    className="[&_.range-thumb]:bg-primary [&_.range-track]:bg-secondary [&_.range-range]:bg-primary"
                   />
                 </div>
 
-                {/* Voice Selection */}
+                {/* Voice Selection - Accordion by Type */}
                 <div className="space-y-2">
-                  <Label className="text-xs font-mono uppercase text-muted-foreground">语音选择</Label>
-                  <Select value={selectedVoice || ""} onValueChange={onVoiceChange}>
-                    <SelectTrigger className="rounded-none border-primary/20 bg-background/50 focus:ring-primary/50">
-                      <SelectValue placeholder={isLoadingVoices ? "加载中..." : "选择语音"} />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-none border-primary/20 bg-card max-h-[280px] z-[250]">
-                      {Object.entries(groupedVoices).map(([group, vs]) => (
-                        <div key={group}>
-                          <div className="px-2 py-1.5 text-[11px] bg-secondary font-medium text-muted-foreground sticky top-0">
-                            {group}
-                          </div>
-                          {vs.map(v => (
-                            <SelectItem 
-                              key={v.name} 
-                              value={v.name} 
-                              className="text-sm rounded-none focus:bg-primary/10 focus:text-primary cursor-pointer"
-                            >
-                              <span className="flex items-center gap-2">
-                                <span className="text-muted-foreground">{v.gender === "Female" ? "♀" : "♂"}</span>
-                                <span>{v.displayName}</span>
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </div>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-xs font-mono uppercase text-muted-foreground">
+                    语音选择
+                    <span className="ml-2 normal-case font-normal text-primary">{selectedVoiceDisplay}</span>
+                  </Label>
+                  {isLoadingVoices ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : (
+                    renderVoiceAccordion(true)
+                  )}
                 </div>
               </div>
             </PopoverContent>
