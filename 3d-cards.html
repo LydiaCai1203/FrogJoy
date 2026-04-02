@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D 卡片悬停特效</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 60px;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      font-family: 'Segoe UI', sans-serif;
+      overflow: hidden;
+    }
+
+    h1 {
+      color: #fff;
+      font-size: 2.5rem;
+      font-weight: 300;
+      letter-spacing: 0.3em;
+      text-shadow: 0 0 30px rgba(0, 200, 255, 0.5);
+    }
+
+    .cards-container {
+      display: flex;
+      gap: 40px;
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .card {
+      position: relative;
+      width: 280px;
+      height: 380px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 20px;
+      padding: 30px;
+      cursor: pointer;
+      transform-style: preserve-3d;
+      transform: perspective(1000px);
+      transition: transform 0.3s ease;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 20px;
+      padding: 2px;
+      background: linear-gradient(135deg, rgba(255,255,255,0.3), transparent, rgba(255,255,255,0.1));
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+
+    .card-content {
+      position: relative;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transform: translateZ(30px);
+    }
+
+    .card-icon {
+      width: 60px;
+      height: 60px;
+      border-radius: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      margin-bottom: 20px;
+    }
+
+    .card:nth-child(1) .card-icon {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+    }
+
+    .card:nth-child(2) .card-icon {
+      background: linear-gradient(135deg, #f093fb, #f5576c);
+      box-shadow: 0 10px 30px rgba(245, 87, 108, 0.4);
+    }
+
+    .card:nth-child(3) .card-icon {
+      background: linear-gradient(135deg, #4facfe, #00f2fe);
+      box-shadow: 0 10px 30px rgba(79, 172, 254, 0.4);
+    }
+
+    .card-title {
+      color: #fff;
+      font-size: 1.4rem;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    .card-desc {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    .card-btn {
+      margin-top: auto;
+      padding: 12px 24px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 10px;
+      color: #fff;
+      font-size: 0.85rem;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      transition: all 0.3s ease;
+    }
+
+    .card:hover .card-btn {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .card-glare {
+      position: absolute;
+      inset: 0;
+      border-radius: 20px;
+      background: radial-gradient(circle at var(--x, 50%) var(--y, 50%), rgba(255,255,255,0.15) 0%, transparent 60%);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+    }
+
+    .card:hover .card-glare {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <h1>3D CARDS</h1>
+  
+  <div class="cards-container">
+    <div class="card">
+      <div class="card-glare"></div>
+      <div class="card-content">
+        <div>
+          <div class="card-icon">🎨</div>
+          <div class="card-title">Creative Design</div>
+          <div class="card-desc">Crafting beautiful user interfaces with modern design principles and attention to detail.</div>
+        </div>
+        <div class="card-btn">Learn More</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-glare"></div>
+      <div class="card-content">
+        <div>
+          <div class="card-icon">🚀</div>
+          <div class="card-title">Fast Performance</div>
+          <div class="card-desc">Optimized for speed with efficient code and smooth animations that delight users.</div>
+        </div>
+        <div class="card-btn">Learn More</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-glare"></div>
+      <div class="card-content">
+        <div>
+          <div class="card-icon">💎</div>
+          <div class="card-title">Premium Quality</div>
+          <div class="card-desc">Built with best practices and cutting-edge technologies for exceptional results.</div>
+        </div>
+        <div class="card-btn">Learn More</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.querySelectorAll('.card').forEach(card => {
+      const glare = card.querySelector('.card-glare');
+      
+      card.addEventListener('mousemove', (e) => {
+        const rect = card.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        
+        const rotateX = (y - centerY) / 10;
+        const rotateY = (centerX - x) / 10;
+        
+        card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(1.02)`;
+        
+        glare.style.setProperty('--x', `${(x / rect.width) * 100}%`);
+        glare.style.setProperty('--y', `${(y / rect.height) * 100}%`);
+      });
+      
+      card.addEventListener('mouseleave', () => {
+        card.style.transform = 'perspective(1000px) rotateX(0) rotateY(0) scale(1)';
+        glare.style.opacity = '0';
+      });
+    });
+  </script>
+</body>
+</html>
