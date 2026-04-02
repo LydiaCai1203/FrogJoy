@@ -4,9 +4,13 @@
 import type { IBookService, ITTSService, TTSOptions, TTSResponse, ChapterContent, BookMetadata, NavItem, WordTimestamp, Highlight, CreateHighlightRequest, ReadingHeatmapEntry, BookReadingStats, ReadingSummary, ReadingProgress } from "./types";
 import { API_BASE, API_URL } from "@/config";
 
+function getEffectiveToken(): string | null {
+  return localStorage.getItem("auth_token") || localStorage.getItem("guest_token");
+}
+
 export class BookService implements IBookService {
   private getAuthHeaders(): HeadersInit {
-    const token = localStorage.getItem("auth_token");
+    const token = getEffectiveToken();
     return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
@@ -58,7 +62,7 @@ export class TTSService implements ITTSService {
   private audio: HTMLAudioElement;
 
   private getAuthHeaders(): HeadersInit {
-    const token = localStorage.getItem("auth_token");
+    const token = getEffectiveToken();
     return token
       ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
       : { "Content-Type": "application/json" };
@@ -245,7 +249,8 @@ export class TTSService implements ITTSService {
       });
 
       if (!response.ok) {
-        throw new Error("TTS failed");
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || `TTS failed (${response.status})`);
       }
 
       const data = await response.json();
@@ -303,7 +308,7 @@ export class TTSService implements ITTSService {
 
 export class HighlightService {
   private getAuthHeaders(): HeadersInit {
-    const token = localStorage.getItem("auth_token");
+    const token = getEffectiveToken();
     return token
       ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
       : { "Content-Type": "application/json" };
@@ -369,7 +374,7 @@ export const highlightService = new HighlightService();
 
 export class ReadingStatsService {
   private getAuthHeaders(): HeadersInit {
-    const token = localStorage.getItem("auth_token");
+    const token = getEffectiveToken();
     return token
       ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
       : { "Content-Type": "application/json" };
@@ -413,7 +418,7 @@ export const readingStatsService = new ReadingStatsService();
 
 export class ReadingProgressService {
   private getAuthHeaders(): HeadersInit {
-    const token = localStorage.getItem("auth_token");
+    const token = getEffectiveToken();
     return token
       ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
       : { "Content-Type": "application/json" };
@@ -446,7 +451,7 @@ import type { AIModelConfig, UserAIPreferences, ChatMessage, ModelOption, Chapte
 
 export class AIService {
   private getAuthHeaders(): HeadersInit {
-    const token = localStorage.getItem("auth_token");
+    const token = getEffectiveToken();
     return token
       ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
       : { "Content-Type": "application/json" };

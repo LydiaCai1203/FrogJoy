@@ -5,14 +5,18 @@ import { API_URL } from "@/config";
 interface User {
   id: string;
   email: string;
+  is_admin?: boolean;
 }
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
+  isGuest: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string) => Promise<string>;
+  verifyEmail: (token: string) => Promise<void>;
+  resendVerification: (email: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -21,6 +25,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [guestToken, setGuestToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -29,9 +34,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(savedToken);
       fetchUser(savedToken);
     } else {
-      setIsLoading(false);
+      fetchGuestToken();
     }
   }, []);
+
+  const fetchGuestToken = async () => {
+    try {
+      const res = await fetch(`${API_URL}/auth/guest-token`);
+      if (res.ok) {
+        const data = await res.json();
+        setGuestToken(data.access_token);
+        localStorage.setItem("guest_token", data.access_token);
+      }
+    } catch {
+      // Guest token not available, features will be limited
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const fetchUser = async (authToken: string) => {
     try {
@@ -46,11 +66,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         localStorage.removeItem("auth_token");
         setToken(null);
+        await fetchGuestToken();
+        return;
       }
     } catch (error) {
       console.error("Failed to fetch user:", error);
       localStorage.removeItem("auth_token");
       setToken(null);
+      await fetchGuestToken();
+      return;
     } finally {
       setIsLoading(false);
     }
@@ -70,7 +94,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const data = await res.json();
     setToken(data.access_token);
+    setGuestToken(null);
     localStorage.setItem("auth_token", data.access_token);
+    localStorage.removeItem("guest_token");
     setUser({ id: "", email });
     await fetchUser(data.access_token);
 
@@ -83,29 +109,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const register = async (email: string, password: string) => {
+  const register = async (email: string, password: string): Promise<string> => {
     const res = await fetch(`${API_URL}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
 
+    const data = await res.json();
     if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.detail || "Registration failed");
+      throw new Error(data.detail || "Registration failed");
     }
 
-    await login(email, password);
+    return data.message;
+  };
+
+  const verifyEmail = async (verifyToken: string) => {
+    const res = await fetch(`${API_URL}/auth/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: verifyToken }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || "Verification failed");
+    }
+
+    setToken(data.access_token);
+    setGuestToken(null);
+    localStorage.setItem("auth_token", data.access_token);
+    localStorage.removeItem("guest_token");
+    await fetchUser(data.access_token);
+  };
+
+  const resendVerification = async (email: string) => {
+    const res = await fetch(`${API_URL}/auth/resend-verification`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || "Failed to resend");
+    }
   };
 
   const logout = () => {
     setUser(null);
     setToken(null);
     localStorage.removeItem("auth_token");
+    fetchGuestToken();
   };
 
+  // Effective token: prefer user token, fallback to guest token
+  const effectiveToken = token || guestToken;
+  const isGuest = !token && !!guestToken;
+
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token: effectiveToken, isGuest, isLoading, login, register, verifyEmail, resendVerification, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -13,6 +13,7 @@ class UserLogin(BaseModel):
 class UserResponse(BaseModel):
     id: str
     email: str
+    is_admin: bool = False
     created_at: Optional[datetime] = None
 
 class UserInDB(BaseModel):

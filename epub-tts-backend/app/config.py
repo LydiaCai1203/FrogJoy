@@ -16,6 +16,17 @@ class Settings(BaseSettings):
     # Data directory root
     data_dir: str = "data"
 
+    # SMTP Configuration
+    smtp_host: str = ""
+    smtp_port: int = 465
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    app_url: str = "https://deepkb.com.cn"
+
+    # Guest account
+    guest_email: str = ""
+
     # Server Configuration
     host: str = "0.0.0.0"
     port: int = 8000

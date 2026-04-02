@@ -15,6 +15,8 @@ class User(Base):
     id = Column(String, primary_key=True)
     email = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
+    is_verified = Column(Boolean, default=False, server_default="false")
+    is_admin = Column(Boolean, default=False, server_default="false")
     created_at = Column(DateTime, server_default=func.now())
 
     books = relationship("Book", back_populates="user")

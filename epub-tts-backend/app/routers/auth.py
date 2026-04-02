@@ -1,43 +1,114 @@
 from fastapi import APIRouter, HTTPException, status, Depends
+from pydantic import BaseModel, EmailStr
 from sqlalchemy.exc import IntegrityError
 from app.models.user import UserCreate, UserLogin, UserResponse, Token, ThemeIn, ThemeOut, FontSizeIn, FontSizeOut
 from app.models.database import get_db
 from app.models.models import User, UserThemePreferences
 from app.services.auth_service import AuthService
+from app.services.email_service import EmailService
 from app.middleware.auth import get_current_user
+from app.config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-@router.post("/register", response_model=UserResponse)
+
+class VerifyRequest(BaseModel):
+    token: str
+
+
+class ResendRequest(BaseModel):
+    email: EmailStr
+
+
+@router.post("/register")
 async def register(user_data: UserCreate):
     with get_db() as db:
         try:
             existing = db.query(User).filter(User.email == user_data.email).first()
             if existing:
+                if not existing.is_verified:
+                    # Resend verification for unverified user
+                    token = AuthService.create_verification_token(user_data.email)
+                    EmailService.send_verification_email(user_data.email, token)
+                    return {"message": "验证邮件已重新发送，请查收邮箱"}
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Email already registered"
+                    detail="该邮箱已注册"
                 )
 
             user_id = AuthService.generate_user_id()
             password_hash = AuthService.hash_password(user_data.password)
 
-            user = User(id=user_id, email=user_data.email, password_hash=password_hash)
+            user = User(
+                id=user_id,
+                email=user_data.email,
+                password_hash=password_hash,
+                is_verified=False,
+            )
             db.add(user)
             db.commit()
 
-            return UserResponse(id=user_id, email=user_data.email)
+            token = AuthService.create_verification_token(user_data.email)
+            EmailService.send_verification_email(user_data.email, token)
+
+            return {"message": "验证邮件已发送，请查收邮箱"}
         except HTTPException:
             raise
         except IntegrityError:
             db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
+                detail="该邮箱已注册"
             )
         except Exception:
             db.rollback()
             raise
+
+
+@router.post("/verify")
+async def verify_email(data: VerifyRequest):
+    email = AuthService.decode_verification_token(data.token)
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="验证链接已过期或无效"
+        )
+
+    with get_db() as db:
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="用户不存在"
+            )
+        if user.is_verified:
+            # Already verified, just return a token
+            access_token = AuthService.create_access_token(user.id)
+            return Token(access_token=access_token)
+
+        user.is_verified = True
+        db.commit()
+
+        access_token = AuthService.create_access_token(user.id)
+        return Token(access_token=access_token)
+
+
+@router.post("/resend-verification")
+async def resend_verification(data: ResendRequest):
+    with get_db() as db:
+        user = db.query(User).filter(User.email == data.email).first()
+        if not user:
+            # Don't reveal whether email exists
+            return {"message": "如果该邮箱已注册，验证邮件将会发送"}
+        if user.is_verified:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="该邮箱已验证"
+            )
+        token = AuthService.create_verification_token(data.email)
+        EmailService.send_verification_email(data.email, token)
+        return {"message": "验证邮件已发送，请查收邮箱"}
+
 
 @router.post("/login", response_model=Token)
 async def login(user_data: UserLogin):
@@ -47,7 +118,13 @@ async def login(user_data: UserLogin):
         if not user or not AuthService.verify_password(user_data.password, user.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password"
+                detail="邮箱或密码错误"
+            )
+
+        if not user.is_verified:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="请先验证邮箱"
             )
 
         access_token = AuthService.create_access_token(user.id)
@@ -67,6 +144,7 @@ async def get_me(user_id: str = Depends(get_current_user)):
         return UserResponse(
             id=user.id,
             email=user.email,
+            is_admin=bool(user.is_admin),
             created_at=user.created_at.isoformat() if user.created_at else None,
         )
 
@@ -115,3 +193,15 @@ async def save_font_size(font_size_data: FontSizeIn, user_id: str = Depends(get_
             db.add(existing)
         db.commit()
     return FontSizeOut(font_size=font_size)
+
+
+@router.get("/guest-token")
+async def get_guest_token():
+    if not settings.guest_email:
+        raise HTTPException(status_code=404, detail="Guest account not configured")
+    with get_db() as db:
+        user = db.query(User).filter(User.email == settings.guest_email).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Guest account not found")
+        access_token = AuthService.create_access_token(user.id)
+        return Token(access_token=access_token)

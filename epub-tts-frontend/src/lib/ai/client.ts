@@ -10,7 +10,7 @@ import type {
 import { API_URL } from "@/config";
 
 function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem("auth_token");
+  const token = localStorage.getItem("auth_token") || localStorage.getItem("guest_token");
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 

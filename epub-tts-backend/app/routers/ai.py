@@ -20,6 +20,7 @@ from app.services.ai_service import AIService, AIConfig, ChatMessage, OpenAIChat
 from app.services.book_service import BookService
 from app.services.task_service import task_manager, TaskStatus
 from app.config import settings
+from app.middleware.rate_limit import check_guest_rate_limit, is_guest_user
 
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -299,12 +300,7 @@ async def list_models(
     api_key: str = Query(default="", description="API key"),
     user_id: str = Depends(get_current_user),
 ):
-    """Return available model options for a provider type.
-
-    For authenticated users, if api_key is not provided, the user's saved key
-    is fetched from the database to call the vendor's /models endpoint.
-    Falls back to a curated default list if the call fails.
-    """
+    """Return available model options for a provider type."""
     # Anthropic has no public model list API — always use curated list
     if provider_type == "anthropic":
         return [
@@ -370,6 +366,7 @@ async def chat(request: ChatRequest, user_id: str = Depends(get_current_user)):
     """
     Multi-round chat endpoint using SSE (Server-Sent Events) for streaming.
     """
+    check_guest_rate_limit(user_id, "chat")
     ai_config = _build_ai_config(user_id)
     messages = [ChatMessage(role=m.role, content=m.content) for m in request.messages]
 
@@ -397,6 +394,7 @@ async def chat(request: ChatRequest, user_id: str = Depends(get_current_user)):
 @router.post("/translate/chapter")
 async def translate_chapter(request: TranslateChapterRequest, user_id: str = Depends(get_current_user)):
     """Translate a single chapter as SSE stream, sentence by sentence."""
+    check_guest_rate_limit(user_id, "translate")
     ai_config = _build_ai_config(user_id, config_type="translation")
     service = AIService(ai_config)
 

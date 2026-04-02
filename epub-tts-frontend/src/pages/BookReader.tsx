@@ -284,7 +284,6 @@ export default function BookReader() {
 
   // Load AI preferences on mount
   useEffect(() => {
-    if (!token) return;
     aiService.getPreferences().then((prefs) => {
       setTranslationEnabled(prefs.enabled_translation);
       setAskAIEnabled(prefs.enabled_ask_ai);
@@ -385,8 +384,13 @@ export default function BookReader() {
         }
       } catch (error) {
         if (!cancelled && !cancelTranslationRef.current) {
-          console.error("Translation failed", error);
-          toast.error("翻译失败");
+          const msg = error instanceof Error ? error.message : String(error);
+          if (msg.includes("429") || msg.includes("频繁")) {
+            toast.error("操作过于频繁，请稍后再试");
+          } else {
+            console.error("Translation failed", error);
+            toast.error("翻译失败");
+          }
           setTranslatedSentences([]);
         }
       } finally {
@@ -468,8 +472,8 @@ export default function BookReader() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(localStorage.getItem("auth_token")
-            ? { Authorization: `Bearer ${localStorage.getItem("auth_token")}` }
+          ...((localStorage.getItem("auth_token") || localStorage.getItem("guest_token"))
+            ? { Authorization: `Bearer ${(localStorage.getItem("auth_token") || localStorage.getItem("guest_token"))}` }
             : {}),
         },
         body: JSON.stringify({
@@ -624,7 +628,12 @@ export default function BookReader() {
       }
     }).catch(e => {
       if (playingSentenceRef.current === playKey) {
-        console.error("TTS Error:", e);
+        const msg = e?.message || String(e);
+        if (msg.includes("429") || msg.includes("频繁")) {
+          toast.error("操作过于频繁，请稍后再试");
+        } else {
+          console.error("TTS Error:", e);
+        }
         playingSentenceRef.current = -1;
         setIsPlaying(false);
       }

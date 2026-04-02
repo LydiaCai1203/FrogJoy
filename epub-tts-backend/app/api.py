@@ -10,6 +10,7 @@ from app.middleware.auth import get_current_user, get_optional_user
 from app.models.database import get_db
 from app.models.models import Book, VoicePreferences
 from app.config import settings
+from app.middleware.rate_limit import check_guest_rate_limit
 import asyncio
 import os
 import edge_tts
@@ -86,6 +87,7 @@ async def speak(request: TTSRequest, user_id: str = Depends(get_current_user)):
     if not request.text or not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
+    check_guest_rate_limit(user_id, "tts_speak")
     persistent = _is_audio_persistent(user_id)
 
     try:

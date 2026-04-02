@@ -1,15 +1,21 @@
 import os
 import shutil
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from pydantic import BaseModel
 from sqlalchemy import func, case
 from loguru import logger
-from app.middleware.auth import get_current_user, get_optional_user
+from app.middleware.auth import get_current_user, get_optional_user, get_admin_user
 from app.models.database import get_db
 from app.models.models import Book
 from app.services.book_service import BookService
 from app.services.reading_progress_service import ReadingProgressService
 from app.config import settings
+from app.middleware.rate_limit import is_guest_user
 from typing import Optional
+
+
+class VisibilityRequest(BaseModel):
+    is_public: bool
 
 router = APIRouter(prefix="/books", tags=["books"])
 
@@ -18,6 +24,8 @@ async def upload_book(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user)
 ):
+    if is_guest_user(user_id):
+        raise HTTPException(status_code=403, detail="游客账号不允许上传书籍")
     if not file.filename.endswith(".epub"):
         raise HTTPException(status_code=400, detail="Only EPUB files are supported")
 
@@ -211,6 +219,21 @@ async def get_chapter(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get chapter: {str(e)}")
+
+@router.patch("/{book_id}/visibility")
+async def update_visibility(
+    book_id: str,
+    data: VisibilityRequest,
+    user_id: str = Depends(get_admin_user),
+):
+    with get_db() as db:
+        book = db.query(Book).filter(Book.id == book_id).first()
+        if not book:
+            raise HTTPException(status_code=404, detail="Book not found")
+        book.is_public = data.is_public
+        db.commit()
+    return {"bookId": book_id, "isPublic": data.is_public}
+
 
 @router.delete("/{book_id}")
 async def delete_book(
