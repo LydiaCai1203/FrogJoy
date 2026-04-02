@@ -84,11 +84,6 @@ def _is_audio_persistent(user_id: str) -> bool:
 async def speak(request: TTSRequest, raw_request: Request, user_id: str = Depends(get_current_user)):
     logger.info(f"[API] TTS request: text='{request.text[:100] if request.text else 'EMPTY'}...', voice={request.voice}, voice_type={request.voice_type}")
 
-    # 游客限频：同一 IP 的游客用户 1 分钟内最多 5 次
-    if is_guest_user(user_id):
-        client_ip = get_client_ip(raw_request)
-        check_guest_tts_rate_limit(client_ip)
-
     if not request.text or not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     persistent = _is_audio_persistent(user_id)
