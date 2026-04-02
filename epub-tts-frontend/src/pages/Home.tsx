@@ -146,7 +146,7 @@ export default function Home() {
           <div className="flex items-center gap-3">
             <BrainCircuit className="w-7 h-7 text-primary" />
             <span className="font-display text-xl font-bold tracking-tight">
-              DeepReader
+              FrogJoy
             </span>
           </div>
           
