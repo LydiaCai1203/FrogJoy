@@ -89,7 +89,7 @@ export function Sidebar({
       const endpoint = format === "zip"
         ? `${API_BASE}/books/${bookId}/download-audio-zip`
         : `${API_BASE}/books/${bookId}/download-audio`;
-      const token = localStorage.getItem("auth_token");
+      const token = (localStorage.getItem("auth_token") || localStorage.getItem("guest_token"));
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {

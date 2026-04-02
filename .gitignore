@@ -39,6 +39,8 @@ epub-tts-backend/**/*.pyc
 
 # 数据目录（包含上传的书籍、音频缓存等）
 epub-tts-backend/data/
+soft-article
+.playwright-mcp
 
 # ========== 其他 ==========
 # 测试覆盖率

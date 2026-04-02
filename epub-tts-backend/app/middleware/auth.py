@@ -32,3 +32,19 @@ async def get_optional_user(
         return AuthService.decode_token(token)
     except Exception:
         return None
+
+
+async def get_admin_user(
+    user_id: str = Depends(get_current_user)
+) -> str:
+    from app.models.database import get_db
+    from app.models.models import User
+
+    with get_db() as db:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user or not user.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin access required",
+            )
+    return user_id

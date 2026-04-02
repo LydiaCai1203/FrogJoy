@@ -11,6 +11,7 @@ from app.models.models import TTSProviderConfig, ClonedVoice, VoicePreferences, 
 from app.services.auth_service import AuthService
 from app.services.voice_clone import VoiceCloneService
 from app.config import settings
+from app.middleware.rate_limit import is_guest_user
 
 router = APIRouter()
 
@@ -57,6 +58,7 @@ class ProviderStatus(BaseModel):
 @router.get("/tts/config", response_model=TTSConfigOut)
 async def get_tts_config(user_id: str = Depends(get_current_user)):
     """Get current TTS provider configuration"""
+
     with get_db() as db:
         config = db.query(TTSProviderConfig).filter(
             TTSProviderConfig.user_id == user_id
@@ -77,6 +79,7 @@ async def save_tts_config(
     user_id: str = Depends(get_current_user)
 ):
     """Save MiniMax TTS configuration (validates API key first)"""
+
     if not config_in.api_key:
         raise HTTPException(status_code=400, detail="API key is required")
 
@@ -129,6 +132,7 @@ async def save_tts_config(
 @router.delete("/tts/config")
 async def delete_tts_config(user_id: str = Depends(get_current_user)):
     """Remove MiniMax TTS configuration and reset voice preferences to Edge"""
+
     with get_db() as db:
         config = db.query(TTSProviderConfig).filter(
             TTSProviderConfig.user_id == user_id
@@ -253,6 +257,7 @@ async def clone_voice(
     user_id: str = Depends(get_current_user),
 ):
     """Upload audio sample and clone voice using MiniMax API"""
+
     # Validate file type
     allowed_types = ["audio/wav", "audio/mpeg", "audio/mp3", "audio/x-wav", "audio/wave", "audio/x-m4a", "audio/mp4"]
     if audio_file.content_type not in allowed_types:
@@ -366,6 +371,7 @@ async def delete_cloned_voice(
     user_id: str = Depends(get_current_user)
 ):
     """Delete a cloned voice"""
+
     with get_db() as db:
         voice = db.query(ClonedVoice).filter(
             ClonedVoice.id == voice_id,
@@ -425,6 +431,7 @@ async def save_voice_preferences(
     user_id: str = Depends(get_current_user)
 ):
     """Save user's voice preferences"""
+
     with get_db() as db:
         existing = db.query(VoicePreferences).filter(
             VoicePreferences.user_id == user_id

@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { UploadZone } from "@/components/player/UploadZone";
 import { useUploadBook } from "@/hooks/use-book";
 import { Button } from "@/components/ui/button";
-import { Loader2, Book, Trash2, BrainCircuit, Github, User, LogOut, BarChart2 } from "lucide-react";
+import { Loader2, Book, Trash2, BrainCircuit, Github, User, LogOut, BarChart2, AudioLines, Languages, Mic, Globe, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { API_BASE, API_URL } from "@/config";
 import { useAuth } from "@/contexts/AuthContext";
@@ -111,6 +111,25 @@ export default function Home() {
     navigate(`/book/${bookId}`);
   };
 
+  const handleToggleVisibility = async (bookId: string, currentPublic: boolean) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_URL}/books/${bookId}/visibility`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ is_public: !currentPublic }),
+      });
+      if (!res.ok) throw new Error("Failed to update visibility");
+      setBooks(books.map(b => b.id === bookId ? { ...b, isPublic: !currentPublic } : b));
+      toast.success(!currentPublic ? "已设为公开" : "已设为私有");
+    } catch {
+      toast.error("操作失败");
+    }
+  };
+
   const handleDeleteBook = async () => {
     if (!deleteBookId || !token) return;
     
@@ -146,7 +165,7 @@ export default function Home() {
           <div className="flex items-center gap-3">
             <BrainCircuit className="w-7 h-7 text-primary" />
             <span className="font-display text-xl font-bold tracking-tight">
-              DeepReader
+              FrogJoy
             </span>
           </div>
           
@@ -204,23 +223,85 @@ export default function Home() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-8">
-        {/* Hero Title */}
-        <div className="mb-8 text-center space-y-4">
-          <h1 className="text-5xl font-display font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-primary via-primary/80 to-primary/50">
-            DEEP READER
-          </h1>
-          <p className="text-muted-foreground text-lg font-mono">
-            EPUB TO AUDIO // NEURAL LINK ESTABLISHED
-          </p>
-        </div>
+        {user ? (
+          <>
+            {/* Hero Title (logged in) */}
+            <div className="mb-8 text-center space-y-4">
+              <h1 className="text-5xl font-display font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-primary via-primary/80 to-primary/50">
+                FROG JOY
+              </h1>
+              <p className="text-muted-foreground text-lg font-mono">
+                EPUB TO AUDIO // NEURAL LINK ESTABLISHED
+              </p>
+            </div>
 
-        {/* Upload Section */}
-        <section className="mb-12">
-          <UploadZone onFileSelect={handleFileSelect} />
-        </section>
+            {/* Upload Section */}
+            <section className="mb-12">
+              <UploadZone onFileSelect={handleFileSelect} />
+            </section>
+          </>
+        ) : (
+          <>
+            {/* Landing Hero */}
+            <div className="mb-12 text-center space-y-6 py-8">
+              <h1 className="text-5xl font-display font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-primary via-primary/80 to-primary/50">
+                FROG JOY
+              </h1>
+              <p className="text-muted-foreground text-xl max-w-2xl mx-auto leading-relaxed">
+                AI 驱动的英文阅读助手 — 听 AI 用任何声音为你朗读，边听边看翻译
+              </p>
+              <div className="flex items-center justify-center gap-4 pt-4">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => document.getElementById("bookshelf")?.scrollIntoView({ behavior: "smooth" })}
+                >
+                  浏览公开书籍
+                </Button>
+                <Button
+                  size="lg"
+                  onClick={() => setShowRegister(true)}
+                >
+                  免费注册
+                </Button>
+              </div>
+            </div>
+
+            {/* Feature Cards */}
+            <section className="mb-16 grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-4xl mx-auto">
+              <div className="border border-border bg-card/50 rounded-lg p-6 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                  <AudioLines className="w-6 h-6 text-primary" />
+                </div>
+                <h3 className="font-display font-bold text-foreground">AI 语音朗读</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  14+ 免费语音可选，支持语速和情感控制，让 AI 为你朗读每一本英文书
+                </p>
+              </div>
+              <div className="border border-border bg-card/50 rounded-lg p-6 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                  <Languages className="w-6 h-6 text-primary" />
+                </div>
+                <h3 className="font-display font-bold text-foreground">双语对照阅读</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  AI 实时翻译，原文译文并排显示，告别查词典的低效阅读
+                </p>
+              </div>
+              <div className="border border-border bg-card/50 rounded-lg p-6 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                  <Mic className="w-6 h-6 text-primary" />
+                </div>
+                <h3 className="font-display font-bold text-foreground">语音克隆</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  用你喜欢的声音朗读任何英文书籍，打造专属听书体验
+                </p>
+              </div>
+            </section>
+          </>
+        )}
 
         {/* Bookshelf Section */}
-        <section className="mt-12 max-w-2xl mx-auto">
+        <section id="bookshelf" className="mt-12 max-w-2xl mx-auto">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-display font-bold tracking-wide text-foreground">
               {user ? "我的书架" : "公共书籍"}
@@ -284,6 +365,22 @@ export default function Home() {
                     </p>
                   </div>
                   
+                  {/* 管理员: 公开/私有切换 */}
+                  {user?.is_admin && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleVisibility(book.id, !!book.isPublic);
+                      }}
+                      className="absolute top-2 left-2 p-1.5 bg-black/60 hover:bg-black/80 rounded-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                      title={book.isPublic ? "设为私有" : "设为公开"}
+                    >
+                      {book.isPublic
+                        ? <Globe className="w-3.5 h-3.5 text-green-400" />
+                        : <Lock className="w-3.5 h-3.5 text-white" />}
+                    </button>
+                  )}
+
                   {/* 删除按钮 - 仅显示自己的书籍 */}
                   {user && book.userId === user.id && (
                     <button

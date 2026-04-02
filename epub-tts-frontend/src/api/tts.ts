@@ -11,7 +11,7 @@ const getAuthHeaders = () => {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  const token = localStorage.getItem("auth_token");
+  const token = localStorage.getItem("auth_token") || localStorage.getItem("guest_token");
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
@@ -85,7 +85,7 @@ export async function cloneVoice(
   formData.append("lang", lang);
   formData.append("audio_file", audioFile);
 
-  const token = localStorage.getItem("auth_token");
+  const token = localStorage.getItem("auth_token") || localStorage.getItem("guest_token");
   const headers: Record<string, string> = {};
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;

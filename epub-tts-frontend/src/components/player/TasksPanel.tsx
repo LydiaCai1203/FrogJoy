@@ -33,7 +33,7 @@ export function TasksPanel() {
   // 获取任务列表
   const fetchTasks = async () => {
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = (localStorage.getItem("auth_token") || localStorage.getItem("guest_token"));
       const response = await fetch(`${API_URL}/tasks`, {
         headers: {
           ...(token && { Authorization: `Bearer ${token}` })
@@ -60,7 +60,7 @@ export function TasksPanel() {
   // 删除任务
   const handleDelete = async (taskId: string) => {
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = (localStorage.getItem("auth_token") || localStorage.getItem("guest_token"));
       const response = await fetch(`${API_URL}/tasks/${taskId}`, {
         method: "DELETE",
         headers: {
