@@ -2,6 +2,7 @@ import aiohttp
 import asyncio
 import json
 import os
+import re
 from typing import Dict, List, Optional
 from loguru import logger
 
@@ -169,6 +170,19 @@ class VoiceCloneService:
                     if response.status == 200:
                         result = json.loads(result_text)
                         logger.info(f"[VoiceClone] Clone result: {result}")
+
+                        # Step 3: Activate the cloned voice via HTTP
+                        try:
+                            await VoiceCloneService.activate_cloned_voice(
+                                api_key=api_key,
+                                voice_id=voice_id,
+                                base_url=effective_base_url,
+                            )
+                            logger.info(f"[VoiceClone] Voice {voice_id} activated successfully")
+                        except Exception as activate_err:
+                            # Activation failure is non-fatal — voice can still be used later
+                            logger.warning(f"[VoiceClone] Voice {voice_id} activation failed (will retry on first use): {activate_err}")
+
                         return {
                             "voice_id": voice_id,
                             "name": name,
@@ -184,18 +198,16 @@ class VoiceCloneService:
 
     # MiniMax WebSocket API limit per task_continue message
     _MINIMAX_CHUNK_SIZE = 2000
+    _SENTENCE_SPLIT_PATTERN = re.compile(r'(?<=[。！？.!?\n])')
 
     @staticmethod
     def _split_text_for_tts(text: str, max_len: int) -> List[str]:
         """Split text into chunks at sentence boundaries, each <= max_len chars."""
-        import re
         if len(text) <= max_len:
             return [text]
 
         chunks = []
         remaining = text
-        # Split on sentence-ending punctuation (Chinese and English)
-        sentence_pattern = re.compile(r'(?<=[。！？.!?\n])')
 
         while remaining:
             if len(remaining) <= max_len:
@@ -204,7 +216,7 @@ class VoiceCloneService:
 
             # Try to split at sentence boundary within max_len
             segment = remaining[:max_len]
-            splits = list(sentence_pattern.finditer(segment))
+            splits = list(VoiceCloneService._SENTENCE_SPLIT_PATTERN.finditer(segment))
             if splits:
                 cut = splits[-1].end()
             else:
@@ -227,15 +239,17 @@ class VoiceCloneService:
         pitch: int = 0,
         emotion: str = "neutral",
         base_url: Optional[str] = None,
+        max_retries: int = 2,
     ) -> bytes:
         """
         Generate speech using MiniMax TTS API via WebSocket.
         Splits long text into chunks to avoid server-side disconnects.
+        Includes retry logic for connection drops.
         """
         import ssl
         import websockets
 
-        ws_url = "wss://api.minimaxi.com/ws/v1/t2a_v2"
+        ws_url = f"{VoiceCloneService._get_base_url(base_url).replace('https://', 'wss://')}/ws/v1/t2a_v2"
         headers = {"Authorization": f"Bearer {api_key}"}
 
         ssl_context = ssl.create_default_context()
@@ -247,75 +261,213 @@ class VoiceCloneService:
         )
         logger.info(f"[VoiceClone] Text length={len(text)}, split into {len(text_chunks)} chunks")
 
-        audio_data = b""
+        last_error: Optional[Exception] = None
 
-        ws = await websockets.connect(
-            ws_url,
-            additional_headers=headers,
-            ssl=ssl_context,
-            ping_interval=20,
-            ping_timeout=60,
-            close_timeout=30,
-        )
-        try:
-            # 1. Receive connection confirmation
-            connected = json.loads(await ws.recv())
-            if connected.get("event") != "connected_success":
-                raise Exception(f"WebSocket connection failed: {connected}")
-            logger.info("[VoiceClone] WebSocket connected")
+        for attempt in range(max_retries + 1):
+            audio_data = b""
+            ws = None
+            try:
+                ws = await websockets.connect(
+                    ws_url,
+                    additional_headers=headers,
+                    ssl=ssl_context,
+                    ping_interval=20,
+                    ping_timeout=60,
+                    close_timeout=30,
+                )
+                # 1. Receive connection confirmation
+                connected = json.loads(await ws.recv())
+                if connected.get("event") != "connected_success":
+                    raise Exception(f"WebSocket connection failed: {connected}")
+                logger.info(f"[VoiceClone] WebSocket connected (attempt {attempt + 1})")
 
-            # 2. Send task_start
-            start_msg = {
-                "event": "task_start",
-                "model": "speech-2.8-hd",
-                "voice_setting": {
-                    "voice_id": voice_id,
-                    "speed": speed,
-                    "vol": 1,
-                    "pitch": pitch,
-                    "english_normalization": False,
-                },
-                "audio_setting": {
-                    "sample_rate": 32000,
-                    "bitrate": 128000,
-                    "format": "mp3",
-                    "channel": 1,
-                },
-            }
-            await ws.send(json.dumps(start_msg))
+                # 2. Send task_start
+                start_msg = {
+                    "event": "task_start",
+                    "model": "speech-2.8-hd",
+                    "voice_setting": {
+                        "voice_id": voice_id,
+                        "speed": speed,
+                        "vol": 1,
+                        "pitch": pitch,
+                        "english_normalization": False,
+                    },
+                    "audio_setting": {
+                        "sample_rate": 32000,
+                        "bitrate": 128000,
+                        "format": "mp3",
+                        "channel": 1,
+                    },
+                }
+                await ws.send(json.dumps(start_msg))
 
-            response = json.loads(await ws.recv())
-            if response.get("event") != "task_started":
-                raise Exception(f"Task start failed: {response}")
-
-            # 3. Send text in chunks
-            for i, chunk in enumerate(text_chunks):
-                logger.debug(f"[VoiceClone] Sending chunk {i+1}/{len(text_chunks)}, len={len(chunk)}")
-                await ws.send(json.dumps({
-                    "event": "task_continue",
-                    "text": chunk,
-                }))
-
-            # 4. Send task_finish to signal end of input
-            await ws.send(json.dumps({"event": "task_finish"}))
-
-            # 5. Receive audio chunks
-            while True:
                 response = json.loads(await ws.recv())
+                if response.get("event") != "task_started":
+                    raise Exception(f"Task start failed: {response}")
 
-                if "data" in response and "audio" in response["data"]:
-                    audio = response["data"]["audio"]
-                    if audio:
-                        audio_data += bytes.fromhex(audio)
+                # 3. Send text in chunks
+                for i, chunk in enumerate(text_chunks):
+                    logger.debug(f"[VoiceClone] Sending chunk {i+1}/{len(text_chunks)}, len={len(chunk)}")
+                    await ws.send(json.dumps({
+                        "event": "task_continue",
+                        "text": chunk,
+                    }))
 
-                if response.get("is_final"):
-                    break
+                # 4. Receive audio chunks (before task_finish)
+                while True:
+                    try:
+                        response = json.loads(await ws.recv())
+                    except websockets.exceptions.ConnectionClosedOK:
+                        if audio_data:
+                            logger.warning(f"[VoiceClone] Connection closed before is_final, returning {len(audio_data)} bytes of partial audio")
+                            return audio_data
+                        raise
 
-        finally:
-            await ws.close()
+                    if "data" in response and "audio" in response["data"]:
+                        audio = response["data"]["audio"]
+                        if audio:
+                            audio_data += bytes.fromhex(audio)
 
-        if not audio_data:
-            raise Exception("MiniMax TTS returned empty audio")
+                    if response.get("is_final"):
+                        break
 
-        logger.info(f"[VoiceClone] TTS completed: {len(audio_data)} bytes")
-        return audio_data
+                # 5. Send task_finish after all audio received
+                await ws.send(json.dumps({"event": "task_finish"}))
+
+                if not audio_data:
+                    raise Exception("MiniMax TTS returned empty audio")
+
+                logger.info(f"[VoiceClone] TTS completed: {len(audio_data)} bytes")
+                return audio_data
+
+            except websockets.exceptions.ConnectionClosedOK as e:
+                last_error = e
+                logger.warning(f"[VoiceClone] Connection closed (attempt {attempt + 1}): {e}")
+                if audio_data:
+                    return audio_data
+            except Exception as e:
+                last_error = e
+                logger.warning(f"[VoiceClone] TTS attempt {attempt + 1} failed: {e}")
+            finally:
+                if ws:
+                    await ws.close()
+
+        # All retries exhausted
+        raise Exception(f"MiniMax TTS failed after {max_retries + 1} attempts: {last_error}")
+
+    @staticmethod
+    async def activate_cloned_voice(
+        api_key: str,
+        voice_id: str,
+        base_url: Optional[str] = None,
+        max_retries: int = 3,
+    ) -> bool:
+        """
+        Activate a cloned voice by calling MiniMax TTS via HTTP async API once.
+        This is required for newly cloned voices before they can be used.
+        Returns True if activation succeeded, raises on failure.
+        """
+        base = VoiceCloneService._get_base_url(base_url)
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": "speech-2.8-hd",
+            "voice_setting": {
+                "voice_id": voice_id,
+                "speed": 1,
+                "vol": 1,
+                "pitch": 0,
+                "english_normalization": False,
+            },
+            "audio_setting": {
+                "audio_sample_rate": 32000,
+                "bitrate": 128000,
+                "format": "mp3",
+                "channel": 1,
+            },
+            "text": "音色激活测试。",
+            "aigc_watermark": False,
+        }
+
+        last_error: Optional[Exception] = None
+        for attempt in range(max_retries + 1):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        f"{base}/v1/t2a_async_v2",
+                        headers=headers,
+                        json=payload,
+                        timeout=aiohttp.ClientTimeout(total=120),
+                    ) as resp:
+                        if resp.status == 200:
+                            result = await resp.json()
+                            task_id = result.get("task_id")
+                            if task_id:
+                                # Poll for result
+                                audio = await VoiceCloneService._poll_async_result(
+                                    session, base, api_key, task_id, headers, max_wait=60
+                                )
+                                if audio:
+                                    logger.info(f"[VoiceClone] Voice {voice_id} activated successfully")
+                                    return True
+                            else:
+                                # Sync response — activation succeeded
+                                logger.info(f"[VoiceClone] Voice {voice_id} activated (sync response)")
+                                return True
+                        elif resp.status in (401, 403):
+                            raise Exception(f"MiniMax API auth failed: {resp.status}")
+                        else:
+                            text_err = await resp.text()
+                            last_error = Exception(f"HTTP {resp.status}: {text_err}")
+                            logger.warning(f"[VoiceClone] Activation attempt {attempt + 1} failed: {last_error}")
+            except Exception as e:
+                last_error = e
+                logger.warning(f"[VoiceClone] Activation attempt {attempt + 1} error: {e}")
+
+        raise Exception(f"Voice activation failed after {max_retries + 1} attempts: {last_error}")
+
+    @staticmethod
+    async def _poll_async_result(
+        session: aiohttp.ClientSession,
+        base: str,
+        api_key: str,
+        task_id: str,
+        headers: dict,
+        max_wait: int = 60,
+    ) -> Optional[bytes]:
+        """Poll MiniMax async TTS result until audio is ready."""
+        import time
+        poll_interval = 2
+        elapsed = 0
+        while elapsed < max_wait:
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+            try:
+                async with session.get(
+                    f"{base}/v1/t2a_async_result",
+                    headers=headers,
+                    params={"task_id": task_id},
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        status = result.get("status")
+                        logger.info(f"[VoiceClone] Poll status={status}")
+                        if status == "completed":
+                            audio_hex = result.get("data", {}).get("audio") or result.get("audio")
+                            if audio_hex:
+                                return bytes.fromhex(audio_hex)
+                            # No audio but completed — still considered success for activation
+                            return b""
+                        elif status == "failed":
+                            raise Exception(f"Async task failed: {result}")
+                        # still pending, continue polling
+                    else:
+                        logger.warning(f"[VoiceClone] Poll HTTP {resp.status}")
+            except Exception as e:
+                if "failed" in str(e).lower():
+                    raise
+                logger.warning(f"[VoiceClone] Poll error: {e}")
+        raise Exception(f"Async TTS polling timed out after {max_wait}s")

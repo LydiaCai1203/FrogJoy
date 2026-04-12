@@ -15,15 +15,15 @@ RUN apt-get update --fix-missing && \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 配置 pip 使用国内镜像源（清华源）
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple || \
-    pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ || true
+# 配置 pip 使用阿里云镜像源
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
+    pip config set global.trusted-host mirrors.aliyun.com
 
 # 复制依赖文件
 COPY requirements.txt .
 
-# 安装 Python 依赖
-RUN pip install --no-cache-dir -r requirements.txt
+# 安装 Python 依赖（增加超时和重试）
+RUN pip install --no-cache-dir --timeout 120 --retries 5 -r requirements.txt
 
 # 复制应用代码
 COPY . .

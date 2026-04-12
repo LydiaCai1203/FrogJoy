@@ -106,7 +106,15 @@ async def speak(request: TTSRequest, raw_request: Request, user_id: str = Depend
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        msg = str(e)
+        if "MiniMax" in msg or "WebSocket" in msg or "voice_clone" in msg.lower():
+            detail = "语音合成服务暂时不可用，请稍后重试或切换到 Edge 语音"
+            if "1000" in msg:
+                detail = "语音合成服务连接被断开，可能是 API 余额不足或配置有误，请检查 MiniMax API 设置"
+        else:
+            detail = "语音合成失败，请重试"
+        logger.error(f"[TTS] {detail} | raw: {msg}")
+        raise HTTPException(status_code=500, detail=detail)
 
 
 class PrefetchRequest(BaseModel):

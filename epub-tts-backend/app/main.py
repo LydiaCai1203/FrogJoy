@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+import traceback
 from loguru import logger
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from app.api import router
 from app.routers.auth import router as auth_router
@@ -63,6 +65,15 @@ app.include_router(reading_stats_router, prefix="/api")
 app.include_router(reading_progress_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
 app.include_router(tts_config_router, prefix="/api")
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, HTTPException):
+        raise exc
+    logger.error(f"[Unhandled] {request.method} {request.url.path} → {type(exc).__name__}: {exc}")
+    logger.error(traceback.format_exc())
+    return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
+
 
 @app.get("/")
 async def root():

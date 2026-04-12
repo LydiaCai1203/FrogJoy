@@ -27,6 +27,15 @@ import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { FontSizeSwitcher } from "@/components/FontSizeSwitcher";
 import type { UnifiedMode, ContentMode, InteractionMode } from "@/lib/ai/types";
 
+function flattenToc(items: NavItem[]): string[] {
+  const result: string[] = [];
+  for (const item of items) {
+    if (item.href?.trim()) result.push(item.href);
+    if (item.subitems) result.push(...flattenToc(item.subitems));
+  }
+  return result;
+}
+
 export default function BookReader() {
   const { bookId } = useParams<{ bookId: string }>();
   const [, navigate] = useLocation();
@@ -57,6 +66,7 @@ export default function BookReader() {
   const isPlayingRef = useRef(false);
   const playingSentenceRef = useRef<number>(-1);
   const currentChapterHrefRef = useRef<string | null>(null); // 用于追踪当前播放的章节
+  const autoAdvanceRef = useRef(false); // 区分自动跳转下一章 vs 用户手动切换
   const [voice, setVoice] = useState<string | null>(null);
   const [voiceType, setVoiceType] = useState<"edge" | "minimax" | "cloned">("edge");
   const [speed, setSpeed] = useState(1.0);
@@ -511,8 +521,19 @@ export default function BookReader() {
       return;
     }
 
+    // 章节数据还未加载，等待
+    if (originalSentences.length === 0) return;
+
     if (currentSentenceIndex >= originalSentences.length) {
-      setIsPlaying(false);
+      const flatHrefs = flattenToc(toc);
+      const curIdx = flatHrefs.indexOf(currentChapterHref!);
+      const nextHref = curIdx >= 0 && curIdx < flatHrefs.length - 1 ? flatHrefs[curIdx + 1] : null;
+      if (nextHref) {
+        autoAdvanceRef.current = true;
+        setCurrentChapterHref(nextHref);
+      } else {
+        setIsPlaying(false);
+      }
       playingSentenceRef.current = -1;
       return;
     }
@@ -632,6 +653,7 @@ export default function BookReader() {
         if (msg.includes("429") || msg.includes("频繁")) {
           toast.error("操作过于频繁，请稍后再试");
         } else {
+          toast.error(msg || "语音合成失败，请重试");
           console.error("TTS Error:", e);
         }
         playingSentenceRef.current = -1;
@@ -639,7 +661,7 @@ export default function BookReader() {
       }
     });
 
-  }, [isPlaying, isPlayMode, isBilingualMode, isTranslatedMode, currentSentenceIndex, originalSentences, translatedSentences, playBothPhase, voice, voiceType, speed, emotion, bookId, currentChapterHref, prefetchAudio]);
+  }, [isPlaying, isPlayMode, isBilingualMode, isTranslatedMode, currentSentenceIndex, originalSentences, translatedSentences, playBothPhase, voice, voiceType, speed, emotion, bookId, currentChapterHref, prefetchAudio, toc]);
 
   // 章节切换时重置状态并预加载
   useEffect(() => {
@@ -653,8 +675,15 @@ export default function BookReader() {
     const startIndex = pendingRestoreIndexRef.current ?? 0;
     pendingRestoreIndexRef.current = null;
 
+    // 立即清空句子，防止 TTS loop 在新章节数据加载前播放旧内容
+    setOriginalSentences([]);
+    setTranslatedSentences([]);
     setCurrentSentenceIndex(startIndex);
-    setIsPlaying(false);
+    if (autoAdvanceRef.current) {
+      autoAdvanceRef.current = false;
+    } else {
+      setIsPlaying(false);
+    }
     playingSentenceRef.current = -1;
     setWordTimestamps([]);
     setCurrentTime(0);
@@ -686,6 +715,20 @@ export default function BookReader() {
   }, []);
 
   const handleSentenceChange = useCallback((index: number) => {
+    // 滚动触发的 index 变更也需要立即中断旧 TTS 回调，否则旧 .then() 会把 index 改回去
+    ttsService.stop();
+    playingSentenceRef.current = -1;
+    setWordTimestamps([]);
+    setCurrentTime(0);
+    setCurrentSentenceIndex(index);
+  }, []);
+
+  const handleSeek = useCallback((index: number) => {
+    // 必须先 stop + 重置 ref，否则旧 speak().then() 回调会覆盖 seek 目标
+    ttsService.stop();
+    playingSentenceRef.current = -1;
+    setWordTimestamps([]);
+    setCurrentTime(0);
     setCurrentSentenceIndex(index);
   }, []);
 
@@ -994,7 +1037,7 @@ export default function BookReader() {
         onPlayPause={togglePlay}
         onNext={handleNext}
         onPrev={handlePrev}
-        onSeek={setCurrentSentenceIndex}
+        onSeek={handleSeek}
         current={currentSentenceIndex}
         total={originalSentences.length}
         progress={originalSentences.length > 0 ? (currentSentenceIndex / originalSentences.length) * 100 : 0}

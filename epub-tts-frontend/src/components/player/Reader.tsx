@@ -228,7 +228,7 @@ export function Reader({
       setTimeout(() => {
         scrollToSentence(current, "smooth");
       }, 50);
-      setTimeout(() => { isAutoScrollingRef.current = false; }, 500);
+      setTimeout(() => { isAutoScrollingRef.current = false; }, 1000);
     }
   }, [current, sentences.length, scrollToSentence]);
 
@@ -244,6 +244,8 @@ export function Reader({
     const findMostVisibleSentence = () => {
       if (isAutoScrollingRef.current) return;
       if (sentences.length === 0) return;
+      // 播放模式下，位置由 TTS loop 管理，不通过滚动更新
+      if (isPlayMode && isPlaying) return;
 
       let closestIndex: number;
 
@@ -304,7 +306,7 @@ export function Reader({
       viewport.removeEventListener("scroll", handleScroll);
       if (debounceTimer) clearTimeout(debounceTimer);
     };
-  }, [sentences, onSentenceChange, findVisibleIndex, offsetsDisabled, findBilingualIndex, bilingualOffsetsDisabled, shouldRenderHtmlReadMode]);
+  }, [sentences, onSentenceChange, findVisibleIndex, offsetsDisabled, findBilingualIndex, bilingualOffsetsDisabled, shouldRenderHtmlReadMode, isPlayMode, isPlaying]);
 
   // ✅ Improved word-level scrolling (Karaoke mode)
   useEffect(() => {

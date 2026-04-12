@@ -1,8 +1,18 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useClonedVoices } from "@/hooks/useClonedVoices";
 import { Button } from "@/components/ui/button";
 import { Loader2, Trash2, Mic } from "lucide-react";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface ClonedVoiceListProps {
   onSelectVoice?: (voiceId: string, name: string) => void;
@@ -11,18 +21,29 @@ interface ClonedVoiceListProps {
 
 export function ClonedVoiceList({ onSelectVoice, selectedVoiceId }: ClonedVoiceListProps) {
   const { clonedVoices, isLoading, loadClonedVoices, removeClonedVoice } = useClonedVoices();
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     loadClonedVoices();
   }, [loadClonedVoices]);
 
-  const handleDelete = async (voiceId: string, e: React.MouseEvent) => {
+  const handleDeleteClick = (voiceId: string, voiceName: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    setDeleteTarget({ id: voiceId, name: voiceName });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
     try {
-      await removeClonedVoice(voiceId);
+      await removeClonedVoice(deleteTarget.id);
       toast.success("音色已删除");
     } catch {
       toast.error("删除失败，请重试");
+    } finally {
+      setIsDeleting(false);
+      setDeleteTarget(null);
     }
   };
 
@@ -44,44 +65,68 @@ export function ClonedVoiceList({ onSelectVoice, selectedVoiceId }: ClonedVoiceL
   }
 
   return (
-    <div className="space-y-1.5">
-      {clonedVoices.map((voice) => {
-        const unavailable = voice.available === false;
-        return (
-          <div
-            key={voice.id}
-            onClick={() => !unavailable && onSelectVoice?.(voice.id, voice.name)}
-            className={`
-              flex items-center justify-between p-2.5 rounded-lg border transition-colors
-              ${unavailable ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-accent"}
-              ${selectedVoiceId === voice.id && !unavailable ? "border-primary bg-primary/5" : "border-border"}
-            `}
-          >
-            <div className="flex items-center gap-2.5">
-              <Mic className="w-4 h-4 text-primary" />
-              <div>
-                <div className="text-sm font-medium">
-                  {voice.name}
-                  {unavailable && (
-                    <span className="ml-1.5 text-xs text-destructive">(不可用)</span>
-                  )}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {voice.lang === "zh" ? "中文" : voice.lang === "en" ? "英文" : voice.lang === "ja" ? "日文" : voice.lang === "ko" ? "韩文" : voice.lang}
+    <>
+      <div className="space-y-1.5">
+        {clonedVoices.map((voice) => {
+          const unavailable = voice.available === false;
+          return (
+            <div
+              key={voice.id}
+              onClick={() => !unavailable && onSelectVoice?.(voice.id, voice.name)}
+              className={`
+                flex items-center justify-between p-2.5 rounded-lg border transition-colors
+                ${unavailable ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-accent"}
+                ${selectedVoiceId === voice.id && !unavailable ? "border-primary bg-primary/5" : "border-border"}
+              `}
+            >
+              <div className="flex items-center gap-2.5">
+                <Mic className="w-4 h-4 text-primary" />
+                <div>
+                  <div className="text-sm font-medium">
+                    {voice.name}
+                    {unavailable && (
+                      <span className="ml-1.5 text-xs text-destructive">(不可用)</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {voice.lang === "zh" ? "中文" : voice.lang === "en" ? "英文" : voice.lang === "ja" ? "日文" : voice.lang === "ko" ? "韩文" : voice.lang}
+                  </div>
                 </div>
               </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => handleDeleteClick(voice.id, voice.name, e)}
+                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => handleDelete(voice.id, e)}
-              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+          );
+        })}
+      </div>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除音色</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除音色「{deleteTarget?.name}」吗？删除后无法恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              <Trash2 className="w-3.5 h-3.5" />
-            </Button>
-          </div>
-        );
-      })}
-    </div>
+              {isDeleting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

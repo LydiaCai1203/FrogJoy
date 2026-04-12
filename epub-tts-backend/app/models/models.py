@@ -215,6 +215,7 @@ class ClonedVoice(Base):
     audio_sample_path = Column(String, nullable=False)  # Stored sample file path
     lang = Column(String, default="zh")
     created_at = Column(DateTime, server_default=func.now())
+    last_used_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     user = relationship("User", back_populates="cloned_voices")
 

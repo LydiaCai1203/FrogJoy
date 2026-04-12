@@ -61,6 +61,26 @@ services:
       retries: 3
       start_period: 40s
 
+  cron:
+    build:
+      context: ./epub-tts-backend
+      dockerfile: cron.Dockerfile
+    container_name: epub-tts-cron
+    volumes:
+      - ./epub-tts-backend/data:/app/data
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-bookreader}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+    networks:
+      - epub-tts-network
+
   frontend:
     build:
       context: ./epub-tts-frontend

@@ -270,6 +270,38 @@ class AudioMemoryCache:
                         minimax_base_url = config.base_url
                     else:
                         raise ValueError("MiniMax TTS 未配置，无法使用克隆音色")
+
+                    # Keep-alive: if cloned voice hasn't been used in ~23 hours, ping it
+                    if voice_type == "cloned" and tasks:
+                        from app.models.models import ClonedVoice
+                        from datetime import datetime, timezone
+                        with get_db() as db:
+                            cloned = db.query(ClonedVoice).filter(
+                                ClonedVoice.voice_id == voice
+                            ).first()
+                            if cloned:
+                                created = cloned.created_at or datetime.now(timezone.utc)
+                                age_hours = (datetime.now(timezone.utc) - created).total_seconds() / 3600
+                                if age_hours >= 23:
+                                    logger.info(f"[Prefetch] Cloned voice {voice} is {age_hours:.1f}h old — sending keep-alive ping")
+                                    try:
+                                        from app.services.voice_clone import VoiceCloneService
+                                        await VoiceCloneService.generate_speech_minimax(
+                                            api_key=minimax_api_key,
+                                            text="啊",
+                                            voice_id=voice,
+                                            speed=1.0,
+                                            pitch=0,
+                                            emotion="neutral",
+                                            base_url=minimax_base_url,
+                                            max_retries=1,
+                                        )
+                                        cloned.last_used_at = datetime.now(timezone.utc)
+                                        db.commit()
+                                        logger.info(f"[Prefetch] Keep-alive ping successful for voice {voice}")
+                                    except Exception as ping_err:
+                                        logger.warning(f"[Prefetch] Keep-alive ping failed for {voice}: {ping_err}")
+
                 except Exception as e:
                     logger.warning(f"[Prefetch] Failed to load MiniMax config: {e}")
                     raise
@@ -459,8 +491,9 @@ class TTSService:
             # Use MiniMax TTS
             try:
                 from app.models.database import get_db
-                from app.models.models import TTSProviderConfig
+                from app.models.models import TTSProviderConfig, ClonedVoice
                 from app.services.auth_service import AuthService
+                from datetime import datetime, timezone
 
                 with get_db() as db:
                     config = db.query(TTSProviderConfig).filter(
@@ -473,6 +506,40 @@ class TTSService:
                 api_key = AuthService.decrypt_api_key(config.api_key_encrypted)
                 from app.services.voice_clone import VoiceCloneService
 
+                # Keep-alive: if cloned voice hasn't been used in ~23 hours, ping it
+                if voice_type == "cloned":
+                    from app.models.database import get_db as get_db2
+                    with get_db2() as db:
+                        cloned = db.query(ClonedVoice).filter(
+                            ClonedVoice.voice_id == voice
+                        ).first()
+                        if cloned:
+                            created = cloned.created_at or datetime.utcnow()
+                            if created.tzinfo is not None:
+                                created = created.replace(tzinfo=None)
+                            # MiniMax cloned voice expires after 24h — ping at 23h to keep alive
+                            age_hours = (datetime.utcnow() - created).total_seconds() / 3600
+                            if age_hours >= 23:
+                                logger.info(f"[TTS] Cloned voice {voice} is {age_hours:.1f}h old — sending keep-alive ping")
+                                try:
+                                    await VoiceCloneService.generate_speech_minimax(
+                                        api_key=api_key,
+                                        text="啊",
+                                        voice_id=voice,
+                                        speed=1.0,
+                                        pitch=0,
+                                        emotion="neutral",
+                                        base_url=config.base_url,
+                                        max_retries=1,
+                                    )
+                                    # Update last_used_at
+                                    cloned.last_used_at = datetime.now(timezone.utc)
+                                    db.commit()
+                                    logger.info(f"[TTS] Keep-alive ping successful for voice {voice}")
+                                except Exception as ping_err:
+                                    logger.warning(f"[TTS] Keep-alive ping failed for {voice}: {ping_err}")
+                                    # Proceed anyway — actual TTS will retry
+
                 audio_data = await VoiceCloneService.generate_speech_minimax(
                     api_key=api_key,
                     text=text,
@@ -482,6 +549,15 @@ class TTSService:
                     emotion="neutral",
                     base_url=config.base_url,
                 )
+
+                # Update last_used_at after successful TTS
+                with get_db() as db:
+                    cloned = db.query(ClonedVoice).filter(
+                        ClonedVoice.voice_id == voice
+                    ).first()
+                    if cloned:
+                        cloned.last_used_at = datetime.now(timezone.utc)
+                        db.commit()
 
                 with open(filepath, 'wb') as f:
                     f.write(audio_data)

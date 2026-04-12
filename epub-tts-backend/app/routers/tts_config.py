@@ -388,6 +388,15 @@ async def delete_cloned_voice(
             except Exception:
                 pass
 
+        # Reset voice preferences if this was the active cloned voice
+        prefs = db.query(VoicePreferences).filter(
+            VoicePreferences.user_id == user_id
+        ).first()
+        if prefs and prefs.active_voice_type == "cloned" and prefs.active_cloned_voice_id == voice_id:
+            prefs.active_voice_type = "edge"
+            prefs.active_edge_voice = prefs.active_edge_voice or "zh-CN-XiaoxiaoNeural"
+            prefs.active_cloned_voice_id = None
+
         db.delete(voice)
         db.commit()
 
