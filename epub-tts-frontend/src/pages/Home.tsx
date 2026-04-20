@@ -1,12 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import { UploadZone } from "@/components/player/UploadZone";
 import { useUploadBook } from "@/hooks/use-book";
 import { Button } from "@/components/ui/button";
-import { Loader2, Book, Trash2, BrainCircuit, Github, User, LogOut, BarChart2, AudioLines, Languages, Mic, Globe, Lock } from "lucide-react";
+import { Loader2, Book, Trash2, BrainCircuit, Github, User, LogOut, BarChart2, AudioLines, Languages, Mic, Globe, Lock, DatabaseZap, Check, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { API_BASE, API_URL } from "@/config";
 import { useAuth } from "@/contexts/AuthContext";
+import { indexService, type IndexStatus } from "@/api/services";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { RegisterForm } from "@/components/auth/RegisterForm";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
@@ -56,6 +57,9 @@ export default function Home() {
   
   const uploadMutation = useUploadBook();
 
+  // 索引状态
+  const [indexStatuses, setIndexStatuses] = useState<Record<string, IndexStatus>>({});
+
   // 加载书架
   useEffect(() => {
     if (isAuthLoading) return;
@@ -88,6 +92,82 @@ export default function Home() {
       console.error("Failed to load books:", error);
     } finally {
       setIsLoadingBooks(false);
+    }
+  };
+
+  // 加载所有书的索引状态
+  const loadIndexStatuses = useCallback(async (bookIds: string[]) => {
+    if (!token || bookIds.length === 0) return;
+    const results: Record<string, IndexStatus> = {};
+    await Promise.allSettled(
+      bookIds.map(async (id) => {
+        try {
+          results[id] = await indexService.getStatus(id);
+        } catch {
+          // ignore
+        }
+      })
+    );
+    setIndexStatuses(results);
+  }, [token]);
+
+  // 书架加载完成后拉索引状态
+  useEffect(() => {
+    if (books.length > 0 && token) {
+      loadIndexStatuses(books.map((b) => b.id));
+    }
+  }, [books, token, loadIndexStatuses]);
+
+  // 轮询正在解析中的书籍
+  const indexStatusesRef = useRef(indexStatuses);
+  indexStatusesRef.current = indexStatuses;
+
+  const parsingIds = Object.entries(indexStatuses)
+    .filter(([, s]) => s.status === "parsing")
+    .map(([id]) => id);
+  const parsingKey = parsingIds.sort().join(",");
+
+  useEffect(() => {
+    if (!parsingKey) return;
+    const ids = parsingKey.split(",");
+
+    const interval = setInterval(async () => {
+      const current = indexStatusesRef.current;
+      const updates: Record<string, IndexStatus> = {};
+      await Promise.allSettled(
+        ids.map(async (id) => {
+          try {
+            updates[id] = await indexService.getStatus(id);
+          } catch {
+            // ignore
+          }
+        })
+      );
+      if (Object.keys(updates).length > 0) {
+        setIndexStatuses((prev) => ({ ...prev, ...updates }));
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [parsingKey]);
+
+  const handleToggleIndex = async (bookId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!token) return;
+
+    const current = indexStatuses[bookId];
+    if (current?.status === "parsing") return; // 正在解析，不重复触发
+
+    try {
+      const result = await indexService.buildIndex(bookId);
+      setIndexStatuses((prev) => ({ ...prev, [bookId]: { ...result, book_id: bookId } }));
+      if (result.status === "parsing" || result.message === "indexing started") {
+        toast.success("索引构建已启动");
+      } else if (result.status === "parsed") {
+        toast.success("索引已就绪");
+      }
+    } catch {
+      toast.error("索引构建失败");
     }
   };
 
@@ -365,6 +445,45 @@ export default function Home() {
                     </p>
                   </div>
                   
+                  {/* 索引状态按钮 */}
+                  {user && book.userId === user.id && (() => {
+                    const idx = indexStatuses[book.id];
+                    const status = idx?.status || "not_indexed";
+                    return (
+                      <button
+                        onClick={(e) => handleToggleIndex(book.id, e)}
+                        className={`absolute bottom-12 right-2 p-1.5 rounded-sm transition-opacity ${
+                          status === "parsed"
+                            ? "bg-emerald-600/80 opacity-70 group-hover:opacity-100"
+                            : status === "parsing"
+                            ? "bg-amber-600/80 opacity-100"
+                            : status === "failed"
+                            ? "bg-destructive/80 opacity-70 group-hover:opacity-100"
+                            : "bg-black/60 hover:bg-black/80 opacity-0 group-hover:opacity-100"
+                        }`}
+                        title={
+                          status === "parsed"
+                            ? `索引已就绪 (${idx?.total_chapters || 0}章 ${idx?.total_paragraphs || 0}段)`
+                            : status === "parsing"
+                            ? "正在构建索引..."
+                            : status === "failed"
+                            ? `索引失败: ${idx?.error_message || "未知错误"}`
+                            : "点击构建索引"
+                        }
+                      >
+                        {status === "parsing" ? (
+                          <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+                        ) : status === "parsed" ? (
+                          <Check className="w-3.5 h-3.5 text-white" />
+                        ) : status === "failed" ? (
+                          <AlertTriangle className="w-3.5 h-3.5 text-white" />
+                        ) : (
+                          <DatabaseZap className="w-3.5 h-3.5 text-white" />
+                        )}
+                      </button>
+                    );
+                  })()}
+
                   {/* 管理员: 公开/私有切换 */}
                   {user?.is_admin && (
                     <button

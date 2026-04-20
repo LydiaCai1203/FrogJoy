@@ -1,0 +1,121 @@
+{
+  "concepts": [
+    {
+      "term": "有条件养育",
+      "aliases": ["有条件的爱", "conditional parenting"],
+      "category": "term_custom",
+      "initial_definition": "家长对孩子的爱出于'他们做了什么'——孩子只有在做到家长期望或达到所规定的标准后才能得到爱",
+      "first_occurrence_paragraph": "P03",
+      "confidence": 0.98,
+      "reasoning": "本书书名概念, 作者在章节标题和全文反复使用, 与'无条件养育'形成核心对立"
+    },
+    {
+      "term": "无条件养育",
+      "aliases": ["无条件的爱", "unconditional parenting"],
+      "category": "term_custom",
+      "initial_definition": "爱与孩子做了什么毫无关联——无论成功与否、是否乖巧, 都毫无保留地给予爱",
+      "first_occurrence_paragraph": "P03",
+      "confidence": 0.98,
+      "reasoning": "本书书名概念, 与'有条件养育'对立, 全文论证核心"
+    },
+    {
+      "term": "行为主义心理学",
+      "aliases": ["行为主义", "behaviorism"],
+      "category": "theory",
+      "initial_definition": "'一切只看行为'——只有可以看见和衡量的才是重要的, 不关心欲望和恐惧等内在动机",
+      "first_occurrence_paragraph": "P05",
+      "confidence": 0.95,
+      "reasoning": "作者把有条件养育的理论基础明确归为行为主义, 是核心对手方"
+    },
+    {
+      "term": "强化",
+      "aliases": ["reinforcement", "奖励强化"],
+      "category": "term",
+      "initial_definition": "人类所有行为都建立在是否被'强化'的基础之上——人做的每件事都可以被解释为是否受到某种奖励的强化",
+      "first_occurrence_paragraph": "P06",
+      "confidence": 0.88,
+      "reasoning": "行为主义核心机制, 作者多次用于解释有条件养育的作用路径"
+    },
+    {
+      "term": "斯金纳",
+      "aliases": ["B.F. Skinner", "斯金纳主义"],
+      "category": "person",
+      "initial_definition": "行为主义心理学代表人物, 主张'外在力'(奖励或惩罚)是导致人类行动的关键因素",
+      "first_occurrence_paragraph": "P05",
+      "confidence": 0.95,
+      "reasoning": "被作者点名作为行为主义代表, 并用'斯金纳主义'一词指代其学说"
+    },
+    {
+      "term": "卡尔·罗杰斯",
+      "aliases": ["Carl Rogers"],
+      "category": "person",
+      "initial_definition": "心理学先驱, 提出了关于'家长的爱取决于孩子行为'所造成的心理后果的经典论述",
+      "first_occurrence_paragraph": "P02",
+      "confidence": 0.92,
+      "reasoning": "作者两次引用其观点作为支持自己论点的权威, 在全书后续章节很可能再现"
+    },
+    {
+      "term": "爱丽丝·米勒",
+      "aliases": ["Alice Miller"],
+      "category": "person",
+      "initial_definition": "精神分析学家, 观察发现家长对孩子的爱可能'热情似火, 但并非孩子需要的那种爱'",
+      "first_occurrence_paragraph": "P02",
+      "confidence": 0.70,
+      "reasoning": "被直接引用, 但在本章仅出现一次, 后续章节是否回归不确定"
+    },
+    {
+      "term": "戴安娜·鲍姆林德",
+      "aliases": ["Diana Baumrind"],
+      "category": "person",
+      "initial_definition": "心理学家, 主张'互惠互利、付出才有回报是适用于所有人类的通用法则'——代表有条件养育方的某种立场",
+      "first_occurrence_paragraph": "P21",
+      "confidence": 0.68,
+      "reasoning": "被作者引用, 且是著名养育研究者, 后续章节大概率再现"
+    },
+    {
+      "term": "撤回爱",
+      "aliases": ["爱的暂停", "撤回认可"],
+      "category": "term_custom",
+      "initial_definition": "家长把愉快活动作为对孩子不良行为的撤回, 用'暂停爱'作为训导手段",
+      "first_occurrence_paragraph": "P02",
+      "confidence": 0.65,
+      "reasoning": "本章描述的典型有条件养育手段, 下一章专门讨论(ch09)"
+    },
+    {
+      "term": "假我",
+      "aliases": ["false self"],
+      "category": "term",
+      "initial_definition": "在有条件养育下, 青少年创造的、'家长会爱的人'的伪装人格, 与真实自我失去联结",
+      "first_occurrence_paragraph": "P11",
+      "confidence": 0.75,
+      "reasoning": "作者引用丹佛大学研究提出的关键后果性概念, 是核心论证的一环"
+    },
+    {
+      "term": "自我价值感",
+      "aliases": ["self-worth", "自尊"],
+      "category": "term",
+      "initial_definition": "对自身价值的认知——研究显示'支持越有条件, 自我价值感就越低'",
+      "first_occurrence_paragraph": "P12",
+      "confidence": 0.70,
+      "reasoning": "作者衡量有条件养育影响的核心心理学指标"
+    },
+    {
+      "term": "互换法则",
+      "aliases": ["互换关系", "经济交易模式"],
+      "category": "term",
+      "initial_definition": "'付出才有回报'的人际互动模式——作者认为这被错误地套用于家庭关系中",
+      "first_occurrence_paragraph": "P20",
+      "confidence": 0.62,
+      "reasoning": "作者反对将经济交易逻辑用于亲子关系时所命名的对立概念"
+    },
+    {
+      "term": "情感虐待",
+      "aliases": ["冷暴力", "emotional abuse"],
+      "category": "term",
+      "initial_definition": "爱尔兰儿童健康署列出的十大模式, 其中有条件养育排在第二位",
+      "first_occurrence_paragraph": "P02",
+      "confidence": 0.55,
+      "reasoning": "章节里出现一次作为权威背书, 是否在后续章节反复使用需 Phase 2 验证"
+    }
+  ]
+}

@@ -672,3 +672,51 @@ export class AIService {
 }
 
 export const aiService = new AIService();
+
+// ----- Index Service -----
+
+export interface IndexStatus {
+  book_id: string;
+  status: "not_indexed" | "pending" | "parsing" | "parsed" | "failed";
+  message?: string;
+  total_chapters?: number;
+  total_paragraphs?: number;
+  error_message?: string | null;
+  parsed_at?: string | null;
+}
+
+export class IndexService {
+  private getAuthHeaders(): HeadersInit {
+    const token = getEffectiveToken();
+    return token
+      ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
+      : { "Content-Type": "application/json" };
+  }
+
+  async getStatus(bookId: string): Promise<IndexStatus> {
+    const res = await fetch(`${API_URL}/books/${bookId}/index/status`, {
+      headers: this.getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error("Failed to fetch index status");
+    return res.json();
+  }
+
+  async buildIndex(bookId: string, rebuild = false): Promise<IndexStatus> {
+    const res = await fetch(`${API_URL}/books/${bookId}/index?rebuild=${rebuild}`, {
+      method: "POST",
+      headers: this.getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error("Failed to build index");
+    return res.json();
+  }
+
+  async deleteIndex(bookId: string): Promise<void> {
+    const res = await fetch(`${API_URL}/books/${bookId}/index`, {
+      method: "DELETE",
+      headers: this.getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error("Failed to delete index");
+  }
+}
+
+export const indexService = new IndexService();
