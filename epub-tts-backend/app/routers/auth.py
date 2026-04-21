@@ -1,6 +1,7 @@
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Request
 from sqlalchemy.exc import IntegrityError
+from user_agents import parse as parse_ua
 from shared.schemas.auth import (
     UserCreate, UserResponse, TokenPair,
     ThemeIn, ThemeOut, FontSizeIn, FontSizeOut,
@@ -20,6 +21,26 @@ from typing import List
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 MAX_DEVICES = 3
+
+
+def _parse_device_info(request: Request) -> tuple[str, str]:
+    """Parse User-Agent header into (device_name, device_type)."""
+    ua_string = request.headers.get("user-agent", "")
+    try:
+        ua = parse_ua(ua_string)
+        os_name = ua.os.family or "Unknown"
+        browser_name = ua.browser.family or "Unknown"
+        device_name = f"{os_name} - {browser_name}"
+        if ua.is_mobile:
+            device_type = "mobile"
+        elif ua.is_tablet:
+            device_type = "tablet"
+        else:
+            device_type = "web"
+    except Exception:
+        device_name = "Unknown"
+        device_type = "web"
+    return device_name, device_type
 
 
 def _create_token_pair(user_id: str, device_name: str = "Unknown", device_type: str = "web") -> dict:
@@ -135,7 +156,7 @@ async def resend_verification(data: ResendRequest):
 
 
 @router.post("/login", response_model=TokenPair)
-async def login(user_data: LoginRequest):
+async def login(user_data: LoginRequest, request: Request):
     with get_db() as db:
         user = db.query(User).filter(User.email == user_data.email).first()
 
@@ -181,10 +202,11 @@ async def login(user_data: LoginRequest):
         user.last_login_at = datetime.utcnow()
         db.commit()
 
+        device_name, device_type = _parse_device_info(request)
         return TokenPair(**_create_token_pair(
             user.id,
-            device_name=user_data.device_name or "Unknown",
-            device_type=user_data.device_type or "web",
+            device_name=device_name,
+            device_type=device_type,
         ))
 
 
@@ -340,15 +362,16 @@ async def save_font_size(font_size_data: FontSizeIn, user_id: str = Depends(get_
 
 
 @router.get("/guest-token", response_model=TokenPair)
-async def get_guest_token():
+async def get_guest_token(request: Request):
     if not settings.guest_email:
         raise HTTPException(status_code=404, detail="Guest account not configured")
     with get_db() as db:
         user = db.query(User).filter(User.email == settings.guest_email).first()
         if not user:
             raise HTTPException(status_code=404, detail="Guest account not found")
+        device_name, device_type = _parse_device_info(request)
         return TokenPair(**_create_token_pair(
             user.id,
-            device_name="Guest",
-            device_type="web",
+            device_name=device_name,
+            device_type=device_type,
         ))

@@ -13,7 +13,7 @@ interface AuthContextType {
   token: string | null;
   isGuest: boolean;
   isLoading: boolean;
-  login: (email: string, password: string, deviceName?: string, deviceType?: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<string>;
   verifyEmail: (token: string) => Promise<void>;
   resendVerification: (email: string) => Promise<void>;
@@ -154,16 +154,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (email: string, password: string, deviceName?: string, deviceType?: string) => {
+  const login = async (email: string, password: string) => {
     const res = await fetch(`${API_URL}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email,
-        password,
-        device_name: deviceName || navigator.userAgent.slice(0, 50),
-        device_type: deviceType || "web",
-      }),
+      body: JSON.stringify({ email, password }),
     });
 
     if (!res.ok) {

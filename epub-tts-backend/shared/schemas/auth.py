@@ -73,8 +73,6 @@ class RefreshRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
-    device_name: Optional[str] = None
-    device_type: Optional[str] = "web"
 
 
 class DeviceInfo(BaseModel):
