@@ -3,16 +3,21 @@ from loguru import logger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from app.api import router
 from app.routers.auth import router as auth_router
 from app.routers.books import router as books_router
-from app.routers.files import router as files_router
-from app.routers.highlights import router as highlights_router
-from app.routers.reading_stats import router as reading_stats_router
-from app.routers.reading_progress import router as reading_progress_router
-from app.routers.ai import router as ai_router
+from app.routers.tts import router as tts_router
+from app.routers.tts_download import router as tts_download_router
+from app.routers.tts_cache import router as tts_cache_router
 from app.routers.tts_config import router as tts_config_router
+from app.routers.voices import router as voices_router
+from app.routers.ai_config import router as ai_config_router
+from app.routers.ai_chat import router as ai_chat_router
+from app.routers.ai_translate import router as ai_translate_router
+from app.routers.reading import router as reading_router
+from app.routers.highlights import router as highlights_router
+from app.routers.files import router as files_router
 from app.routers.index import router as index_router
+from app.routers.tasks import router as tasks_router
 import os
 
 
@@ -55,16 +60,21 @@ os.makedirs("data/images", exist_ok=True)
 app.mount("/images", StaticFiles(directory="data/images"), name="images")
 
 # Include API Routers
-app.include_router(router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(books_router, prefix="/api")
-app.include_router(files_router, prefix="/api")
-app.include_router(highlights_router, prefix="/api")
-app.include_router(reading_stats_router, prefix="/api")
-app.include_router(reading_progress_router, prefix="/api")
-app.include_router(ai_router, prefix="/api")
+app.include_router(tts_router, prefix="/api")
+app.include_router(tts_download_router, prefix="/api")
+app.include_router(tts_cache_router, prefix="/api")
 app.include_router(tts_config_router, prefix="/api")
+app.include_router(voices_router, prefix="/api")
+app.include_router(ai_config_router, prefix="/api")
+app.include_router(ai_chat_router, prefix="/api")
+app.include_router(ai_translate_router, prefix="/api")
+app.include_router(reading_router, prefix="/api")
+app.include_router(highlights_router, prefix="/api")
+app.include_router(files_router, prefix="/api")
 app.include_router(index_router, prefix="/api")
+app.include_router(tasks_router, prefix="/api")
 
 @app.get("/")
 async def root():
