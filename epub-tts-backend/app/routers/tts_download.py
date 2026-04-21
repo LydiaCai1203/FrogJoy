@@ -31,7 +31,7 @@ async def download_chapter_audio(request: DownloadRequest, user_id: str = Depend
     if not sentences:
         raise HTTPException(status_code=400, detail="All sentences are empty")
 
-    logger.info(f"[API] Download request: {len(sentences)} sentences, voice={request.voice}")
+    logger.debug(f"[API] Download request: {len(sentences)} sentences, voice={request.voice}")
 
     try:
         full_text = "\n".join(sentences)
@@ -65,7 +65,7 @@ async def download_chapter_audio_smart(request: ChapterDownloadRequest, user_id:
     if not sentences:
         raise HTTPException(status_code=400, detail="Chapter has no content")
 
-    logger.info(f"[API] Smart download: book={request.book_id}, chapter={request.chapter_href}, {len(sentences)} paragraphs")
+    logger.debug(f"[API] Smart download: book={request.book_id}, chapter={request.chapter_href}, {len(sentences)} paragraphs")
 
     try:
         result = await TTSService.generate_chapter_audio_smart(

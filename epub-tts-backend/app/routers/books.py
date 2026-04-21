@@ -254,18 +254,13 @@ async def delete_book(
                 logger.warning(f"[DeleteBook] Access denied: book_id={book_id}, owner={book_row.user_id}, requester={user_id}")
                 raise HTTPException(status_code=403, detail="You can only delete your own books")
 
-            logger.info(f"[DeleteBook] Book found: title='{book_row.title}', owner={book_row.user_id}")
-
             # Remove the entire per-book directory
             book_dir = settings.get_user_book_dir(user_id, book_id)
             if os.path.isdir(book_dir):
-                logger.info(f"[DeleteBook] Removing directory: {book_dir}")
                 shutil.rmtree(book_dir)
-                logger.info(f"[DeleteBook] Directory removed successfully")
             else:
                 logger.warning(f"[DeleteBook] Directory not found: {book_dir}")
 
-            logger.info(f"[DeleteBook] Deleting database record: book_id={book_id}")
             db.delete(book_row)
             db.commit()
             logger.info(f"[DeleteBook] Successfully deleted book: book_id={book_id}, title='{book_row.title}'")
@@ -273,8 +268,7 @@ async def delete_book(
             raise
         except Exception as e:
             db.rollback()
-            logger.error(f"[DeleteBook] Failed to delete book: book_id={book_id}, error={type(e).__name__}: {str(e)}")
-            logger.exception("Full traceback:")
+            logger.exception(f"[DeleteBook] Failed to delete book: book_id={book_id}, error={type(e).__name__}: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
     return {"message": "Book deleted", "bookId": book_id}

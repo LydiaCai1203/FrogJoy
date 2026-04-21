@@ -158,7 +158,7 @@ class AudioMemoryCache:
                     }
                     await self.put(book_id, chapter_href, idx, voice, rate, pitch, result)
                 except Exception as e:
-                    logger.info(f"[MemoryCache] Failed to prefetch paragraph {idx}: {e}")
+                    logger.warning(f"[MemoryCache] Failed to prefetch paragraph {idx}: {e}")
 
             # MiniMax WebSocket is sequential; Edge can be parallel
             if voice_type in ("minimax", "cloned"):

@@ -1,3 +1,5 @@
+import sys
+import logging
 from contextlib import asynccontextmanager
 from loguru import logger
 from fastapi import FastAPI
@@ -19,6 +21,40 @@ from app.routers.files import router as files_router
 from app.routers.index import router as index_router
 from app.routers.tasks import router as tasks_router
 import os
+
+# ── Loguru 配置 ─────────────────────────────────────────────
+logger.remove()
+
+# 控制台：简洁彩色
+logger.add(
+    sys.stderr,
+    format="<green>{time:HH:mm:ss}</green> <level>{level: <7}</level> <level>{message}</level>",
+    level="DEBUG",
+)
+
+# 文件：完整格式，按天轮转，保留 30 天
+os.makedirs("logs", exist_ok=True)
+logger.add(
+    "logs/{time:YYYY-MM-DD}.log",
+    format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <7} | {message}",
+    level="DEBUG",
+    rotation="00:00",
+    retention="30 days",
+    encoding="utf-8",
+)
+
+# 拦截 uvicorn / sqlalchemy 标准库日志 → loguru
+class _InterceptHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord):
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        logger.opt(depth=6, exception=record.exc_info).log(level, record.getMessage())
+
+for _name in ("uvicorn", "uvicorn.error", "uvicorn.access", "sqlalchemy.engine"):
+    logging.getLogger(_name).handlers = [_InterceptHandler()]
+    logging.getLogger(_name).propagate = False
 
 
 def _run_migrations():

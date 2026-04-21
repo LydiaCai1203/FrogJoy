@@ -17,7 +17,7 @@ router = APIRouter(prefix="/tts", tags=["tts"])
 
 @router.post("/speak")
 async def speak(request: TTSRequest, raw_request: Request, user_id: str = Depends(get_current_user)):
-    logger.info(f"[API] TTS request: text='{request.text[:100] if request.text else 'EMPTY'}...', voice={request.voice}, voice_type={request.voice_type}")
+    logger.debug(f"[API] TTS request: text='{request.text[:100] if request.text else 'EMPTY'}...', voice={request.voice}, voice_type={request.voice_type}")
 
     if not request.text or not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")

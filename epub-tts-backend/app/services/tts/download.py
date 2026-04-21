@@ -239,7 +239,7 @@ async def generate_book_audio_zip_task(
                     total_generated += result.get("generatedParagraphs", 0)
 
             except Exception as e:
-                logger.info(f"[Task] Skip chapter {chapter_info['href']}: {e}")
+                logger.warning(f"[Task] Skip chapter {chapter_info['href']}: {e}")
 
             processed += 1
             progress = 5 + int((processed / total_chapters) * 80)

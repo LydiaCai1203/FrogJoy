@@ -58,14 +58,13 @@ class TTSFacade:
 
             if voice_lang != detected_lang:
                 suggested_voice = get_default_voice(text)
-                logger.info(f"[TTS] Language mismatch: text is '{detected_lang}', voice is '{voice_lang}'. Using '{suggested_voice}' instead.")
+                logger.debug(f"[TTS] Language mismatch: text is '{detected_lang}', voice is '{voice_lang}'. Using '{suggested_voice}' instead.")
                 voice = suggested_voice
 
         # 1. 优先检查内存缓存
         if book_id and chapter_href is not None and paragraph_index is not None:
             memory_cached = await memory_cache.get(book_id, chapter_href, paragraph_index, voice, rate, pitch, is_translated)
             if memory_cached:
-                logger.info(f"[TTS] Memory cache hit: paragraph {paragraph_index} (translated={is_translated})")
                 return memory_cached
 
         # 2. 检查磁盘缓存（仅持久化模式）
@@ -89,7 +88,7 @@ class TTSFacade:
         pitch_hz = int((pitch - 1.0) * 50)
         pitch_str = f"{pitch_hz:+d}Hz"
 
-        logger.info(f"[TTS] Generating audio: text='{text[:50]}...', voice={voice}, voice_type={voice_type}, rate={rate_str}, pitch={pitch_str}")
+        logger.debug(f"[TTS] Generating audio: text='{text[:50]}...', voice={voice}, voice_type={voice_type}, rate={rate_str}, pitch={pitch_str}")
 
         filename = f"{cache_key}.mp3"
         filepath = os.path.join(audio_dir, filename)
@@ -174,7 +173,7 @@ class TTSFacade:
                             "duration": duration_ms
                         })
         except Exception as e:
-            logger.info(f"[TTS] Stream error: {e}")
+            logger.warning(f"[TTS] Stream error: {e}")
             try:
                 communicate_retry = edge_tts.Communicate(text, voice, rate=rate_str, pitch=pitch_str)
                 await communicate_retry.save(filepath)
@@ -188,7 +187,7 @@ class TTSFacade:
                     "wordTimestamps": []
                 }
             except Exception as e2:
-                logger.info(f"[TTS] Retry also failed: {e2}")
+                logger.error(f"[TTS] Retry also failed: {e2}")
                 raise e2
 
         if audio_chunks:
@@ -243,7 +242,7 @@ class TTSFacade:
 
         if voice_lang != detected_lang:
             suggested_voice = get_default_voice(text)
-            logger.info(f"[TTS Download] Language mismatch, using '{suggested_voice}'")
+            logger.debug(f"[TTS Download] Language mismatch, using '{suggested_voice}'")
             voice = suggested_voice
 
         rate_pct = int((rate - 1.0) * 100)
@@ -259,7 +258,7 @@ class TTSFacade:
         filepath = os.path.join(audio_dir, output_filename)
 
         text_len = len(text)
-        logger.info(f"[TTS Download] Generating: {text_len} chars, voice={voice}")
+        logger.debug(f"[TTS Download] Generating: {text_len} chars, voice={voice}")
 
         if progress_callback:
             progress_callback(45, f"开始生成音频 ({text_len} 字符)...")
@@ -291,7 +290,7 @@ class TTSFacade:
                     f.write(chunk)
 
         except Exception as e:
-            logger.info(f"[TTS Download] Error: {e}")
+            logger.error(f"[TTS Download] Error: {e}")
             raise e
 
         file_size = os.path.getsize(filepath)
@@ -316,7 +315,7 @@ class TTSFacade:
                             outfile.write(infile.read())
             return True
         except Exception as e:
-            logger.info(f"[TTS] Concatenate error: {e}")
+            logger.error(f"[TTS] Concatenate error: {e}")
             return False
 
     @staticmethod
@@ -390,7 +389,7 @@ class TTSFacade:
                         progress_callback(progress, f"生成中 {generated_count}/{missing_count} 段")
 
                 except Exception as e:
-                    logger.info(f"[TTS] Error generating paragraph {idx}: {e}")
+                    logger.warning(f"[TTS] Error generating paragraph {idx}: {e}")
                     continue
 
         if not audio_files:

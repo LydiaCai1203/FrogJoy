@@ -107,10 +107,10 @@ class BookService:
                             f.write(cover_item.get_content())
                         cover_url = f"/api/files/{user_id}/{book_id}/cover.jpg"
                     except Exception as e:
-                        logger.warning(f" Failed to extract cover image: {e}")
+                        logger.warning(f"Failed to extract cover image: {e}")
                         cover_url = None
             except Exception as e:
-                logger.warning(f" Error while searching for cover: {e}")
+                logger.warning(f"Error while searching for cover: {e}")
                 cover_url = None
 
             return {"metadata": metadata, "coverUrl": cover_url}

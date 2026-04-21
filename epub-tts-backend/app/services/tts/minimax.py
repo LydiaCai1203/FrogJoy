@@ -131,14 +131,14 @@ class VoiceCloneService:
 
         try:
             # Step 1: Upload the audio sample
-            logger.info(f"[VoiceClone] Uploading audio sample: {audio_sample_path}")
+            logger.debug(f"[VoiceClone] Uploading audio sample: {audio_sample_path}")
             file_id = await VoiceCloneService.upload_file(
                 api_key=api_key,
                 file_path=audio_sample_path,
                 purpose="voice_clone",
                 base_url=effective_base_url,
             )
-            logger.info(f"[VoiceClone] Uploaded file_id: {file_id}")
+            logger.debug(f"[VoiceClone] Uploaded file_id: {file_id}")
 
             # Step 2: Call voice clone API
             # voice_id must be globally unique and ASCII-only — MiniMax rejects non-ASCII
@@ -245,7 +245,7 @@ class VoiceCloneService:
         text_chunks = VoiceCloneService._split_text_for_tts(
             text, VoiceCloneService._MINIMAX_CHUNK_SIZE
         )
-        logger.info(f"[VoiceClone] Text length={len(text)}, split into {len(text_chunks)} chunks")
+        logger.debug(f"[VoiceClone] Text length={len(text)}, split into {len(text_chunks)} chunks")
 
         audio_data = b""
 
@@ -262,7 +262,7 @@ class VoiceCloneService:
             connected = json.loads(await ws.recv())
             if connected.get("event") != "connected_success":
                 raise Exception(f"WebSocket connection failed: {connected}")
-            logger.info("[VoiceClone] WebSocket connected")
+            logger.debug("[VoiceClone] WebSocket connected")
 
             # 2. Send task_start
             start_msg = {
@@ -317,5 +317,5 @@ class VoiceCloneService:
         if not audio_data:
             raise Exception("MiniMax TTS returned empty audio")
 
-        logger.info(f"[VoiceClone] TTS completed: {len(audio_data)} bytes")
+        logger.debug(f"[VoiceClone] TTS completed: {len(audio_data)} bytes")
         return audio_data
