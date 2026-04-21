@@ -113,7 +113,7 @@ export class TTSService implements ITTSService {
   }
 
   async getVoices(): Promise<{ name: string; lang: string; gender?: string }[]> {
-    const response = await fetch(`${API_URL}/tts/voices`);
+    const response = await fetch(`${API_URL}/voices`);
     if (!response.ok) {
       throw new Error("Failed to get voices");
     }
@@ -381,7 +381,7 @@ export class ReadingStatsService {
   }
 
   async heartbeat(bookId: string, seconds: number): Promise<void> {
-    const response = await fetch(`${API_URL}/reading-stats/heartbeat`, {
+    const response = await fetch(`${API_URL}/reading/stats/heartbeat`, {
       method: "POST",
       headers: this.getAuthHeaders(),
       body: JSON.stringify({ book_id: bookId, seconds }),
@@ -390,7 +390,7 @@ export class ReadingStatsService {
   }
 
   async getHeatmap(year: number): Promise<ReadingHeatmapEntry[]> {
-    const response = await fetch(`${API_URL}/reading-stats/heatmap?year=${year}`, {
+    const response = await fetch(`${API_URL}/reading/stats/heatmap?year=${year}`, {
       headers: this.getAuthHeaders(),
     });
     if (!response.ok) throw new Error("Failed to load heatmap");
@@ -398,7 +398,7 @@ export class ReadingStatsService {
   }
 
   async getBookStats(): Promise<BookReadingStats[]> {
-    const response = await fetch(`${API_URL}/reading-stats/books`, {
+    const response = await fetch(`${API_URL}/reading/stats/books`, {
       headers: this.getAuthHeaders(),
     });
     if (!response.ok) throw new Error("Failed to load book stats");
@@ -406,7 +406,7 @@ export class ReadingStatsService {
   }
 
   async getSummary(): Promise<ReadingSummary> {
-    const response = await fetch(`${API_URL}/reading-stats/summary`, {
+    const response = await fetch(`${API_URL}/reading/stats/summary`, {
       headers: this.getAuthHeaders(),
     });
     if (!response.ok) throw new Error("Failed to load summary");
@@ -425,7 +425,7 @@ export class ReadingProgressService {
   }
 
   async get(bookId: string): Promise<ReadingProgress | null> {
-    const response = await fetch(`${API_URL}/reading-progress/${bookId}`, {
+    const response = await fetch(`${API_URL}/reading/progress/${bookId}`, {
       headers: this.getAuthHeaders(),
     });
     if (response.status === 404) return null;
@@ -434,7 +434,7 @@ export class ReadingProgressService {
   }
 
   async save(bookId: string, chapterHref: string, paragraphIndex: number): Promise<void> {
-    const response = await fetch(`${API_URL}/reading-progress/${bookId}`, {
+    const response = await fetch(`${API_URL}/reading/progress/${bookId}`, {
       method: "PUT",
       headers: this.getAuthHeaders(),
       body: JSON.stringify({ chapter_href: chapterHref, paragraph_index: paragraphIndex }),

@@ -52,7 +52,7 @@ export async function deleteTTSConfig(): Promise<void> {
 
 // --- Voices ---
 export async function getVoices(): Promise<VoiceOption[]> {
-  const res = await fetch(`${API_URL}/tts/voices`, {
+  const res = await fetch(`${API_URL}/voices`, {
     headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error("Failed to get voices");
@@ -60,14 +60,14 @@ export async function getVoices(): Promise<VoiceOption[]> {
 }
 
 export async function getEdgeVoices(): Promise<VoiceOption[]> {
-  const res = await fetch(`${API_URL}/tts/voices/edge`);
+  const res = await fetch(`${API_URL}/voices/edge`);
   if (!res.ok) throw new Error("Failed to get Edge voices");
   return res.json();
 }
 
 export async function getMiniMaxVoices(lang?: string): Promise<VoiceOption[]> {
   const params = lang ? `?lang=${lang}` : "";
-  const res = await fetch(`${API_URL}/tts/voices/minimax${params}`, {
+  const res = await fetch(`${API_URL}/voices/minimax${params}`, {
     headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error("Failed to get MiniMax voices");
@@ -91,7 +91,7 @@ export async function cloneVoice(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_URL}/tts/voices/clone`, {
+  const res = await fetch(`${API_URL}/voices/clone`, {
     method: "POST",
     headers,
     body: formData,
@@ -104,7 +104,7 @@ export async function cloneVoice(
 }
 
 export async function getClonedVoices(): Promise<ClonedVoice[]> {
-  const res = await fetch(`${API_URL}/tts/voices/cloned`, {
+  const res = await fetch(`${API_URL}/voices/cloned`, {
     headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error("Failed to get cloned voices");
@@ -112,7 +112,7 @@ export async function getClonedVoices(): Promise<ClonedVoice[]> {
 }
 
 export async function deleteClonedVoice(voiceId: string): Promise<void> {
-  const res = await fetch(`${API_URL}/tts/voices/cloned/${voiceId}`, {
+  const res = await fetch(`${API_URL}/voices/cloned/${voiceId}`, {
     method: "DELETE",
     headers: getAuthHeaders(),
   });
@@ -121,7 +121,7 @@ export async function deleteClonedVoice(voiceId: string): Promise<void> {
 
 // --- Voice Preferences ---
 export async function getVoicePreferences(): Promise<VoicePreference> {
-  const res = await fetch(`${API_URL}/tts/voice-preferences`, {
+  const res = await fetch(`${API_URL}/voices/preferences`, {
     headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error("Failed to get voice preferences");
@@ -131,7 +131,7 @@ export async function getVoicePreferences(): Promise<VoicePreference> {
 export async function saveVoicePreferences(
   prefs: Partial<VoicePreference>
 ): Promise<void> {
-  const res = await fetch(`${API_URL}/tts/voice-preferences`, {
+  const res = await fetch(`${API_URL}/voices/preferences`, {
     method: "PUT",
     headers: getAuthHeaders(),
     body: JSON.stringify(prefs),

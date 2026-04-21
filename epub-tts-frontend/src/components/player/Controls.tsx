@@ -163,7 +163,7 @@ export function Controls({
 
     try {
       // 使用智能下载接口：复用已缓存的段落
-      const response = await fetch(`${API_URL}/tts/download/chapter`, {
+      const response = await fetch(`${API_URL}/tts/download/chapter/smart`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
