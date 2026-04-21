@@ -2,7 +2,7 @@ import * as React from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { API_URL } from "@/config";
 
-export type Theme = "day" | "night" | "fresh-green" | "fresh-green";
+export type Theme = "day" | "night" | "eye-care" | "fresh-green";
 
 interface ThemeContextType {
   theme: Theme;
