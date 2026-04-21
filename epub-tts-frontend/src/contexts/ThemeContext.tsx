@@ -2,7 +2,7 @@ import * as React from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { API_URL } from "@/config";
 
-export type Theme = "day" | "night" | "eye-care";
+export type Theme = "day" | "night" | "eye-care" | "fresh-green";
 
 interface ThemeContextType {
   theme: Theme;
@@ -24,7 +24,7 @@ interface ThemeProviderProps {
 function getLocalStorageTheme(userId: string | undefined): Theme | null {
   const key = userId ? `bookreader-theme-${userId}` : "bookreader-theme-anonymous";
   const stored = localStorage.getItem(key);
-  if (stored === "day" || stored === "night" || stored === "eye-care") {
+  if (stored === "day" || stored === "night" || stored === "eye-care" || stored === "fresh-green") {
     return stored;
   }
   return null;
