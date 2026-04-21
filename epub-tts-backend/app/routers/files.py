@@ -7,8 +7,9 @@ from app.middleware.auth import get_current_user
 router = APIRouter(prefix="/files", tags=["files"])
 
 
-@router.get("/audio/{book_id}/{filename}")
-async def serve_audio(book_id: str, filename: str, user_id: str = Depends(get_current_user)):
+@router.get("/audio/{user_id}/{book_id}/{filename}")
+async def serve_audio(user_id: str, book_id: str, filename: str):
+    """Serve audio file. No auth — browser <audio> tag can't send Bearer token."""
     filepath = os.path.join(settings.get_audio_dir(user_id, book_id), filename)
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Audio file not found")

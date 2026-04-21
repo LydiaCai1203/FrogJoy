@@ -1,6 +1,6 @@
 import uuid
 from datetime import date, timedelta
-from sqlalchemy import func
+from sqlalchemy import func, extract
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from shared.database import get_db
 from shared.models import ReadingStat, Book
@@ -38,7 +38,7 @@ class ReadingStatsService:
         with get_db() as db:
             rows = (
                 db.query(ReadingStat.date, func.sum(ReadingStat.duration_seconds).label("seconds"))
-                .filter(ReadingStat.user_id == user_id, ReadingStat.date.like(f"{year}-%"))
+                .filter(ReadingStat.user_id == user_id, extract('year', ReadingStat.date) == year)
                 .group_by(ReadingStat.date)
                 .order_by(ReadingStat.date)
                 .all()

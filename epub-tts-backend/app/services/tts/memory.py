@@ -16,9 +16,9 @@ os.makedirs(_tmp_audio_dir, exist_ok=True)
 
 
 def _audio_url(user_id: str, book_id: str, filename: str) -> str:
-    """Build audio URL — uses /api/files/audio/{book_id}/{filename}."""
+    """Build audio URL — includes user_id so it matches the no-auth route in files.py."""
     bid = book_id or "_misc"
-    return f"/api/files/audio/{bid}/{filename}"
+    return f"/api/files/audio/{user_id}/{bid}/{filename}"
 
 
 def _tmp_audio_url(filename: str) -> str:

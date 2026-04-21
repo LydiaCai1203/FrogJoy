@@ -3,18 +3,25 @@
 > 基于 `concept-extraction-and-hover-design.md` 的实现规划
 >
 > 日期：2026-04-21
+> 更新：适配重构后的 shared/ 架构
 
 ---
 
 ## 0. 现状
 
-已实现 LSP v0：
-- `IndexedBook` / `IndexedParagraph` 两张表
-- `IndexService.build_index()` 解析 EPUB → 段落入库
-- 后台任务模式：FastAPI `BackgroundTasks`
-- 前端轮询 `/index/status` 等索引完成
+项目已完成重构：
+- **shared 层**：`shared/models/`、`shared/schemas/`、`shared/config.py`、`shared/database.py` 抽出作为 epub-tts-backend 和 admin-backend 的公共基础
+- **router 拆分**：15 个独立 router，统一 `/api` 前缀注册
+- **service 包化**：复杂 service（tts、ai）拆为子包
+- **migration**：当前最新 `016_refactor_preferences_and_ai`
 
-本方案在 v0 基础上新增**概念层**，不改动现有表结构。
+已实现 LSP v0：
+- `shared/models/index.py`：`IndexedBook` / `IndexedParagraph`
+- `app/services/index_service.py`：EPUB 解析 → 段落入库
+- `app/routers/index.py`：索引 CRUD API
+- 后台任务模式：FastAPI `BackgroundTasks`
+
+本方案新增**概念层**，不改动现有表结构。
 
 ---
 
@@ -29,19 +36,23 @@ POST /api/books/{book_id}/concepts/build (新增)
   → 前置检查: index status == parsed
   → 后台执行 3 个阶段:
       Phase 1: 全书逐章概念扫描 (LLM)
-      Phase 2: 跨章去重合并
+      Phase 2: 跨章去重合并 (纯算法)
       Phase 3: 全书段落 occurrence 标注 (LLM)
   → 写入 concepts + concept_occurrences
-  → status: enriched
+  → concept_status: enriched
 ```
 
 ---
 
 ## 2. 数据库
 
-### 2.1 新增表: `concepts`
+### 2.1 新增 ORM: `shared/models/concept.py`
 
 ```python
+from sqlalchemy import Column, String, Integer, Text, DateTime, JSON, ForeignKey, Index, func
+from shared.models import Base
+
+
 class Concept(Base):
     __tablename__ = "concepts"
 
@@ -53,21 +64,18 @@ class Concept(Base):
     aliases     = Column(JSON, nullable=False, default=[]) # 别名列表
     category    = Column(String, nullable=False)          # term/term_custom/person/work/theory
 
-    # 频次统计 (Phase 3 之后回填)
-    total_occurrences = Column(Integer, default=0)
-    chapter_count     = Column(Integer, default=0)        # 出现在几个章节
-    scope             = Column(String, default="chapter") # book / chapter
+    # 频次统计 (Phase 3 后回填)
+    total_occurrences = Column(Integer, nullable=False, default=0)
+    chapter_count     = Column(Integer, nullable=False, default=0)
+    scope             = Column(String, nullable=False, default="chapter")  # book / chapter
 
     created_at  = Column(DateTime, server_default=func.now())
 
     __table_args__ = (
         Index("idx_concepts_user_book", "user_id", "book_id"),
     )
-```
 
-### 2.2 新增表: `concept_occurrences`
 
-```python
 class ConceptOccurrence(Base):
     __tablename__ = "concept_occurrences"
 
@@ -93,60 +101,194 @@ class ConceptOccurrence(Base):
     )
 ```
 
-### 2.3 IndexedBook 扩展字段
+### 2.2 注册到 `shared/models/__init__.py`
 
 ```python
-# 在 indexed_books 表新增:
-concept_status = Column(String, default=None)  # None/extracting/enriched/failed
-concept_error  = Column(Text, nullable=True)
-total_concepts = Column(Integer, default=0)
+from shared.models.concept import Concept, ConceptOccurrence
+
+__all__ = [
+    ...,
+    "Concept", "ConceptOccurrence",
+]
 ```
 
-### 2.4 Migration
+### 2.3 IndexedBook 扩展字段
 
-新建 `016_add_concept_tables.py`，创建上述两张表 + alter indexed_books。
+`shared/models/index.py` 的 `IndexedBook` 新增：
+
+```python
+concept_status = Column(String, nullable=True)   # None/extracting/enriched/failed
+concept_error  = Column(Text, nullable=True)
+total_concepts = Column(Integer, nullable=False, default=0)
+```
+
+### 2.4 Migration: `017_add_concept_tables.py`
+
+```python
+"""Add concept extraction tables: concepts + concept_occurrences
+
+Revision ID: 017_add_concept_tables
+Revises: 016_refactor_preferences_and_ai
+"""
+from alembic import op
+import sqlalchemy as sa
+
+revision = "017_add_concept_tables"
+down_revision = "016_refactor_preferences_and_ai"
+
+def upgrade() -> None:
+    # --- concepts ---
+    op.create_table(
+        "concepts",
+        sa.Column("id", sa.String(), nullable=False),
+        sa.Column("book_id", sa.String(), nullable=False),
+        sa.Column("user_id", sa.String(), nullable=False),
+        sa.Column("term", sa.String(), nullable=False),
+        sa.Column("aliases", sa.JSON(), nullable=False, server_default="[]"),
+        sa.Column("category", sa.String(), nullable=False),
+        sa.Column("total_occurrences", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("chapter_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("scope", sa.String(), nullable=False, server_default="chapter"),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.func.now()),
+        sa.ForeignKeyConstraint(["book_id"], ["books.id"]),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("idx_concepts_user_book", "concepts", ["user_id", "book_id"])
+
+    # --- concept_occurrences ---
+    op.create_table(
+        "concept_occurrences",
+        sa.Column("id", sa.String(), nullable=False),
+        sa.Column("concept_id", sa.String(), nullable=False),
+        sa.Column("paragraph_id", sa.String(), nullable=False),
+        sa.Column("user_id", sa.String(), nullable=False),
+        sa.Column("book_id", sa.String(), nullable=False),
+        sa.Column("chapter_idx", sa.Integer(), nullable=False),
+        sa.Column("occurrence_type", sa.String(), nullable=False),
+        sa.Column("matched_text", sa.Text(), nullable=True),
+        sa.Column("core_sentence", sa.Text(), nullable=True),
+        sa.Column("reasoning", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.func.now()),
+        sa.ForeignKeyConstraint(["concept_id"], ["concepts.id"]),
+        sa.ForeignKeyConstraint(["paragraph_id"], ["indexed_paragraphs.id"]),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("idx_occ_user_book", "concept_occurrences", ["user_id", "book_id"])
+    op.create_index("idx_occ_concept", "concept_occurrences", ["concept_id"])
+    op.create_index("idx_occ_paragraph", "concept_occurrences", ["paragraph_id"])
+    op.create_index("idx_occ_user_book_chapter", "concept_occurrences",
+                    ["user_id", "book_id", "chapter_idx"])
+
+    # --- indexed_books 扩展 ---
+    op.add_column("indexed_books", sa.Column("concept_status", sa.String(), nullable=True))
+    op.add_column("indexed_books", sa.Column("concept_error", sa.Text(), nullable=True))
+    op.add_column("indexed_books", sa.Column("total_concepts", sa.Integer(),
+                  nullable=False, server_default="0"))
+
+def downgrade() -> None:
+    op.drop_column("indexed_books", "total_concepts")
+    op.drop_column("indexed_books", "concept_error")
+    op.drop_column("indexed_books", "concept_status")
+    op.drop_index("idx_occ_user_book_chapter", table_name="concept_occurrences")
+    op.drop_index("idx_occ_paragraph", table_name="concept_occurrences")
+    op.drop_index("idx_occ_concept", table_name="concept_occurrences")
+    op.drop_index("idx_occ_user_book", table_name="concept_occurrences")
+    op.drop_table("concept_occurrences")
+    op.drop_index("idx_concepts_user_book", table_name="concepts")
+    op.drop_table("concepts")
+```
 
 ---
 
-## 3. 后端 Service
+## 3. 配置
 
-### 3.1 新建 `ConceptService`
-
-文件：`app/services/concept_service.py`
+### 3.1 `shared/config.py` 新增
 
 ```python
+class Settings(BaseSettings):
+    ...
+    # Minimax LLM (概念提取)
+    minimax_llm_api_key: str = ""
+    minimax_llm_base_url: str = "https://api.minimaxi.com/anthropic"
+    minimax_llm_model: str = "MiniMax-M2.7"
+```
+
+注：已有 `minimax_base_url` 是 TTS 用的（`https://api.minimaxi.com`），LLM 接口走 Anthropic 兼容路径，用独立字段区分。
+
+### 3.2 `.env` 新增
+
+```
+MINIMAX_LLM_API_KEY=sk-cp-...
+MINIMAX_LLM_BASE_URL=https://api.minimaxi.com/anthropic
+```
+
+---
+
+## 4. Service: `app/services/concept_service.py`
+
+```python
+"""
+概念提取 Service —— Book Language Server 的概念层
+
+三阶段流水线:
+  Phase 1: 全书逐章概念扫描 (LLM)
+  Phase 2: 跨章去重合并 (纯算法)
+  Phase 3: 全书段落 occurrence 标注 (LLM)
+"""
+from __future__ import annotations
+
+import json
+from uuid import uuid4
+
+import anthropic
+from loguru import logger
+
+from shared.config import settings
+from shared.database import get_db
+from shared.models import IndexedBook, Concept, ConceptOccurrence
+from app.services.index_service import IndexService
+
+
 class ConceptService:
 
-    # --- LLM 配置 ---
-    CLIENT = anthropic.Anthropic(
-        api_key=settings.minimax_api_key,
-        base_url=settings.minimax_base_url,
-    )
-    MODEL = "MiniMax-M2.7"
-
-    # --- Build ---
+    # --- Build (主入口) ---
 
     @classmethod
     def build_concepts(cls, book_id: str, user_id: str, rebuild: bool = False):
         """全流程: Phase 1 → 2 → 3"""
+        # 前置检查
+        status = IndexService.get_status(book_id, user_id)
+        if not status or status["status"] != "parsed":
+            raise ValueError("Index not ready, build index first")
+
+        if not rebuild:
+            with get_db() as db:
+                record = db.query(IndexedBook).filter_by(
+                    book_id=book_id, user_id=user_id
+                ).first()
+                if record and record.concept_status == "enriched":
+                    return
+
         cls._set_status(book_id, user_id, "extracting")
         try:
-            # Phase 1: 全书逐章概念扫描
             raw_concepts = cls._phase1_extract(book_id, user_id)
+            logger.info(f"Phase 1 done: {len(raw_concepts)} raw concepts")
 
-            # Phase 2: 跨章去重合并
             concepts = cls._phase2_deduplicate(raw_concepts)
+            logger.info(f"Phase 2 done: {len(concepts)} merged concepts")
+
             cls._save_concepts(book_id, user_id, concepts)
 
-            # Phase 3: 全书段落 occurrence 标注
             occurrences = cls._phase3_annotate(book_id, user_id, concepts)
+            logger.info(f"Phase 3 done: {len(occurrences)} occurrences")
+
             cls._save_occurrences(book_id, user_id, occurrences)
-
-            # 回填频次统计
             cls._update_stats(book_id, user_id)
-
             cls._set_status(book_id, user_id, "enriched")
+
         except Exception as e:
+            logger.exception(f"Concept extraction failed: book={book_id}")
             cls._set_status(book_id, user_id, "failed", str(e))
             raise
 
@@ -154,18 +296,8 @@ class ConceptService:
 
     @classmethod
     def _phase1_extract(cls, book_id: str, user_id: str) -> list[dict]:
-        """
-        对每一章调用 LLM 提取概念。
-
-        输入:
-          - 本章所有段落 (从 indexed_paragraphs 查)
-          - 全书目录 (所有章节标题, 提供全书语境)
-
-        输出:
-          - 每章的概念列表, 带 chapter_idx 来源标记
-        """
         chapters = IndexService.get_chapters(book_id, user_id)
-        toc = cls._build_toc(chapters)  # 全书目录字符串
+        toc = cls._build_toc(chapters)
 
         all_concepts = []
         for chapter in chapters:
@@ -175,19 +307,25 @@ class ConceptService:
             if not paragraphs:
                 continue
 
-            result = cls._call_phase1_llm(toc, chapter, paragraphs)
-            for concept in result:
-                concept["source_chapter_idx"] = chapter["chapter_idx"]
-            all_concepts.extend(result)
+            try:
+                result = cls._call_phase1_llm(toc, chapter, paragraphs)
+                for concept in result:
+                    concept["source_chapter_idx"] = chapter["chapter_idx"]
+                all_concepts.extend(result)
+                logger.info(
+                    f"Phase 1 ch{chapter['chapter_idx']}: "
+                    f"{len(result)} concepts from '{chapter['chapter_title']}'"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Phase 1 failed for ch{chapter['chapter_idx']}: {e}"
+                )
+                continue  # 单章失败不中断全书
 
         return all_concepts
 
     @classmethod
-    def _call_phase1_llm(cls, toc: str, chapter: dict, paragraphs: list) -> list:
-        """
-        调用 LLM 提取单章概念。
-        Prompt 核心: prompt_phase1.md + 附带全书目录。
-        """
+    def _call_phase1_llm(cls, toc, chapter, paragraphs):
         paragraphs_text = "\n\n".join(
             f'[P{p["para_idx"]:02d}|{p["pid"]}]\n{p["text"]}'
             for p in paragraphs
@@ -239,34 +377,23 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
 
 直接输出 JSON。"""
 
-        message = cls.CLIENT.messages.create(
-            model=cls.MODEL,
-            max_tokens=4000,
+        return cls._call_llm(
             system="你是一个精确的学术术语抽取助手。",
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return cls._parse_json_response(message)["concepts"]
+            prompt=prompt,
+            max_tokens=4000,
+        )["concepts"]
 
     # --- Phase 2: 跨章去重 ---
 
     @classmethod
     def _phase2_deduplicate(cls, raw_concepts: list[dict]) -> list[dict]:
-        """
-        合并策略:
-          1. 完全同名 → 合并, aliases 取并集
-          2. 别名匹配 → A 的 term 出现在 B 的 aliases 中 → 合并
-          3. (可选) embedding 相似度 > 阈值 → 合并
-
-        当前 v1 只做 1 + 2 (纯文本匹配), 不上 embedding。
-        """
-        merged = {}  # normalized_term → concept dict
-        alias_map = {}  # alias → normalized_term
+        merged = {}
+        alias_map = {}
 
         for c in raw_concepts:
             term = c["term"].strip()
             term_lower = term.lower()
 
-            # 检查是否已存在 (term 或 alias 匹配)
             existing_key = None
             if term_lower in merged:
                 existing_key = term_lower
@@ -274,27 +401,24 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
                 existing_key = alias_map[term_lower]
             else:
                 for alias in c.get("aliases", []):
-                    alias_lower = alias.strip().lower()
-                    if alias_lower in merged:
-                        existing_key = alias_lower
+                    al = alias.strip().lower()
+                    if al in merged:
+                        existing_key = al
                         break
-                    if alias_lower in alias_map:
-                        existing_key = alias_map[alias_lower]
+                    if al in alias_map:
+                        existing_key = alias_map[al]
                         break
 
             if existing_key:
-                # 合并 aliases
                 existing = merged[existing_key]
                 new_aliases = set(existing.get("aliases", []))
                 new_aliases.update(c.get("aliases", []))
                 new_aliases.discard(existing["term"])
                 existing["aliases"] = list(new_aliases)
-                # 记录来源章节
                 existing.setdefault("source_chapters", [])
                 if c.get("source_chapter_idx") not in existing["source_chapters"]:
                     existing["source_chapters"].append(c["source_chapter_idx"])
             else:
-                # 新概念
                 merged[term_lower] = {
                     "term": term,
                     "aliases": c.get("aliases", []),
@@ -302,7 +426,6 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
                     "reasoning": c.get("reasoning", ""),
                     "source_chapters": [c.get("source_chapter_idx")],
                 }
-                # 注册 aliases
                 for alias in c.get("aliases", []):
                     alias_map[alias.strip().lower()] = term_lower
 
@@ -311,16 +434,7 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
     # --- Phase 3: 全书段落标注 ---
 
     @classmethod
-    def _phase3_annotate(
-        cls, book_id: str, user_id: str, concepts: list[dict]
-    ) -> list[dict]:
-        """
-        拿合并后的概念列表, 逐章扫描全书段落, 标注 occurrence_type。
-
-        按章调用 LLM, 每次传入:
-          - 完整概念列表 (所有概念的 term + aliases)
-          - 本章所有段落
-        """
+    def _phase3_annotate(cls, book_id, user_id, concepts):
         chapters = IndexService.get_chapters(book_id, user_id)
         concept_summary = cls._build_concept_summary(concepts)
 
@@ -332,23 +446,25 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
             if not paragraphs:
                 continue
 
-            result = cls._call_phase3_llm(
-                concept_summary, chapter, paragraphs
-            )
-            for occ in result:
-                occ["chapter_idx"] = chapter["chapter_idx"]
-            all_occurrences.extend(result)
+            try:
+                result = cls._call_phase3_llm(concept_summary, chapter, paragraphs)
+                for occ in result:
+                    occ["chapter_idx"] = chapter["chapter_idx"]
+                all_occurrences.extend(result)
+                logger.info(
+                    f"Phase 3 ch{chapter['chapter_idx']}: "
+                    f"{len(result)} occurrences"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Phase 3 failed for ch{chapter['chapter_idx']}: {e}"
+                )
+                continue
 
         return all_occurrences
 
     @classmethod
-    def _call_phase3_llm(
-        cls, concept_summary: str, chapter: dict, paragraphs: list
-    ) -> list:
-        """
-        调用 LLM 标注单章段落中的概念出现。
-        复用验证脚本中已验证的 prompt 结构。
-        """
+    def _call_phase3_llm(cls, concept_summary, chapter, paragraphs):
         paragraphs_text = "\n\n".join(
             f'[P{p["para_idx"]:02d}|{p["pid"]}]\n{p["text"]}'
             for p in paragraphs
@@ -368,7 +484,7 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
    - `definition`: 作者在此处定义或解释这个概念
    - `refinement`: 作者在此处深化、补充、举例说明
    - `mention`: 顺带提及，未展开
-3. 提取 core_sentence: 如果是 definition 或 refinement, 提取作者原文中最核心的 1-2 句话（用于弹窗展示, 控制在 100 字内）
+3. 提取 core_sentence: 如果是 definition 或 refinement, 提取作者原文中最核心的 1-2 句话（用于悬浮弹窗展示, 控制在 100 字内）
 4. 没提到任何概念的段落跳过
 
 ## 输出: 严格 JSON
@@ -402,22 +518,23 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
 
 直接输出 JSON。"""
 
-        message = cls.CLIENT.messages.create(
-            model=cls.MODEL,
-            max_tokens=8000,
+        return cls._call_llm(
             system="你是一个精确的文本分析助手，服务于书的索引库。",
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return cls._parse_json_response(message)["occurrences"]
+            prompt=prompt,
+            max_tokens=8000,
+        )["occurrences"]
 
     # --- 存储 ---
 
     @classmethod
     def _save_concepts(cls, book_id, user_id, concepts):
-        """写入 concepts 表"""
         with get_db() as db:
-            # 先清旧数据
-            db.query(Concept).filter_by(book_id=book_id, user_id=user_id).delete()
+            db.query(ConceptOccurrence).filter_by(
+                book_id=book_id, user_id=user_id
+            ).delete()
+            db.query(Concept).filter_by(
+                book_id=book_id, user_id=user_id
+            ).delete()
             for c in concepts:
                 db.add(Concept(
                     id=f"concept:{uuid4()}",
@@ -431,22 +548,33 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
 
     @classmethod
     def _save_occurrences(cls, book_id, user_id, occurrences):
-        """写入 concept_occurrences 表"""
         with get_db() as db:
-            # 先清旧数据
             db.query(ConceptOccurrence).filter_by(
                 book_id=book_id, user_id=user_id
             ).delete()
 
-            # 建 term → concept_id 映射
             concepts = db.query(Concept).filter_by(
                 book_id=book_id, user_id=user_id
             ).all()
             term_to_id = {c.term: c.id for c in concepts}
 
+            # 校验 pid 存在性
+            from shared.models import IndexedParagraph
+            valid_pids = {
+                p.id for p in db.query(IndexedParagraph.id).filter_by(
+                    book_id=book_id, user_id=user_id
+                ).all()
+            }
+
+            skipped = 0
             for occ in occurrences:
                 concept_id = term_to_id.get(occ["concept_term"])
                 if not concept_id:
+                    skipped += 1
+                    continue
+                if occ["pid"] not in valid_pids:
+                    logger.warning(f"Invalid pid from LLM: {occ['pid']}")
+                    skipped += 1
                     continue
                 db.add(ConceptOccurrence(
                     id=f"occ:{uuid4()}",
@@ -460,38 +588,251 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
                     core_sentence=occ.get("core_sentence"),
                     reasoning=occ.get("reasoning"),
                 ))
+            if skipped:
+                logger.warning(f"Skipped {skipped} occurrences (invalid concept/pid)")
             db.commit()
 
     @classmethod
     def _update_stats(cls, book_id, user_id):
-        """回填 concepts 表的频次统计 + indexed_books 的概念计数"""
         with get_db() as db:
             concepts = db.query(Concept).filter_by(
                 book_id=book_id, user_id=user_id
             ).all()
-
-            total_chapters = db.query(IndexedBook).filter_by(
-                book_id=book_id, user_id=user_id
-            ).first().total_chapters
-
-            for c in concepts:
-                occs = db.query(ConceptOccurrence).filter_by(
-                    concept_id=c.id
-                ).all()
-                c.total_occurrences = len(occs)
-                c.chapter_count = len(set(o.chapter_idx for o in occs))
-                # 出现在 ≥50% 章节 → book 级
-                c.scope = "book" if c.chapter_count >= total_chapters * 0.5 else "chapter"
-
-            # 更新 indexed_books
             record = db.query(IndexedBook).filter_by(
                 book_id=book_id, user_id=user_id
             ).first()
-            record.total_concepts = len(concepts)
 
+            for c in concepts:
+                occs = db.query(ConceptOccurrence).filter_by(concept_id=c.id).all()
+                c.total_occurrences = len(occs)
+                c.chapter_count = len(set(o.chapter_idx for o in occs))
+                c.scope = "book" if c.chapter_count >= record.total_chapters * 0.5 else "chapter"
+
+            record.total_concepts = len(concepts)
             db.commit()
 
-    # --- 工具方法 ---
+    # --- 查询 (供 router 调用) ---
+
+    @classmethod
+    def get_status(cls, book_id, user_id) -> dict | None:
+        with get_db() as db:
+            record = db.query(IndexedBook).filter_by(
+                book_id=book_id, user_id=user_id
+            ).first()
+            if not record:
+                return None
+            return {
+                "concept_status": record.concept_status,
+                "concept_error": record.concept_error,
+                "total_concepts": record.total_concepts,
+            }
+
+    @classmethod
+    def get_concepts(cls, book_id, user_id) -> list[dict]:
+        with get_db() as db:
+            concepts = (
+                db.query(Concept)
+                .filter_by(book_id=book_id, user_id=user_id)
+                .order_by(Concept.total_occurrences.desc())
+                .all()
+            )
+            return [
+                {
+                    "concept_id": c.id,
+                    "term": c.term,
+                    "aliases": c.aliases,
+                    "category": c.category,
+                    "total_occurrences": c.total_occurrences,
+                    "chapter_count": c.chapter_count,
+                    "scope": c.scope,
+                }
+                for c in concepts
+            ]
+
+    @classmethod
+    def get_concept_detail(cls, concept_id, user_id) -> dict | None:
+        with get_db() as db:
+            c = db.query(Concept).filter_by(id=concept_id).first()
+            if not c or c.user_id != user_id:
+                return None
+            occs = (
+                db.query(ConceptOccurrence)
+                .filter_by(concept_id=concept_id)
+                .order_by(ConceptOccurrence.chapter_idx)
+                .all()
+            )
+            return {
+                "concept_id": c.id,
+                "term": c.term,
+                "aliases": c.aliases,
+                "category": c.category,
+                "total_occurrences": c.total_occurrences,
+                "chapter_count": c.chapter_count,
+                "scope": c.scope,
+                "occurrences": [
+                    {
+                        "pid": o.paragraph_id,
+                        "chapter_idx": o.chapter_idx,
+                        "occurrence_type": o.occurrence_type,
+                        "matched_text": o.matched_text,
+                        "core_sentence": o.core_sentence,
+                    }
+                    for o in occs
+                ],
+            }
+
+    @classmethod
+    def get_chapter_annotations(cls, book_id, user_id, chapter_idx) -> list[dict]:
+        """
+        返回某章的概念角标数据 (前端渲染用)。
+
+        逻辑:
+          1. 查该章所有 occurrences
+          2. 按 concept 分组, 每个取首次出现段落
+          3. 弹窗内容: 只取 chapter_idx <= 当前章 的 definition/refinement
+          4. badge 按首次出现顺序编号
+          5. 只返回有 definition/refinement 的概念 (mention-only 不标角标)
+        """
+        with get_db() as db:
+            # 该章所有 occurrences
+            chapter_occs = (
+                db.query(ConceptOccurrence)
+                .filter_by(book_id=book_id, user_id=user_id, chapter_idx=chapter_idx)
+                .all()
+            )
+
+            # 按 concept 分组, 找首次出现
+            concept_first = {}  # concept_id → first para_idx
+            from shared.models import IndexedParagraph
+            for occ in chapter_occs:
+                if occ.concept_id not in concept_first:
+                    para = db.query(IndexedParagraph).filter_by(id=occ.paragraph_id).first()
+                    concept_first[occ.concept_id] = para.para_idx_in_chapter if para else 999
+
+            # 只保留有 definition/refinement 的概念
+            concepts_with_explanation = set()
+            all_def_ref = (
+                db.query(ConceptOccurrence)
+                .filter(
+                    ConceptOccurrence.book_id == book_id,
+                    ConceptOccurrence.user_id == user_id,
+                    ConceptOccurrence.chapter_idx <= chapter_idx,
+                    ConceptOccurrence.occurrence_type.in_(["definition", "refinement"]),
+                )
+                .all()
+            )
+            for occ in all_def_ref:
+                concepts_with_explanation.add(occ.concept_id)
+
+            # 过滤: 该章出现过 + 全书有 definition/refinement
+            valid_concepts = {
+                cid for cid in concept_first
+                if cid in concepts_with_explanation
+            }
+
+            # 按首次出现顺序编号
+            sorted_concepts = sorted(valid_concepts, key=lambda cid: concept_first[cid])
+
+            annotations = []
+            for badge_num, concept_id in enumerate(sorted_concepts, 1):
+                c = db.query(Concept).filter_by(id=concept_id).first()
+                # 弹窗: 取 chapter_idx <= 当前章 的 definition/refinement, 最多 2 条
+                explanations = (
+                    db.query(ConceptOccurrence)
+                    .filter(
+                        ConceptOccurrence.concept_id == concept_id,
+                        ConceptOccurrence.chapter_idx <= chapter_idx,
+                        ConceptOccurrence.occurrence_type.in_(["definition", "refinement"]),
+                        ConceptOccurrence.core_sentence.isnot(None),
+                    )
+                    .order_by(ConceptOccurrence.chapter_idx)
+                    .limit(2)
+                    .all()
+                )
+                # 首次出现的 pid
+                first_occ = min(
+                    [o for o in chapter_occs if o.concept_id == concept_id],
+                    key=lambda o: concept_first.get(o.concept_id, 0),
+                )
+                annotations.append({
+                    "concept_id": c.id,
+                    "term": c.term,
+                    "badge_number": badge_num,
+                    "first_pid_in_chapter": first_occ.paragraph_id,
+                    "popover": {
+                        "term": c.term,
+                        "explanations": [
+                            {
+                                "core_sentence": e.core_sentence,
+                                "chapter_idx": e.chapter_idx,
+                                "pid": e.paragraph_id,
+                            }
+                            for e in explanations
+                        ],
+                    },
+                })
+
+            return annotations
+
+    @classmethod
+    def delete_concepts(cls, book_id, user_id) -> bool:
+        with get_db() as db:
+            db.query(ConceptOccurrence).filter_by(
+                book_id=book_id, user_id=user_id
+            ).delete()
+            deleted = db.query(Concept).filter_by(
+                book_id=book_id, user_id=user_id
+            ).delete()
+            record = db.query(IndexedBook).filter_by(
+                book_id=book_id, user_id=user_id
+            ).first()
+            if record:
+                record.concept_status = None
+                record.concept_error = None
+                record.total_concepts = 0
+            db.commit()
+            return deleted > 0
+
+    # --- 内部工具 ---
+
+    @classmethod
+    def _set_status(cls, book_id, user_id, status, error=None):
+        with get_db() as db:
+            record = db.query(IndexedBook).filter_by(
+                book_id=book_id, user_id=user_id
+            ).first()
+            if record:
+                record.concept_status = status
+                record.concept_error = error
+                db.commit()
+
+    @classmethod
+    def _get_client(cls):
+        return anthropic.Anthropic(
+            api_key=settings.minimax_llm_api_key,
+            base_url=settings.minimax_llm_base_url,
+        )
+
+    @classmethod
+    def _call_llm(cls, system, prompt, max_tokens=4000):
+        client = cls._get_client()
+        message = client.messages.create(
+            model=settings.minimax_llm_model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = ""
+        for block in message.content:
+            if hasattr(block, "text"):
+                text = block.text
+                break
+        text = text.strip()
+        if text.startswith("```"):
+            lines = text.split("\n")
+            lines = [l for l in lines if not l.strip().startswith("```")]
+            text = "\n".join(lines)
+        return json.loads(text)
 
     @classmethod
     def _build_toc(cls, chapters):
@@ -507,189 +848,178 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
             aliases = ", ".join(c["aliases"]) if c["aliases"] else "无"
             lines.append(f'- {c["term"]} (别名: {aliases}) [{c["category"]}]')
         return "\n".join(lines)
-
-    @classmethod
-    def _parse_json_response(cls, message):
-        text = ""
-        for block in message.content:
-            if hasattr(block, "text"):
-                text = block.text
-                break
-        text = text.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            lines = [l for l in lines if not l.strip().startswith("```")]
-            text = "\n".join(lines)
-        return json.loads(text)
 ```
 
-### 3.2 配置扩展
+---
 
-`shared/config.py` 新增：
+## 5. Router: `app/routers/concepts.py`
 
 ```python
-# Minimax LLM
-minimax_api_key: str = ""
-minimax_base_url: str = "https://api.minimaxi.com/anthropic"
-minimax_model: str = "MiniMax-M2.7"
+"""
+概念提取 API
+
+端点:
+  POST   /api/books/{book_id}/concepts/build
+  GET    /api/books/{book_id}/concepts/status
+  GET    /api/books/{book_id}/concepts
+  GET    /api/books/{book_id}/concepts/by-chapter/{chapter_idx}
+  GET    /api/books/{book_id}/concepts/{concept_id}
+  DELETE /api/books/{book_id}/concepts
+"""
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from loguru import logger
+
+from app.middleware.auth import get_current_user
+from app.services.concept_service import ConceptService
+
+router = APIRouter(prefix="/books", tags=["concepts"])
+
+
+@router.post("/{book_id}/concepts/build")
+async def build_concepts(
+    book_id: str,
+    background: BackgroundTasks,
+    rebuild: bool = Query(False),
+    user_id: str = Depends(get_current_user),
+):
+    status = ConceptService.get_status(book_id, user_id)
+    if status and status["concept_status"] == "enriched" and not rebuild:
+        return {"message": "already enriched", **status}
+    if status and status["concept_status"] == "extracting":
+        return {"message": "already extracting", **status}
+
+    background.add_task(_build_bg, book_id=book_id, user_id=user_id, rebuild=rebuild)
+    return {"message": "concept extraction started", "concept_status": "extracting"}
+
+
+def _build_bg(book_id, user_id, rebuild):
+    try:
+        ConceptService.build_concepts(book_id, user_id, rebuild)
+    except Exception:
+        logger.exception("Concept extraction crashed")
+
+
+@router.get("/{book_id}/concepts/status")
+async def get_status(book_id: str, user_id: str = Depends(get_current_user)):
+    status = ConceptService.get_status(book_id, user_id)
+    if not status:
+        return {"concept_status": None}
+    return status
+
+
+@router.get("/{book_id}/concepts")
+async def list_concepts(book_id: str, user_id: str = Depends(get_current_user)):
+    return {"concepts": ConceptService.get_concepts(book_id, user_id)}
+
+
+@router.get("/{book_id}/concepts/by-chapter/{chapter_idx}")
+async def get_chapter_annotations(
+    book_id: str,
+    chapter_idx: int,
+    user_id: str = Depends(get_current_user),
+):
+    annotations = ConceptService.get_chapter_annotations(
+        book_id, user_id, chapter_idx
+    )
+    return {"book_id": book_id, "chapter_idx": chapter_idx, "annotations": annotations}
+
+
+@router.get("/{book_id}/concepts/{concept_id}")
+async def get_concept_detail(
+    book_id: str,
+    concept_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    detail = ConceptService.get_concept_detail(concept_id, user_id)
+    if not detail:
+        raise HTTPException(404, "Concept not found")
+    return detail
+
+
+@router.delete("/{book_id}/concepts")
+async def delete_concepts(book_id: str, user_id: str = Depends(get_current_user)):
+    deleted = ConceptService.delete_concepts(book_id, user_id)
+    if not deleted:
+        raise HTTPException(404, "No concepts found")
+    return {"message": "concepts deleted"}
 ```
 
-`.env` 新增：
+### 注册到 `app/main.py`
 
-```
-MINIMAX_API_KEY=sk-cp-...
-MINIMAX_BASE_URL=https://api.minimaxi.com/anthropic
+```python
+from app.routers.concepts import router as concepts_router
+...
+app.include_router(concepts_router, prefix="/api")
 ```
 
 ---
 
-## 4. API 端点
-
-### 4.1 新建 `app/routers/concepts.py`
-
-```
-POST   /api/books/{book_id}/concepts/build          触发概念提取 (异步后台)
-GET    /api/books/{book_id}/concepts/status          概念提取状态
-GET    /api/books/{book_id}/concepts                 获取概念列表
-GET    /api/books/{book_id}/concepts/{concept_id}    单个概念详情 + occurrences
-GET    /api/books/{book_id}/concepts/by-chapter/{chapter_idx}
-                                                     某章的概念角标数据
-DELETE /api/books/{book_id}/concepts                 删除概念数据
-```
-
-### 4.2 关键端点详解
-
-#### `GET /concepts/by-chapter/{chapter_idx}`
-
-**这是前端渲染角标的核心接口**。返回该章需要展示的概念角标：
-
-```json
-{
-  "book_id": "xxx",
-  "chapter_idx": 5,
-  "annotations": [
-    {
-      "concept_id": "concept:uuid",
-      "term": "有条件养育",
-      "badge_number": 1,
-      "first_pid_in_chapter": "sig:xxx:yyy:zzz-003",
-      "popover": {
-        "term": "有条件养育",
-        "explanations": [
-          {
-            "core_sentence": "家长对孩子的爱出于'他们做了什么'——孩子只有在做到家长期望或达到所规定的标准之后才可以得到",
-            "source": "第一章 第3段",
-            "chapter_idx": 5,
-            "pid": "sig:xxx:yyy:zzz-003"
-          }
-        ]
-      }
-    }
-  ]
-}
-```
-
-**逻辑**：
-1. 查该章所有 occurrences (type = definition 或 refinement)
-2. 按 concept 分组, 每个 concept 取首次出现位置
-3. 弹窗内容: 只取 `chapter_idx <= 当前章` 的 definition/refinement, 按章节顺序排列, 最多 2 条
-4. badge_number 按概念在本章首次出现的段落顺序编号
-5. 只返回该章重点概念 (scope=book, 或在本章有 definition/refinement 的)
-
-#### `GET /concepts/{concept_id}`
-
-返回单个概念的完整信息, 包含所有 occurrences：
-
-```json
-{
-  "concept_id": "concept:uuid",
-  "term": "有条件养育",
-  "aliases": ["有条件的爱"],
-  "category": "term_custom",
-  "total_occurrences": 18,
-  "chapter_count": 8,
-  "scope": "book",
-  "occurrences": [
-    {
-      "pid": "sig:xxx",
-      "chapter_idx": 5,
-      "chapter_title": "第一章 有条件养育",
-      "occurrence_type": "definition",
-      "matched_text": "前者是有条件的爱...",
-      "core_sentence": "..."
-    }
-  ]
-}
-```
-
----
-
-## 5. 文件清单
+## 6. 文件清单
 
 ```
 epub-tts-backend/
 ├── alembic/versions/
-│   └── 016_add_concept_tables.py        # migration
-├── shared/models/
-│   └── concept.py                       # Concept, ConceptOccurrence ORM
-├── app/services/
-│   └── concept_service.py               # ConceptService (Phase 1-3)
-├── app/routers/
-│   └── concepts.py                      # REST API
-└── shared/config.py                     # +minimax 配置
+│   └── 017_add_concept_tables.py           # NEW: migration
+├── shared/
+│   ├── models/
+│   │   ├── concept.py                      # NEW: Concept, ConceptOccurrence
+│   │   ├── index.py                        # MODIFY: +concept_status 等字段
+│   │   └── __init__.py                     # MODIFY: +Concept, ConceptOccurrence
+│   └── config.py                           # MODIFY: +minimax_llm_* 配置
+├── app/
+│   ├── services/
+│   │   └── concept_service.py              # NEW: ConceptService
+│   ├── routers/
+│   │   └── concepts.py                     # NEW: REST API
+│   └── main.py                             # MODIFY: +concepts_router
+└── .env                                    # MODIFY: +MINIMAX_LLM_API_KEY
 ```
 
 ---
 
-## 6. 执行计划
+## 7. 执行计划
 
 ### Step 1: 基础设施
-- [ ] 新增 ORM models (`shared/models/concept.py`)
-- [ ] 新增 migration (`016_add_concept_tables.py`)
-- [ ] config 新增 minimax 配置
-- [ ] `.env` 加入 API key
+- [ ] `shared/models/concept.py` — ORM models
+- [ ] `shared/models/index.py` — IndexedBook 加 concept_status 等字段
+- [ ] `shared/models/__init__.py` — 注册新 models
+- [ ] `shared/config.py` — minimax_llm_* 配置
+- [ ] `017_add_concept_tables.py` — migration
+- [ ] `.env` — API key
 
-### Step 2: ConceptService 核心逻辑
-- [ ] Phase 1: `_phase1_extract` + `_call_phase1_llm`
-- [ ] Phase 2: `_phase2_deduplicate`
-- [ ] Phase 3: `_phase3_annotate` + `_call_phase3_llm`
-- [ ] 存储: `_save_concepts`, `_save_occurrences`, `_update_stats`
+### Step 2: ConceptService
+- [ ] `app/services/concept_service.py` — 完整 service（Phase 1-3 + 查询 + 存储）
 
-### Step 3: API 端点
-- [ ] `concepts.py` router, 注册到 `main.py`
-- [ ] `POST /concepts/build` + 后台任务
-- [ ] `GET /concepts/status`
-- [ ] `GET /concepts` (列表)
-- [ ] `GET /concepts/by-chapter/{chapter_idx}` (角标数据)
+### Step 3: API
+- [ ] `app/routers/concepts.py` — 6 个端点
+- [ ] `app/main.py` — 注册 router
 
 ### Step 4: 端到端验证
-- [ ] 用《无条件养育》跑全流程
-- [ ] 检查 definition 标注质量 (弹窗内容是否是作者原文解释)
-- [ ] 检查角标数据是否正确
+- [ ] 启动服务，跑 migration
+- [ ] 用已索引的书调 `POST /concepts/build`
+- [ ] 检查 `GET /concepts/by-chapter/{idx}` 返回的角标和弹窗数据
 
 ---
 
-## 7. 风险与缓解
+## 8. 风险与缓解
 
 | 风险 | 影响 | 缓解 |
 |------|------|------|
-| Phase 3 LLM 输出 JSON 格式错误 | 个别章节标注失败 | 加 retry + 宽松 JSON 解析 |
+| LLM 输出 JSON 格式错误 | 个别章节标注失败 | 单章失败 continue，不中断全书 |
+| LLM 返回的 pid 不在 DB 中 | occurrence 丢失 | pid 校验 + 跳过 + log |
 | 概念过多导致 prompt 超长 | 某章标注不完整 | 按概念数拆分多次调用 |
-| definition/mention 分错 | 弹窗展示无意义内容 | core_sentence 只在 def/ref 时生成, mention 不影响弹窗 |
-| LLM 返回的 pid 不在 DB 中 | occurrence 存储失败 | pid 校验, 不匹配的跳过并 log |
-| 全书概念扫描耗时较长 | 用户等待体验差 | 后台任务 + 进度轮询 (可在 indexed_books 记录当前 phase) |
+| 全书扫描耗时较长 | 用户等待 | 后台任务 + concept_status 轮询 |
+| 去重漏合并 (同义但 alias 未覆盖) | 概念重复 | v2 可加 embedding 相似度 |
 
 ---
 
-## 8. 成本估算
+## 9. 成本估算
 
-以 10 章 500 段的书为例 (Minimax M2.7):
+10 章 500 段的书，Minimax M2.7：
 
 | 阶段 | LLM 调用次数 | 输入 tokens | 输出 tokens |
 |------|-------------|------------|------------|
-| Phase 1 (概念扫描) | 10 次 | ~120K | ~20K |
-| Phase 2 (去重) | 0 (纯算法) | 0 | 0 |
-| Phase 3 (标注) | 10 次 | ~150K | ~50K |
-| **合计** | **20 次** | **~270K** | **~70K** |
-
-Minimax 价格远低于 Anthropic, 全书提取成本在几毛钱级别。
+| Phase 1 (概念扫描) | 10 | ~120K | ~20K |
+| Phase 2 (去重) | 0 | 0 | 0 |
+| Phase 3 (标注) | 10 | ~150K | ~50K |
+| **合计** | **20** | **~270K** | **~70K** |
