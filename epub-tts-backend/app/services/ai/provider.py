@@ -97,6 +97,76 @@ class OpenAIChatProvider:
             return data["choices"][0]["message"]["content"]
 
 
+class OpenAIResponsesProvider:
+    """OpenAI /v1/responses provider (GPT-4o etc.)."""
+
+    async def chat(
+        self,
+        config: AIConfig,
+        messages: list[ChatMessage],
+        stream: bool = True,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> AsyncIterator[str]:
+        url = f"{config.base_url.rstrip('/')}/responses"
+        headers = {
+            "Authorization": f"Bearer {config.api_key}",
+            "Content-Type": "application/json",
+        }
+        # Convert ChatMessage list to OpenAI Responses input format
+        input_messages = [{"role": m.role, "content": m.content} for m in messages]
+        body: dict = {
+            "model": config.model,
+            "input": input_messages,
+            "stream": stream,
+        }
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
+            if not stream:
+                resp = await client.post(url, headers=headers, json=body)
+                if resp.status_code != 200:
+                    raise RuntimeError(f"AI request failed: {resp.status_code} {resp.text}")
+                data = resp.json()
+                for item in data.get("output", []):
+                    if item.get("type") == "message":
+                        for content in item.get("content", []):
+                            if content.get("type") == "output_text":
+                                yield content.get("text", "")
+                return
+
+            async with client.stream("POST", url, headers=headers, json=body) as resp:
+                if resp.status_code != 200:
+                    text = await resp.text()
+                    raise RuntimeError(f"AI request failed: {resp.status_code} {text}")
+                async for line in resp.aiter_lines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith("data: "):
+                        line = line[6:]
+                    try:
+                        data = json.loads(line)
+                        event_type = data.get("type", "")
+                        if event_type == "response.output_text.delta":
+                            delta = data.get("delta", "")
+                            if delta:
+                                yield delta
+                    except json.JSONDecodeError:
+                        continue
+
+    async def chat_once(
+        self,
+        config: AIConfig,
+        messages: list[ChatMessage],
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> str:
+        parts = []
+        async for chunk in self.chat(config, messages, stream=False, temperature=temperature, max_tokens=max_tokens):
+            parts.append(chunk)
+        return "".join(parts)
+
+
 class AnthropicProvider:
     """Anthropic /v1/messages provider (Claude)."""
 
@@ -201,6 +271,7 @@ class AnthropicProvider:
 class AIService:
     _providers = {
         "openai-chat": OpenAIChatProvider(),
+        "openai-responses": OpenAIResponsesProvider(),
         "anthropic": AnthropicProvider(),
     }
 

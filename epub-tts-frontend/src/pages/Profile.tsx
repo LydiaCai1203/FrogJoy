@@ -2,8 +2,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useReadingHeatmap, useBookReadingStats, useReadingSummary } from "@/hooks/use-reading-stats";
 import { ReadingHeatmap } from "@/components/profile/ReadingHeatmap";
-import { AIChatPanel } from "@/components/profile/AIChatPanel";
-import { AITranslationPanel } from "@/components/profile/AITranslationPanel";
+import { AIConfigPanel } from "@/components/profile/AIConfigPanel";
 import { VoiceConfigPanel } from "@/components/profile/VoiceConfigPanel";
 import { DeviceManagement } from "@/components/profile/DeviceManagement";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -148,14 +147,17 @@ export default function Profile() {
           </TabsContent>
 
           {/* AI 配置 */}
-          <TabsContent value="ai" className="space-y-6 mt-6">
-            <AIChatPanel />
-            <AITranslationPanel />
+          <TabsContent value="ai" className="mt-6">
+            <div className="bg-card border border-border rounded-sm p-4">
+              <AIConfigPanel />
+            </div>
           </TabsContent>
 
           {/* 语音配置 */}
           <TabsContent value="voice" className="mt-6">
-            <VoiceConfigPanel />
+            <div className="bg-card border border-border rounded-sm p-4">
+              <VoiceConfigPanel />
+            </div>
           </TabsContent>
 
           {/* 账户与设备 */}

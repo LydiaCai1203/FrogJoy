@@ -1,6 +1,6 @@
 // AI 模块类型定义
 
-export type AIProviderType = "openai-chat" | "anthropic";
+export type AIProviderType = "openai-chat" | "openai-responses" | "anthropic";
 
 export type TranslationMode = "current-page" | "whole-book";
 
@@ -92,7 +92,8 @@ export const DEFAULT_BASE_URL = "https://api.deepseek.com/v1";
 export const DEFAULT_MODEL = "deepseek-chat";
 
 export const PROVIDER_LABELS: Record<AIProviderType, string> = {
-  "openai-chat": "OpenAI 兼容 (DeepSeek / Kimi)",
+  "openai-chat": "OpenAI Chat (DeepSeek / Kimi)",
+  "openai-responses": "OpenAI Responses (GPT-4o)",
   "anthropic": "Anthropic (Claude)",
 };
 
@@ -100,6 +101,10 @@ export const DEFAULT_CONFIGS: Record<AIProviderType, { baseUrl: string; model: s
   "openai-chat": {
     baseUrl: "https://api.deepseek.com/v1",
     model: "deepseek-chat",
+  },
+  "openai-responses": {
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4o",
   },
   anthropic: {
     baseUrl: "https://api.anthropic.com/v1",

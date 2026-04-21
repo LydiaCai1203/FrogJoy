@@ -6,6 +6,7 @@
 
 @custom-variant night (&:is([data-theme="night"] *));
 @custom-variant eye-care (&:is([data-theme="eye-care"] *));
+@custom-variant warm-study (&:is([data-theme="warm-study"] *));
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
@@ -182,6 +183,40 @@
   --sidebar-ring: oklch(0.45 0.15 120);
 }
 
+[data-theme="warm-study"] {
+  --background: oklch(0.96 0.025 75);
+  --foreground: oklch(0.25 0.04 55);
+  --card: oklch(0.94 0.022 75);
+  --card-foreground: oklch(0.25 0.04 55);
+  --popover: oklch(0.94 0.022 75);
+  --popover-foreground: oklch(0.25 0.04 55);
+  --primary: oklch(0.7 0.16 75);
+  --primary-foreground: oklch(0.98 0.01 75);
+  --secondary: oklch(0.91 0.025 75);
+  --secondary-foreground: oklch(0.3 0.04 55);
+  --muted: oklch(0.89 0.02 75);
+  --muted-foreground: oklch(0.5 0.03 55);
+  --accent: oklch(0.87 0.035 75);
+  --accent-foreground: oklch(0.3 0.04 55);
+  --destructive: oklch(0.55 0.2 30);
+  --border: oklch(0.84 0.03 75);
+  --input: oklch(0.84 0.03 75);
+  --ring: oklch(0.7 0.16 75);
+  --chart-1: oklch(0.7 0.16 75);
+  --chart-2: oklch(0.55 0.15 35);
+  --chart-3: oklch(0.6 0.1 55);
+  --chart-4: oklch(0.65 0.12 90);
+  --chart-5: oklch(0.58 0.08 45);
+  --sidebar: oklch(0.92 0.025 75);
+  --sidebar-foreground: oklch(0.25 0.04 55);
+  --sidebar-primary: oklch(0.7 0.16 75);
+  --sidebar-primary-foreground: oklch(0.98 0.01 75);
+  --sidebar-accent: oklch(0.87 0.035 75);
+  --sidebar-accent-foreground: oklch(0.3 0.04 55);
+  --sidebar-border: oklch(0.84 0.03 75);
+  --sidebar-ring: oklch(0.7 0.16 75);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -189,6 +224,106 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* ===== Theme transition - smooth color changes when switching themes ===== */
+html,
+html body,
+html header,
+html main,
+html .bg-background,
+html .bg-card,
+html .bg-card\/50,
+html .bg-muted,
+html .bg-secondary,
+html .border-border {
+  transition: background-color 0.4s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* ===== Warm Study theme - textures & effects ===== */
+
+/* Paper texture background - subtle noise pattern */
+[data-theme="warm-study"] body {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+}
+
+/* Warm vignette - lamp-lit room effect */
+[data-theme="warm-study"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: radial-gradient(
+    ellipse 80% 70% at 50% 30%,
+    transparent 50%,
+    oklch(0.5 0.06 65 / 8%) 80%,
+    oklch(0.35 0.06 55 / 15%) 100%
+  );
+}
+
+/* Card warm glow on hover */
+[data-theme="warm-study"] .group:hover {
+  box-shadow:
+    0 4px 20px oklch(0.7 0.12 75 / 20%),
+    0 1px 4px oklch(0.5 0.08 55 / 10%);
+}
+
+/* Warm amber progress bar */
+[data-theme="warm-study"] .group .h-1\.5 div {
+  background-color: oklch(0.7 0.16 75);
+}
+
+/* Feature cards subtle paper border */
+[data-theme="warm-study"] .border-border {
+  border-color: oklch(0.82 0.04 75 / 60%);
+}
+
+/* Primary button warm glow */
+[data-theme="warm-study"] button[class*="bg-primary"]:hover {
+  box-shadow: 0 0 16px oklch(0.7 0.16 75 / 30%);
+}
+
+/* Header warm backdrop */
+[data-theme="warm-study"] header {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+}
+
+/* Book card staggered entrance animation */
+@keyframes warm-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+[data-theme="warm-study"] .grid > .group {
+  animation: warm-fade-up 0.5s ease-out both;
+}
+[data-theme="warm-study"] .grid > .group:nth-child(1) { animation-delay: 0ms; }
+[data-theme="warm-study"] .grid > .group:nth-child(2) { animation-delay: 60ms; }
+[data-theme="warm-study"] .grid > .group:nth-child(3) { animation-delay: 120ms; }
+[data-theme="warm-study"] .grid > .group:nth-child(4) { animation-delay: 180ms; }
+[data-theme="warm-study"] .grid > .group:nth-child(5) { animation-delay: 240ms; }
+[data-theme="warm-study"] .grid > .group:nth-child(6) { animation-delay: 300ms; }
+[data-theme="warm-study"] .grid > .group:nth-child(7) { animation-delay: 360ms; }
+[data-theme="warm-study"] .grid > .group:nth-child(8) { animation-delay: 420ms; }
+
+/* Warm Study: book cover tilt effect on hover */
+[data-theme="warm-study"] .group:hover .aspect-\[3\/4\] img {
+  transform: scale(1.05) rotate(-0.5deg);
+}
+
+/* Warm Study: reading page warm glow around content */
+[data-theme="warm-study"] .reading-text,
+[data-theme="warm-study"] .html-read-mode {
+  text-shadow: 0 0 40px oklch(0.85 0.04 75 / 30%);
 }
 
 /* Custom reading font - applied to reading content */

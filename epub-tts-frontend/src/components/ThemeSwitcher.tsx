@@ -1,4 +1,4 @@
-import { Sun, Moon, Eye } from "lucide-react";
+import { Sun, Moon, Eye, Lamp } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 
 export function ThemeSwitcher() {
@@ -32,6 +32,15 @@ export function ThemeSwitcher() {
         title="护眼模式"
       >
         <Eye className="w-3.5 h-3.5" />
+      </button>
+      <button
+        onClick={() => setTheme("warm-study")}
+        className={`flex items-center justify-center w-8 h-8 rounded-md transition-colors ${
+          theme === "warm-study" ? "bg-background shadow-sm" : "hover:bg-background/50"
+        }`}
+        title="暖光书房"
+      >
+        <Lamp className="w-3.5 h-3.5" />
       </button>
     </div>
   );
