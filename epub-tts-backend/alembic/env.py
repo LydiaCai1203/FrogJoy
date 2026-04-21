@@ -13,7 +13,7 @@ if config.config_file_name is not None:
 database_url = os.environ["DATABASE_URL"]
 config.set_main_option("sqlalchemy.url", database_url)
 
-from app.models.models import Base  # noqa: E402
+from shared.models import Base  # noqa: E402
 target_metadata = Base.metadata
 
 
