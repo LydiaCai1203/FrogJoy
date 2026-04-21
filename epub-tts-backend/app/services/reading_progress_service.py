@@ -1,6 +1,6 @@
 from typing import Dict, Any, List, Optional
-from app.models.database import get_db
-from app.models.models import ReadingProgress
+from shared.database import get_db
+from shared.models import ReadingProgress
 from app.services.book_service import BookService
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 

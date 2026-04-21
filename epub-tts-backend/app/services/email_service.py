@@ -2,7 +2,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from loguru import logger
-from app.config import settings
+from shared.config import settings
 
 
 class EmailService:

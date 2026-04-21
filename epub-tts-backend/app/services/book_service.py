@@ -11,7 +11,7 @@ from fastapi import UploadFile, HTTPException
 from typing import List, Dict, Optional, Any
 import hashlib
 
-from app.config import settings
+from shared.config import settings
 
 IMAGES_DIR = "data/images"
 

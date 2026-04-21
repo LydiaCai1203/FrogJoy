@@ -103,8 +103,8 @@ class AudioMemoryCache:
             minimax_base_url = None
             if voice_type in ("minimax", "cloned") and user_id:
                 try:
-                    from app.models.database import get_db
-                    from app.models.models import TTSProviderConfig
+                    from shared.database import get_db
+                    from shared.models import TTSProviderConfig
                     from app.services.auth_service import AuthService
 
                     with get_db() as db:

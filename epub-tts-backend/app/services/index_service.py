@@ -24,9 +24,9 @@ from loguru import logger
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.config import settings
-from app.models.database import get_db
-from app.models.models import Book, IndexedBook, IndexedParagraph
+from shared.config import settings
+from shared.database import get_db
+from shared.models import Book, IndexedBook, IndexedParagraph
 from app.parsers import EpubIndexParser
 
 

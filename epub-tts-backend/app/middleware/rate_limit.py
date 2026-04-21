@@ -1,9 +1,9 @@
 import time
 from collections import defaultdict
 from fastapi import HTTPException, Request, status
-from app.config import settings
-from app.models.database import get_db
-from app.models.models import User
+from shared.config import settings
+from shared.database import get_db
+from shared.models import User
 from app.services.system_settings import get_system_setting_int
 
 # {user_id: {action: [timestamp, ...]}}

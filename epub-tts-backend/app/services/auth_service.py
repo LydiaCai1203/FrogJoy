@@ -17,7 +17,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def _get_fernet() -> Fernet:
     """Get or create a Fernet cipher using Fernet key from settings."""
-    from app.config import settings
+    from shared.config import settings
     key = settings.fernet_key
     if not key:
         key = Fernet.generate_key().decode()

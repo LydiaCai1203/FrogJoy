@@ -1,8 +1,8 @@
 import time
 from typing import Any
 
-from app.models.database import get_db
-from app.models.models import SystemSetting
+from shared.database import get_db
+from shared.models import SystemSetting
 
 _cache: dict[str, str] = {}
 _cache_ts: float = 0.0

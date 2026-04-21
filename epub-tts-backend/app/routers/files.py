@@ -1,7 +1,7 @@
 import os
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
-from app.config import settings
+from shared.config import settings
 
 router = APIRouter(prefix="/files", tags=["files"])
 

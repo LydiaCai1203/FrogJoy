@@ -1,7 +1,7 @@
 import uuid
 from sqlalchemy import func
-from app.models.database import get_db
-from app.models.models import Highlight
+from shared.database import get_db
+from shared.models import Highlight
 
 
 def _highlight_to_dict(h: Highlight) -> dict:

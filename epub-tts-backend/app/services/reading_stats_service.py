@@ -2,8 +2,8 @@ import uuid
 from datetime import date, timedelta
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from app.models.database import get_db
-from app.models.models import ReadingStat, Book
+from shared.database import get_db
+from shared.models import ReadingStat, Book
 from app.services.book_service import BookService
 
 

@@ -1,0 +1,249 @@
+{
+  "occurrences": [
+    {
+      "pid": "P03",
+      "concept_term": "有条件养育",
+      "occurrence_type": "definition",
+      "matched_text": "前者是有条件的爱，意味着孩子只有在做到家长期望的事或是达到了家长所规定的某些标准之后才可以得到",
+      "reasoning": "此处首次清晰定义有条件养育，对比式阐述了条件性爱及其含义"
+    },
+    {
+      "pid": "P03",
+      "concept_term": "无条件养育",
+      "occurrence_type": "definition",
+      "matched_text": "后者则是无条件的爱：这种爱与孩子做了什么毫无关联，无论他们成功与否，无论他们是否乖巧，无论如何，都毫无保留地给予他们爱",
+      "reasoning": "此处首次清晰定义无条件养育，详细解释了无条件爱的内涵与条件无关的本质"
+    },
+    {
+      "pid": "P04",
+      "concept_term": "无条件养育",
+      "occurrence_type": "refinement",
+      "matched_text": "这里我想从价值取向和预测性两个基本点来进一步解释\"无条件养育\"",
+      "reasoning": "作者明确提出从价值取向维度深化解释无条件养育的含义"
+    },
+    {
+      "pid": "P05",
+      "concept_term": "无条件养育",
+      "occurrence_type": "refinement",
+      "matched_text": "预测性，即无条件地爱孩子将会产生积极结果",
+      "reasoning": "作者从预测性维度进一步补充无条件养育的第二个基本特征及其积极影响"
+    },
+    {
+      "pid": "P06",
+      "concept_term": "有条件养育",
+      "occurrence_type": "refinement",
+      "matched_text": "我们被训练得\"有条件\"，这种感情已深深扎根于美国人的意识",
+      "reasoning": "作者举例说明条件性养育在美国文化中的普遍性，补充说明了条件化情感的来源"
+    },
+    {
+      "pid": "P07",
+      "concept_term": "有条件养育",
+      "occurrence_type": "refinement",
+      "matched_text": "对于孩子来说，被爱的条件要么是行为良好，要么是取得成就",
+      "reasoning": "作者具体化归纳了有条件养育中孩子被爱的两个核心条件维度"
+    },
+    {
+      "pid": "P08",
+      "concept_term": "有条件养育",
+      "occurrence_type": "refinement",
+      "matched_text": "造成孩子产生\"只有达到我们的要求才能得到我们认可\"这种感觉的诸多养育模式",
+      "reasoning": "作者通过复述核心感受来深化对有条件养育模式的理解"
+    },
+    {
+      "pid": "P10",
+      "concept_term": "有条件养育",
+      "occurrence_type": "mention",
+      "matched_text": "从更广义的角度审视\"有条件养育\"",
+      "reasoning": "顺带提及，为后续章节铺垫，未展开解释"
+    },
+    {
+      "pid": "P10",
+      "concept_term": "无条件养育",
+      "occurrence_type": "mention",
+      "matched_text": "与\"无条件养育\"做区分",
+      "reasoning": "顺带提及作为对比参照，未展开解释"
+    },
+    {
+      "pid": "P02",
+      "concept_term": "有条件养育",
+      "occurrence_type": "refinement",
+      "matched_text": "有条件养育会说\"不\"，如果我们像往常那样进行愉快的活动，那就是对她不良行为的奖励",
+      "reasoning": "通过具体育儿情境展示了有条件养育的操作方式"
+    },
+    {
+      "pid": "P04",
+      "concept_term": "无条件养育",
+      "occurrence_type": "refinement",
+      "matched_text": "无条件养育却将此视为应该抵制的诱惑，我们应该像往常一样拥着孩子讲故事",
+      "reasoning": "通过同一情境的对立处理方式，展开说明无条件养育的实际做法"
+    },
+    {
+      "pid": "P05",
+      "concept_term": "行为主义心理学",
+      "occurrence_type": "definition",
+      "matched_text": "有条件养育与行为主义心理学极为相近，代表人物是斯金纳",
+      "reasoning": "此处明确指出有条件养育的理论基础，定义了行为主义心理学与有条件养育的关系"
+    },
+    {
+      "pid": "P05",
+      "concept_term": "斯金纳",
+      "occurrence_type": "definition",
+      "matched_text": "代表人物是斯金纳。顾名思义，其典型特征是\"一切只看行为\"",
+      "reasoning": "首次明确提及斯金纳并解释其理论的核心特征"
+    },
+    {
+      "pid": "P06",
+      "concept_term": "强化",
+      "occurrence_type": "definition",
+      "matched_text": "行为主义心理学认为：人类的所有行为……都是建立在是否被\"强化\"的基础之上",
+      "reasoning": "此处正式定义强化概念，解释行为主义心理学对强化的核心理解"
+    },
+    {
+      "pid": "P06",
+      "concept_term": "行为主义心理学",
+      "occurrence_type": "refinement",
+      "matched_text": "人类做出的每件事都可以被解释为是否受到了某种奖励的强化",
+      "reasoning": "通过举例和补充说明，深化对行为主义核心假设的理解"
+    },
+    {
+      "pid": "P07",
+      "concept_term": "强化",
+      "occurrence_type": "refinement",
+      "matched_text": "\"外在力\"，诸如某人之前因自己的行为而受到的奖励（或惩罚），是导致人类如何行动的关键因素",
+      "reasoning": "进一步解释强化概念中的外在奖励与惩罚机制"
+    },
+    {
+      "pid": "P07",
+      "concept_term": "行为主义心理学",
+      "occurrence_type": "refinement",
+      "matched_text": "家长和老师总是在谈论孩子的\"行为\"，好像除了这些表面现象就别无可取",
+      "reasoning": "通过描述现实中的常见现象举例说明行为主义倾向在育儿中的体现"
+    },
+    {
+      "pid": "P11",
+      "concept_term": "无条件养育",
+      "occurrence_type": "refinement",
+      "matched_text": "无条件养育会更多地从\"内在\"、而非\"外在\"去寻找阿比盖尔行为的理由",
+      "reasoning": "作者对比性地深化了无条件养育对儿童行为动机的理解视角"
+    },
+    {
+      "pid": "P12",
+      "concept_term": "无条件养育",
+      "occurrence_type": "refinement",
+      "matched_text": "孩子的行为只不过是其感觉、思想、需要和意愿的外在表达，简言之，重要的是实施行为的孩子本身，而不是行为",
+      "reasoning": "此处深化解释了无条件养育对儿童行为本质的核心理解——关注孩子本身而非行为"
+    },
+    {
+      "pid": "P14",
+      "concept_term": "有条件养育",
+      "occurrence_type": "refinement",
+      "matched_text": "这教会她认定自己只有在乖乖听话时才会被爱，或者才是可爱的",
+      "reasoning": "通过描述孩子内化的后果，深化说明有条件养育的心理影响机制"
+    },
+    {
+      "pid": "P21",
+      "concept_term": "戴安娜·鲍姆林德",
+      "occurrence_type": "refinement",
+      "matched_text": "著名心理学家戴安娜·鲍姆林德针对无条件养育做出的相似言论",
+      "reasoning": "引用戴安娜·鲍姆林德的研究言论来深化对无条件养育相关争议的讨论"
+    },
+    {
+      "pid": "P20",
+      "concept_term": "互换法则",
+      "occurrence_type": "definition",
+      "matched_text": "有条件养育反映出将人与人之间的互动……当做经济交易的倾向",
+      "reasoning": "此处首次明确揭示并定义了有条件养育背后的经济交易模式——互换法则"
+    },
+    {
+      "pid": "P22",
+      "concept_term": "互换法则",
+      "occurrence_type": "refinement",
+      "matched_text": "建立在\"如果孩子没有按照我们的想法去做，我们就应该收回他们心爱的东西\"的理论之上",
+      "reasoning": "进一步通过具体描述经济模式在育儿中的实际应用来深化互换法则的概念"
+    },
+    {
+      "pid": "P24",
+      "concept_term": "互换法则",
+      "occurrence_type": "refinement",
+      "matched_text": "\"互换关系\"：只要你为我做某事，我就为你做某事（只要你给我某样东西，我就给你某样东西）",
+      "reasoning": "作者引用心理学研究明确定义了互换关系的含义，并指出其局限性"
+    },
+    {
+      "pid": "P19",
+      "concept_term": "有条件养育",
+      "occurrence_type": "mention",
+      "matched_text": "有条件养育的后果",
+      "reasoning": "章节标题顺带提及"
+    },
+    {
+      "pid": "P02",
+      "concept_term": "卡尔·罗杰斯",
+      "occurrence_type": "definition",
+      "matched_text": "心理学先驱卡尔·罗杰斯回答了这样一个问题：\"当家长的爱取决于孩子的行为时会产生哪些结果？\"",
+      "reasoning": "此处明确引入卡尔·罗杰斯的研究问题，为讨论有条件养育的后果奠定理论基础"
+    },
+    {
+      "pid": "P02",
+      "concept_term": "情感虐待",
+      "occurrence_type": "definition",
+      "matched_text": "儿童健康署曾发表……情感虐待（冷暴力）模式，其中排在第二位的就是\"有条件养育\"",
+      "reasoning": "爱尔兰儿童健康署的官方定义首次明确将有条件养育列入情感虐待模式"
+    },
+    {
+      "pid": "P03",
+      "concept_term": "有条件养育",
+      "occurrence_type": "refinement",
+      "matched_text": "相比我们对孩子有何感受，孩子如何经历这些感受以及如何看待我们对待他们的方式才更重要",
+      "reasoning": "通过深化论述孩子视角的重要性来补充有条件养育中家长与孩子感受的差异"
+    },
+    {
+      "pid": "P08",
+      "concept_term": "自我价值感",
+      "occurrence_type": "refinement",
+      "matched_text": "研究人员已发现，\"（得到的）支持越有条件，自我价值感的认知就会越低\"",
+      "reasoning": "引用研究结论深化说明有条件支持与自我价值感之间的负相关关系"
+    },
+    {
+      "pid": "P10",
+      "concept_term": "自我价值感",
+      "occurrence_type": "refinement",
+      "matched_text": "年幼时感觉自己只有在不辜负家长期望时才会得到爱的母亲，此时作为成人自我价值感颇低",
+      "reasoning": "通过纵向追踪研究数据深化说明有条件养育对自我价值感的长期负面影响"
+    },
+    {
+      "pid": "P11",
+      "concept_term": "假我",
+      "occurrence_type": "definition",
+      "matched_text": "他们最终会创造一个\"假我\"，换句话说，装扮成一个家长会爱的人",
+      "reasoning": "此处首次明确定义了假我概念，解释了青少年为赢得认可而伪装自己的现象"
+    },
+    {
+      "pid": "P11",
+      "concept_term": "有条件养育",
+      "occurrence_type": "refinement",
+      "matched_text": "这种为赢得认可铤而走险的绝望做法通常伴随着抑郁和无助，会导致其与真正的自己失去联结",
+      "reasoning": "深化描述有条件养育通过创造假我所带来的心理健康代价"
+    },
+    {
+      "pid": "P12",
+      "concept_term": "自我价值感",
+      "occurrence_type": "refinement",
+      "matched_text": "得到的有条件支持越少，在接受自己时也会附带条件",
+      "reasoning": "引用卡尔·罗杰斯的观点进一步深化有条件支持如何内化为自我接纳的条件"
+    },
+    {
+      "pid": "P12",
+      "concept_term": "卡尔·罗杰斯",
+      "occurrence_type": "refinement",
+      "matched_text": "感觉自己被家长、甚至老师无条件认可的孩子会倾向于对自己感觉更好",
+      "reasoning": "引用卡尔·罗杰斯的积极发现来对比说明无条件认可对自我价值感的正面作用"
+    },
+    {
+      "pid": "P02",
+      "concept_term": "爱丽丝·米勒",
+      "occurrence_type": "refinement",
+      "matched_text": "精神分析学家爱丽丝·米勒通过观察发现：家长对孩子的爱可能会\"热情似火，但并非孩子需要的那种爱\"",
+      "reasoning": "引用爱丽丝·米勒的专业观察来深化对父母之爱本质差异的讨论"
+    }
+  ]
+}

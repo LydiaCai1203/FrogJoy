@@ -6,8 +6,8 @@ import asyncio
 import uuid
 from loguru import logger
 
-from app.models.database import get_db
-from app.models.models import BookTranslation
+from shared.database import get_db
+from shared.models import BookTranslation
 from app.services.ai.provider import AIService, AIConfig
 from app.services.book_service import BookService
 from app.services.task_service import task_manager

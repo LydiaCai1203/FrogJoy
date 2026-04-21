@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.services.auth_service import AuthService
-from app.redis_client import get_redis
+from shared.redis_client import get_redis
 from typing import Optional
 
 security = HTTPBearer()
@@ -54,8 +54,8 @@ async def get_optional_user(
 async def get_admin_user(
     user_id: str = Depends(get_current_user)
 ) -> str:
-    from app.models.database import get_db
-    from app.models.models import User
+    from shared.database import get_db
+    from shared.models import User
 
     with get_db() as db:
         user = db.query(User).filter(User.id == user_id).first()

@@ -5,11 +5,11 @@ from pydantic import BaseModel
 from sqlalchemy import func, case
 from loguru import logger
 from app.middleware.auth import get_current_user, get_optional_user, get_admin_user
-from app.models.database import get_db
-from app.models.models import Book
+from shared.database import get_db
+from shared.models import Book
 from app.services.book_service import BookService
 from app.services.reading_progress_service import ReadingProgressService
-from app.config import settings
+from shared.config import settings
 from app.middleware.rate_limit import is_guest_user
 from typing import Optional
 
