@@ -300,7 +300,7 @@ class TTSFacade:
             progress_callback(100, "完成")
 
         return {
-            "downloadUrl": f"/api/tts/download/{user_id or '_anon'}/{book_id or '_misc'}/{output_filename}",
+            "downloadUrl": f"/api/files/audio/{book_id or '_misc'}/{output_filename}",
             "filename": output_filename,
             "size": file_size,
             "sizeFormatted": f"{file_size / (1024*1024):.2f} MB"
@@ -416,7 +416,7 @@ class TTSFacade:
             progress_callback(100, "完成")
 
         return {
-            "downloadUrl": f"/api/tts/download/{user_id}/{book_id}/{output_filename}",
+            "downloadUrl": f"/api/files/audio/{book_id}/{output_filename}",
             "filename": output_filename,
             "size": file_size,
             "sizeFormatted": f"{file_size / (1024*1024):.2f} MB",

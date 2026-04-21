@@ -1,13 +1,22 @@
 import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse
 from shared.config import settings
+from app.middleware.auth import get_current_user
 
 router = APIRouter(prefix="/files", tags=["files"])
 
 
+@router.get("/audio/{book_id}/{filename}")
+async def serve_audio(book_id: str, filename: str, user_id: str = Depends(get_current_user)):
+    filepath = os.path.join(settings.get_audio_dir(user_id, book_id), filename)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    return FileResponse(filepath, media_type="audio/mpeg")
+
+
 @router.get("/{user_id}/{book_id}/audio/{filename}")
-async def serve_audio(user_id: str, book_id: str, filename: str):
+async def serve_audio_legacy(user_id: str, book_id: str, filename: str):
     filepath = os.path.join(settings.get_audio_dir(user_id, book_id), filename)
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Audio file not found")

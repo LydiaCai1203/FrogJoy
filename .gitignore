@@ -29,10 +29,10 @@ epub-tts-backend/.env
 epub-tts-backend/.env.local
 
 # Python 缓存
-epub-tts-backend/__pycache__/
-epub-tts-backend/**/__pycache__/
-epub-tts-backend/*.pyc
-epub-tts-backend/**/*.pyc
+__pycache__/
+**/__pycache__/
+*.pyc
+**/*.pyc
 *.pyo
 *.pyd
 .Python

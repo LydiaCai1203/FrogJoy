@@ -16,12 +16,9 @@ os.makedirs(_tmp_audio_dir, exist_ok=True)
 
 
 def _audio_url(user_id: str, book_id: str, filename: str) -> str:
-    """Build audio URL — uses /api/files/ for per-book audio, /api/tts/download/ for misc."""
-    uid = user_id or "_anon"
+    """Build audio URL — uses /api/files/audio/{book_id}/{filename}."""
     bid = book_id or "_misc"
-    if user_id and book_id:
-        return f"/api/files/{uid}/{bid}/audio/{filename}"
-    return f"/api/tts/download/{uid}/{bid}/{filename}"
+    return f"/api/files/audio/{bid}/{filename}"
 
 
 def _tmp_audio_url(filename: str) -> str:

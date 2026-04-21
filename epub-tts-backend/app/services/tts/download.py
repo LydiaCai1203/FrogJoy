@@ -136,7 +136,7 @@ async def generate_book_audio_task(
         file_size = os.path.getsize(output_filepath)
 
         task_manager.complete_task(task_id, {
-            "downloadUrl": f"/api/tts/download/{user_id}/{book_id}/{output_filename}",
+            "downloadUrl": f"/api/files/audio/{book_id}/{output_filename}",
             "filename": output_filename,
             "size": file_size,
             "bookTitle": book_title,
@@ -263,7 +263,7 @@ async def generate_book_audio_zip_task(
         file_size = os.path.getsize(output_filepath)
 
         task_manager.complete_task(task_id, {
-            "downloadUrl": f"/api/tts/download/{user_id}/{book_id}/{output_filename}",
+            "downloadUrl": f"/api/files/audio/{book_id}/{output_filename}",
             "filename": output_filename,
             "size": file_size,
             "sizeFormatted": f"{file_size / (1024*1024):.2f} MB",
