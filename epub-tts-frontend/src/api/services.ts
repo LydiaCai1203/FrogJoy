@@ -732,6 +732,7 @@ export interface ConceptItem {
   term: string;
   aliases: string[];
   category: string;
+  initial_definition: string | null;
   total_occurrences: number;
   chapter_count: number;
   scope: "book" | "chapter";

@@ -86,6 +86,26 @@ export function Reader({
   const [interactionMode, contentMode] = unifiedMode.split("-") as [InteractionMode, ContentMode];
   const isPlayMode = interactionMode === "play";
   const isReadMode = interactionMode === "read";
+
+  // 概念角标: 找每个 annotation 首次出现在哪个 sentence index
+  const annotationsBySentence = useMemo(() => {
+    if (!annotations.length || !sentences.length) return new Map<number, ConceptAnnotation[]>();
+    const map = new Map<number, ConceptAnnotation[]>();
+    const assigned = new Set<string>(); // 每个概念只标一次
+    for (const ann of annotations) {
+      if (assigned.has(ann.concept_id)) continue;
+      const termLower = ann.term.toLowerCase();
+      for (let i = 0; i < sentences.length; i++) {
+        if (sentences[i].toLowerCase().includes(termLower)) {
+          if (!map.has(i)) map.set(i, []);
+          map.get(i)!.push(ann);
+          assigned.add(ann.concept_id);
+          break;
+        }
+      }
+    }
+    return map;
+  }, [annotations, sentences]);
   const isTranslatedMode = contentMode === "translated";
   const isBilingualMode = contentMode === "bilingual";
   const canAnnotate = true;
@@ -813,6 +833,31 @@ export function Reader({
                               setAnnotationOpen(true);
                             })
                         : renderSentence(text, index, isSentenceActive, sentenceHighlights)}
+                      {/* 概念角标 */}
+                      {annotationsBySentence.get(index)?.map((ann) => (
+                        <Popover key={ann.concept_id}>
+                          <PopoverTrigger asChild>
+                            <span
+                              className="inline-flex items-center justify-center w-4 h-4 ml-0.5 text-[10px] font-medium text-white bg-violet-500 rounded-full cursor-pointer hover:bg-violet-600 align-super leading-none"
+                              title={ann.term}
+                            >
+                              {ann.badge_number}
+                            </span>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-72 p-3" side="top" align="start">
+                            <div className="space-y-2">
+                              <p className="font-medium text-sm text-foreground">{ann.popover.term}</p>
+                              {ann.popover.initial_definition ? (
+                                <p className="text-xs text-muted-foreground leading-relaxed">
+                                  {ann.popover.initial_definition}
+                                </p>
+                              ) : (
+                                <p className="text-xs text-muted-foreground italic">暂无定义</p>
+                              )}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      ))}
                     </p>
                     {showTranslatedUnderlay && (
                       <p className={cn(

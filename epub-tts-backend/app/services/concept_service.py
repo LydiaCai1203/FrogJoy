@@ -606,6 +606,7 @@ class ConceptService:
                     "term": c.term,
                     "aliases": c.aliases,
                     "category": c.category,
+                    "initial_definition": c.initial_definition,
                     "total_occurrences": c.total_occurrences,
                     "chapter_count": c.chapter_count,
                     "scope": c.scope,

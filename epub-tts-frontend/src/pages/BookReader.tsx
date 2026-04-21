@@ -18,7 +18,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { translator } from "@/lib/translator";
-import { TTSService } from "@/api/services";
+import { TTSService, conceptService, type ConceptAnnotation } from "@/api/services";
 import { getVoicePreferences, saveVoicePreferences } from "@/api/tts";
 import { API_BASE, API_URL } from "@/config";
 import { useAuth } from "@/contexts/AuthContext";
@@ -60,6 +60,31 @@ export default function BookReader() {
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
   const [originalSentences, setOriginalSentences] = useState<string[]>([]);
   const [translatedSentences, setTranslatedSentences] = useState<string[]>([]);
+  const [conceptAnnotations, setConceptAnnotations] = useState<ConceptAnnotation[]>([]);
+
+  // 加载概念列表 (一次性加载全书概念, 前端自己用 term 做文本匹配)
+  useEffect(() => {
+    if (!bookId || !token) return;
+    conceptService.getStatus(bookId).then((status) => {
+      if (status.concept_status !== "enriched") return;
+      return conceptService.getConcepts(bookId);
+    }).then((data) => {
+      if (!data) return;
+      const anns: ConceptAnnotation[] = data.concepts
+        .filter((c) => c.total_occurrences > 0 && c.initial_definition)
+        .map((c, idx) => ({
+          concept_id: c.concept_id,
+          term: c.term,
+          badge_number: idx + 1,
+          first_pid_in_chapter: "",
+          popover: {
+            term: c.term,
+            initial_definition: c.initial_definition,
+          },
+        }));
+      setConceptAnnotations(anns);
+    }).catch(() => {});
+  }, [bookId, token]);
 
   // Player State
   const [isPlaying, setIsPlaying] = useState(false);
@@ -916,6 +941,7 @@ export default function BookReader() {
               chapterTitle={metadata?.title}
               highlights={highlights}
               scrollToHighlight={scrollTarget}
+              annotations={conceptAnnotations}
               askAIEnabled={askAIEnabled}
               onAskAI={(text) => {
                 setPendingAskAIText(text);
