@@ -33,6 +33,11 @@ class IndexedBook(Base):
     # 索引版本 (schema 演进)
     index_version = Column(String, nullable=False, default="v0")
 
+    # 概念提取状态
+    concept_status = Column(String, nullable=True)       # None/extracting/enriched/failed
+    concept_error  = Column(Text, nullable=True)
+    total_concepts = Column(Integer, nullable=False, server_default="0")
+
     # 时间戳
     parsed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())

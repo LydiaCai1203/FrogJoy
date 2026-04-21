@@ -10,6 +10,16 @@ class Settings(BaseSettings):
     # MiniMax TTS Configuration
     minimax_base_url: str = "https://api.minimaxi.com"
 
+    # MiniMax LLM (概念提取)
+    minimax_llm_api_key: str = ""
+    minimax_llm_base_url: str = "https://api.minimaxi.com/anthropic"
+    minimax_llm_model: str = "MiniMax-M2.7"
+
+    # Embedding (概念去重 + 语义匹配)
+    embedding_api_key: str = ""
+    embedding_base_url: str = "https://model-square.app.baizhi.cloud/v1/embeddings"
+    embedding_model: str = "bge-m3"
+
     # AI API Key Encryption
     fernet_key: str = ""
 
