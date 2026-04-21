@@ -7,7 +7,7 @@ import { Loader2, Book, Trash2, BrainCircuit, Github, User, LogOut, BarChart2, A
 import { toast } from "sonner";
 import { API_BASE, API_URL } from "@/config";
 import { useAuth } from "@/contexts/AuthContext";
-import { indexService, type IndexStatus } from "@/api/services";
+import { indexService, conceptService, type IndexStatus, type ConceptStatus } from "@/api/services";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { RegisterForm } from "@/components/auth/RegisterForm";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
@@ -59,6 +59,8 @@ export default function Home() {
 
   // 索引状态
   const [indexStatuses, setIndexStatuses] = useState<Record<string, IndexStatus>>({});
+  // 概念提取状态
+  const [conceptStatuses, setConceptStatuses] = useState<Record<string, ConceptStatus>>({});
 
   // 加载书架
   useEffect(() => {
@@ -111,12 +113,29 @@ export default function Home() {
     setIndexStatuses(results);
   }, [token]);
 
-  // 书架加载完成后拉索引状态
+  // 加载所有书的概念状态
+  const loadConceptStatuses = useCallback(async (bookIds: string[]) => {
+    if (!token || bookIds.length === 0) return;
+    const results: Record<string, ConceptStatus> = {};
+    await Promise.allSettled(
+      bookIds.map(async (id) => {
+        try {
+          results[id] = await conceptService.getStatus(id);
+        } catch {
+          // ignore
+        }
+      })
+    );
+    setConceptStatuses(results);
+  }, [token]);
+
+  // 书架加载完成后拉索引状态 + 概念状态
   useEffect(() => {
     if (books.length > 0 && token) {
       loadIndexStatuses(books.map((b) => b.id));
+      loadConceptStatuses(books.map((b) => b.id));
     }
-  }, [books, token, loadIndexStatuses]);
+  }, [books, token, loadIndexStatuses, loadConceptStatuses]);
 
   // 轮询正在解析中的书籍
   const indexStatusesRef = useRef(indexStatuses);
@@ -150,6 +169,65 @@ export default function Home() {
 
     return () => clearInterval(interval);
   }, [parsingKey]);
+
+  // 轮询正在提取概念的书籍
+  const conceptStatusesRef = useRef(conceptStatuses);
+  conceptStatusesRef.current = conceptStatuses;
+
+  const extractingIds = Object.entries(conceptStatuses)
+    .filter(([, s]) => s.concept_status === "extracting")
+    .map(([id]) => id);
+  const extractingKey = extractingIds.sort().join(",");
+
+  useEffect(() => {
+    if (!extractingKey) return;
+    const ids = extractingKey.split(",");
+
+    const interval = setInterval(async () => {
+      const updates: Record<string, ConceptStatus> = {};
+      await Promise.allSettled(
+        ids.map(async (id) => {
+          try {
+            updates[id] = await conceptService.getStatus(id);
+          } catch {
+            // ignore
+          }
+        })
+      );
+      if (Object.keys(updates).length > 0) {
+        setConceptStatuses((prev) => ({ ...prev, ...updates }));
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [extractingKey]);
+
+  const handleToggleConcepts = async (bookId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!token) return;
+
+    const current = conceptStatuses[bookId];
+    if (current?.concept_status === "extracting") return;
+
+    // 索引必须先就绪
+    const idx = indexStatuses[bookId];
+    if (!idx || idx.status !== "parsed") {
+      toast.error("请先构建索引");
+      return;
+    }
+
+    try {
+      const result = await conceptService.buildConcepts(bookId);
+      setConceptStatuses((prev) => ({ ...prev, [bookId]: result }));
+      if (result.concept_status === "extracting") {
+        toast.success("概念提取已启动");
+      } else if (result.concept_status === "enriched") {
+        toast.success(`概念已就绪 (${result.total_concepts || 0}个)`);
+      }
+    } catch {
+      toast.error("概念提取失败");
+    }
+  };
 
   const handleToggleIndex = async (bookId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -479,6 +557,49 @@ export default function Home() {
                           <AlertTriangle className="w-3.5 h-3.5 text-white" />
                         ) : (
                           <DatabaseZap className="w-3.5 h-3.5 text-white" />
+                        )}
+                      </button>
+                    );
+                  })()}
+
+                  {/* 概念提取状态按钮 */}
+                  {user && book.userId === user.id && (() => {
+                    const idx = indexStatuses[book.id];
+                    const cs = conceptStatuses[book.id];
+                    const cStatus = cs?.concept_status || null;
+                    const indexReady = idx?.status === "parsed";
+                    // 只在索引就绪后显示
+                    if (!indexReady) return null;
+                    return (
+                      <button
+                        onClick={(e) => handleToggleConcepts(book.id, e)}
+                        className={`absolute bottom-12 right-10 p-1.5 rounded-sm transition-opacity ${
+                          cStatus === "enriched"
+                            ? "bg-violet-600/80 opacity-70 group-hover:opacity-100"
+                            : cStatus === "extracting"
+                            ? "bg-amber-600/80 opacity-100"
+                            : cStatus === "failed"
+                            ? "bg-destructive/80 opacity-70 group-hover:opacity-100"
+                            : "bg-black/60 hover:bg-black/80 opacity-0 group-hover:opacity-100"
+                        }`}
+                        title={
+                          cStatus === "enriched"
+                            ? `概念已就绪 (${cs?.total_concepts || 0}个)`
+                            : cStatus === "extracting"
+                            ? "正在提取概念..."
+                            : cStatus === "failed"
+                            ? `概念提取失败: ${cs?.concept_error || "未知错误"}`
+                            : "点击提取概念"
+                        }
+                      >
+                        {cStatus === "extracting" ? (
+                          <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+                        ) : cStatus === "enriched" ? (
+                          <BrainCircuit className="w-3.5 h-3.5 text-white" />
+                        ) : cStatus === "failed" ? (
+                          <AlertTriangle className="w-3.5 h-3.5 text-white" />
+                        ) : (
+                          <BrainCircuit className="w-3.5 h-3.5 text-white" />
                         )}
                       </button>
                     );

@@ -246,25 +246,18 @@ body::after {
 }
 
 
-/* Page flip animation for chapter switching */
-@keyframes page-flip-enter {
-  0% {
-    transform: rotateY(-12deg) translateX(40px);
+/* Chapter switch animation - subtle fade in */
+@keyframes chapter-enter {
+  from {
     opacity: 0;
-    transform-origin: left center;
   }
-  50% {
-    opacity: 0.6;
-  }
-  100% {
-    transform: rotateY(0deg) translateX(0);
+  to {
     opacity: 1;
-    transform-origin: left center;
   }
 }
 
 .page-flip-enter {
-  animation: page-flip-enter 1s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation: chapter-enter 0.4s ease-out both;
 }
 
 /* Custom reading font - applied to reading content */

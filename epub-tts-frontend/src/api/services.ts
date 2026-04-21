@@ -718,3 +718,69 @@ export class IndexService {
 }
 
 export const indexService = new IndexService();
+
+// ----- Concept Service -----
+
+export interface ConceptStatus {
+  concept_status: "extracting" | "enriched" | "failed" | null;
+  concept_error?: string | null;
+  total_concepts?: number;
+}
+
+export interface ConceptItem {
+  concept_id: string;
+  term: string;
+  aliases: string[];
+  category: string;
+  total_occurrences: number;
+  chapter_count: number;
+  scope: "book" | "chapter";
+}
+
+export interface ConceptAnnotation {
+  concept_id: string;
+  term: string;
+  badge_number: number;
+  first_pid_in_chapter: string;
+  popover: {
+    term: string;
+    initial_definition: string | null;
+  };
+}
+
+export class ConceptService {
+  async getStatus(bookId: string): Promise<ConceptStatus> {
+    const res = await fetchWithAuth(`${API_URL}/books/${bookId}/concepts/status`);
+    if (!res.ok) throw new Error("Failed to fetch concept status");
+    return res.json();
+  }
+
+  async buildConcepts(bookId: string, rebuild = false): Promise<ConceptStatus> {
+    const res = await fetchWithAuth(`${API_URL}/books/${bookId}/concepts/build?rebuild=${rebuild}`, {
+      method: "POST",
+    });
+    if (!res.ok) throw new Error("Failed to build concepts");
+    return res.json();
+  }
+
+  async getConcepts(bookId: string): Promise<{ concepts: ConceptItem[] }> {
+    const res = await fetchWithAuth(`${API_URL}/books/${bookId}/concepts`);
+    if (!res.ok) throw new Error("Failed to fetch concepts");
+    return res.json();
+  }
+
+  async getChapterAnnotations(bookId: string, chapterIdx: number): Promise<{ annotations: ConceptAnnotation[] }> {
+    const res = await fetchWithAuth(`${API_URL}/books/${bookId}/concepts/by-chapter/${chapterIdx}`);
+    if (!res.ok) throw new Error("Failed to fetch chapter annotations");
+    return res.json();
+  }
+
+  async deleteConcepts(bookId: string): Promise<void> {
+    const res = await fetchWithAuth(`${API_URL}/books/${bookId}/concepts`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error("Failed to delete concepts");
+  }
+}
+
+export const conceptService = new ConceptService();

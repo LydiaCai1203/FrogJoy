@@ -3,7 +3,9 @@ import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { BookOpen, Headphones } from "lucide-react";
 import type { WordTimestamp, Highlight, HighlightColor } from "@/api/types";
+import type { ConceptAnnotation } from "@/api/services";
 import type { UnifiedMode, InteractionMode, ContentMode } from "@/lib/ai/types";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { API_BASE } from "@/config";
 import { SelectionMenu, type SelectionInfo } from "@/components/highlight/SelectionMenu";
 import { AnnotationDialog } from "@/components/highlight/AnnotationDialog";
@@ -35,6 +37,7 @@ interface ReaderProps {
   chapterTitle?: string;
   highlights?: Highlight[];
   scrollToHighlight?: ScrollToHighlight | null;
+  annotations?: ConceptAnnotation[];
   askAIEnabled?: boolean;
   onAskAI?: (selectedText: string) => void;
   onUnifiedModeChange?: (mode: UnifiedMode) => void;
@@ -72,6 +75,7 @@ export function Reader({
   chapterTitle,
   highlights = [],
   scrollToHighlight,
+  annotations = [],
   askAIEnabled = false,
   onAskAI,
   onUnifiedModeChange,
@@ -103,7 +107,7 @@ export function Reader({
   useEffect(() => {
     if (prevChapterRef.current && chapterHref && prevChapterRef.current !== chapterHref) {
       setPageFlip("flip");
-      const timer = setTimeout(() => setPageFlip(null), 1000);
+      const timer = setTimeout(() => setPageFlip(null), 450);
       return () => clearTimeout(timer);
     }
     prevChapterRef.current = chapterHref;
@@ -674,7 +678,7 @@ export function Reader({
       )}
 
 
-      <div className="flex-1 min-h-0 overflow-hidden" style={{ perspective: "1200px" }}>
+      <div className="flex-1 min-h-0 overflow-hidden">
         <ScrollArea className={cn("h-full w-full px-4 md:px-12 py-8", pageFlip === "flip" && "page-flip-enter")} ref={scrollRef}>
           {shouldRenderHtmlReadMode ? (
             <div
