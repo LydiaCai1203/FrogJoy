@@ -78,8 +78,8 @@ services:
 
   admin-backend:
     build:
-      context: ./admin-backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: admin-backend/Dockerfile
     container_name: admin-backend
     volumes:
       - ./admin-backend/data:/app/data
