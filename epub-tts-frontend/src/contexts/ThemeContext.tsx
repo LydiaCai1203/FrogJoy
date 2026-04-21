@@ -2,7 +2,7 @@ import * as React from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { API_URL } from "@/config";
 
-export type Theme = "day" | "night" | "eye-care" | "fresh-green";
+export type Theme = "day" | "night" | "fresh-green" | "fresh-green";
 
 interface ThemeContextType {
   theme: Theme;
@@ -68,7 +68,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   const { user, token, isLoading } = useAuth();
   const userId = user?.id;
 
-  const [theme, setThemeState] = React.useState<Theme>("eye-care");
+  const [theme, setThemeState] = React.useState<Theme>("fresh-green");
   const [fontSize, setFontSizeState] = React.useState<number>(DEFAULT_FONT_SIZE);
   const isInitialMount = React.useRef(true);
 
@@ -78,7 +78,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     if (!token || !userId) {
       const localTheme = getLocalStorageTheme(userId);
       const localFontSize = getLocalStorageFontSize();
-      const initialTheme = localTheme || "eye-care";
+      const initialTheme = localTheme || "fresh-green";
       const initialFontSize = localFontSize || DEFAULT_FONT_SIZE;
       setThemeState(initialTheme);
       setFontSizeState(initialFontSize);
@@ -104,7 +104,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     ]).then(([themeData, fontSizeData]) => {
       const remoteTheme = themeData.theme as Theme;
       const remoteFontSize = fontSizeData.font_size as number | null;
-      const resolvedTheme = localTheme || remoteTheme || "eye-care";
+      const resolvedTheme = localTheme || remoteTheme || "fresh-green";
       const resolvedFontSize = localFontSize || remoteFontSize || DEFAULT_FONT_SIZE;
       setThemeState(resolvedTheme);
       setFontSizeState(resolvedFontSize);
@@ -115,7 +115,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       setLocalStorageFontSize(resolvedFontSize);
       isInitialMount.current = false;
     }).catch(() => {
-      const fallbackTheme = localTheme || "eye-care";
+      const fallbackTheme = localTheme || "fresh-green";
       const fallbackFontSize = localFontSize || DEFAULT_FONT_SIZE;
       setThemeState(fallbackTheme);
       setFontSizeState(fallbackFontSize);

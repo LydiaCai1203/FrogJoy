@@ -1,4 +1,4 @@
-import { Sun, Moon, Eye, Leaf } from "lucide-react";
+import { Sun, Moon, Eye } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 
 export function ThemeSwitcher() {
@@ -7,9 +7,9 @@ export function ThemeSwitcher() {
   return (
     <div className="flex items-center gap-0 bg-muted rounded-md p-0 h-8">
       <button
-        onClick={() => setTheme("day")}
+        onClick={() => setTheme("fresh-green")}
         className={`flex items-center justify-center w-8 h-8 rounded-md transition-colors ${
-          theme === "day" ? "bg-background shadow-sm" : "hover:bg-background/50"
+          theme === "fresh-green" || theme === "day" ? "bg-background shadow-sm" : "hover:bg-background/50"
         }`}
         title="日间模式"
       >
@@ -32,15 +32,6 @@ export function ThemeSwitcher() {
         title="护眼模式"
       >
         <Eye className="w-3.5 h-3.5" />
-      </button>
-      <button
-        onClick={() => setTheme("fresh-green")}
-        className={`flex items-center justify-center w-8 h-8 rounded-md transition-colors ${
-          theme === "fresh-green" ? "bg-background shadow-sm" : "hover:bg-background/50"
-        }`}
-        title="清新绿"
-      >
-        <Leaf className="w-3.5 h-3.5" />
       </button>
     </div>
   );
