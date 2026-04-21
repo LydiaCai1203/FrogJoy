@@ -2,7 +2,7 @@
 
 一款轻量级 EPUB 阅读器 Web 应用，支持文字阅读与 AI 语音朗读
 
-**在线体验：https://frogjoy.com**
+**在线体验：https://deepkb.com.cn/#/**
 
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-black?logo=github)](https://github.com/LydiaCai1203/BookReader)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)
