@@ -26,6 +26,7 @@ const HIGHLIGHT_COLOR_MAP: Record<HighlightColor, string> = {
 interface SidebarProps {
   toc: NavItem[];
   currentChapterHref: string;
+  visitedChapters?: Set<string>;
   onSelectChapter: (href: string) => void;
   onGoToHighlight?: (href: string, paragraphIndex: number, highlightId: string) => void;
   coverUrl?: string;
@@ -40,7 +41,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({
-  toc, currentChapterHref, onSelectChapter, onGoToHighlight, coverUrl, title,
+  toc, currentChapterHref, visitedChapters, onSelectChapter, onGoToHighlight, coverUrl, title,
   bookId, selectedVoice = "zh-CN-XiaoxiaoNeural", speed = 1.0,
   onCollapse, collapsible = false, onClose, closable = false
 }: SidebarProps) {
@@ -122,17 +123,25 @@ export function Sidebar({
     const isActive = currentChapterHref.includes('#')
       ? currentChapterHref === item.href
       : currentBase === itemBase;
+    const isVisited = !isActive && visitedChapters?.has(itemBase);
     return (
       <div key={item.id} className="w-full">
         <button
           onClick={() => onSelectChapter(item.href)}
           className={cn(
             "w-full text-left px-3 py-2 text-sm font-mono transition-colors border-l-2 hover:bg-primary/5 hover:text-primary",
-            isActive ? "border-primary text-primary bg-primary/10" : "border-transparent text-muted-foreground"
+            isActive
+              ? "border-primary text-primary bg-primary/10"
+              : isVisited
+                ? "border-transparent text-foreground/70"
+                : "border-transparent text-muted-foreground"
           )}
           style={{ paddingLeft: `${(depth + 1) * 12}px` }}
         >
-          <span className="line-clamp-1">{item.label}</span>
+          <span className="flex items-center gap-1.5">
+            {isVisited && <span className="w-1.5 h-1.5 rounded-full bg-primary/50 shrink-0" />}
+            <span className="line-clamp-1">{item.label}</span>
+          </span>
         </button>
         {item.subitems?.map(sub => renderItem(sub, depth + 1))}
       </div>

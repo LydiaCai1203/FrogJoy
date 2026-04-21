@@ -97,6 +97,18 @@ export function Reader({
   const setContentMode = (nextContentMode: ContentMode) => {
     onUnifiedModeChange?.(`${interactionMode}-${nextContentMode}` as UnifiedMode);
   };
+  // Page-flip animation on chapter change
+  const [pageFlip, setPageFlip] = useState<"flip" | null>(null);
+  const prevChapterRef = useRef(chapterHref);
+  useEffect(() => {
+    if (prevChapterRef.current && chapterHref && prevChapterRef.current !== chapterHref) {
+      setPageFlip("flip");
+      const timer = setTimeout(() => setPageFlip(null), 1000);
+      return () => clearTimeout(timer);
+    }
+    prevChapterRef.current = chapterHref;
+  }, [chapterHref]);
+
   const activeRef = useRef<HTMLDivElement>(null);
   const activeWordRef = useRef<HTMLSpanElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -662,8 +674,8 @@ export function Reader({
       )}
 
 
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <ScrollArea className="h-full w-full px-4 md:px-12 py-8" ref={scrollRef}>
+      <div className="flex-1 min-h-0 overflow-hidden" style={{ perspective: "1200px" }}>
+        <ScrollArea className={cn("h-full w-full px-4 md:px-12 py-8", pageFlip === "flip" && "page-flip-enter")} ref={scrollRef}>
           {shouldRenderHtmlReadMode ? (
             <div
               ref={readModeRef}

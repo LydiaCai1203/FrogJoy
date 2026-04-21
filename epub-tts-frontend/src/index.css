@@ -192,44 +192,45 @@
   }
 }
 
-/* Paper texture - visible fiber grain pattern on all themes */
-body {
-  background-image:
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      oklch(0.5 0 0 / 3%) 2px,
-      transparent 3px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      transparent,
-      transparent 4px,
-      oklch(0.5 0 0 / 2%) 4px,
-      transparent 5px
-    );
+/* Paper texture background - mulberry paper */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: url("/paper-texture.png");
+  background-repeat: repeat;
+  opacity: 0.15;
 }
 
-/* Night mode: invert to light fiber on dark bg */
-[data-theme="night"] body {
-  background-image:
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      oklch(1 0 0 / 2.5%) 2px,
-      transparent 3px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      transparent,
-      transparent 4px,
-      oklch(1 0 0 / 1.5%) 4px,
-      transparent 5px
-    );
+/* Night mode: dim the texture further */
+[data-theme="night"] body::after {
+  opacity: 0.06;
+  mix-blend-mode: overlay;
 }
 
+
+/* Page flip animation for chapter switching */
+@keyframes page-flip-enter {
+  0% {
+    transform: rotateY(-12deg) translateX(40px);
+    opacity: 0;
+    transform-origin: left center;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: rotateY(0deg) translateX(0);
+    opacity: 1;
+    transform-origin: left center;
+  }
+}
+
+.page-flip-enter {
+  animation: page-flip-enter 1s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
 
 /* Custom reading font - applied to reading content */
 /* Chinese: YouYuan (幼圆) takes priority, fallback to serif fonts */

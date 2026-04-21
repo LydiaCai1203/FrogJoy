@@ -46,6 +46,15 @@ export default function BookReader() {
   const [cover, setCover] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   
+  // Visited chapters tracking
+  const [visitedChapters, setVisitedChapters] = useState<Set<string>>(() => {
+    if (!bookId) return new Set();
+    try {
+      const stored = localStorage.getItem(`visited-chapters-${bookId}`);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
+
   // Reader State
   const [currentChapterHref, setCurrentChapterHref] = useState<string | null>(null);
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
@@ -645,6 +654,14 @@ export default function BookReader() {
   useEffect(() => {
     if (!currentChapterHref) return;
 
+    // Mark chapter as visited
+    setVisitedChapters(prev => {
+      const next = new Set(prev);
+      next.add(currentChapterHref.split('#')[0]);
+      if (bookId) localStorage.setItem(`visited-chapters-${bookId}`, JSON.stringify([...next]));
+      return next;
+    });
+
     ttsService.stop();
     (ttsService as TTSService).clearPreload();
     currentChapterHrefRef.current = currentChapterHref;
@@ -746,6 +763,7 @@ export default function BookReader() {
       bookId={bookId}
       selectedVoice={voice || undefined}
       speed={speed}
+      visitedChapters={visitedChapters}
       collapsible={true}
       onCollapse={() => setSidebarCollapsed(true)}
     />

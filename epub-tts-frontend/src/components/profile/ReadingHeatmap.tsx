@@ -83,11 +83,11 @@ export function ReadingHeatmap({ data }: Props) {
   return (
     <div className="relative overflow-x-auto">
       {/* Month labels */}
-      <div className="flex mb-1" style={{ paddingLeft: "24px" }}>
+      <div className="flex mb-1.5" style={{ paddingLeft: "32px" }}>
         {weeks.map((_, colIdx) => {
           const label = monthLabels.find((m) => m.colIndex === colIdx);
           return (
-            <div key={colIdx} className="w-3 shrink-0 mr-[2px] text-[9px] text-muted-foreground">
+            <div key={colIdx} className="w-[14px] shrink-0 mr-[3px] text-xs text-muted-foreground">
               {label ? label.label : ""}
             </div>
           );
@@ -96,22 +96,22 @@ export function ReadingHeatmap({ data }: Props) {
 
       <div className="flex gap-0">
         {/* Day labels */}
-        <div className="flex flex-col mr-1">
+        <div className="flex flex-col mr-1.5">
           {[0, 1, 2, 3, 4, 5, 6].map((row) => (
-            <div key={row} className="h-3 mb-[2px] w-5 text-[9px] text-muted-foreground leading-3">
+            <div key={row} className="h-[14px] mb-[3px] w-7 text-xs text-muted-foreground leading-[14px]">
               {row === 1 ? "一" : row === 3 ? "三" : row === 5 ? "五" : ""}
             </div>
           ))}
         </div>
 
         {/* Grid */}
-        <div className="flex gap-[2px]">
+        <div className="flex gap-[3px]">
           {weeks.map((week, colIdx) => (
-            <div key={colIdx} className="flex flex-col gap-[2px]">
+            <div key={colIdx} className="flex flex-col gap-[3px]">
               {week.map((cell, rowIdx) => (
                 <div
                   key={rowIdx}
-                  className={`w-3 h-3 rounded-sm cursor-pointer transition-opacity hover:opacity-80 ${
+                  className={`w-[14px] h-[14px] rounded-sm cursor-pointer transition-opacity hover:opacity-80 ${
                     cell.isCurrentMonth ? getColorClass(cell.seconds) : "bg-transparent"
                   }`}
                   onMouseEnter={(e) => {
