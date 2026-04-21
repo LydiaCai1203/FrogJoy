@@ -2,9 +2,10 @@
 概念提取 Service —— Book Language Server 的概念层
 
 三阶段流水线:
-  Phase 1: 全书逐章概念扫描 (LLM)
-  Phase 2: 跨章去重合并 (文本匹配 + embedding 相似度)
-  Phase 3: 全书段落 occurrence 标注 (LLM)
+  Phase 0: 书籍分析 — 自动判断书的类型, 生成定制化抽取策略 (1 次 LLM)
+  Phase 1: 全书逐章概念扫描 — 提取概念 + initial_definition (逐章 LLM)
+  Phase 2: 跨章去重合并 (文本匹配 + embedding, 纯算法)
+  Phase 3: 关键词匹配 — 找概念在全书中的出现位置 (纯算法, 零 LLM)
 
 设计文档:
   - docs/concept-extraction-and-hover-design.md
@@ -13,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import re
 from uuid import uuid4
 
 import anthropic
@@ -33,7 +35,7 @@ class ConceptService:
 
     @classmethod
     def build_concepts(cls, book_id: str, user_id: str, rebuild: bool = False):
-        """全流程: Phase 1 → 2 → 3"""
+        """全流程: Phase 0 → 1 → 2 → 3"""
         status = IndexService.get_status(book_id, user_id)
         if not status or status["status"] != "parsed":
             raise ValueError("Index not ready, build index first")
@@ -48,15 +50,22 @@ class ConceptService:
 
         cls._set_status(book_id, user_id, "extracting")
         try:
-            raw_concepts = cls._phase1_extract(book_id, user_id)
+            # Phase 0: 分析书籍类型
+            strategy = cls._phase0_analyze(book_id, user_id)
+            logger.info(f"Phase 0 done: type={strategy.get('book_type')}")
+
+            # Phase 1: 逐章概念扫描 (含 initial_definition)
+            raw_concepts = cls._phase1_extract(book_id, user_id, strategy)
             logger.info(f"Phase 1 done: {len(raw_concepts)} raw concepts")
 
-            concepts = cls._phase2_deduplicate(raw_concepts)
+            # Phase 2: 去重合并
+            concepts = cls._phase2_deduplicate(raw_concepts, strategy)
             logger.info(f"Phase 2 done: {len(concepts)} merged concepts")
 
             cls._save_concepts(book_id, user_id, concepts)
 
-            occurrences = cls._phase3_annotate(book_id, user_id, concepts)
+            # Phase 3: 关键词匹配出现位置 (纯算法)
+            occurrences = cls._phase3_keyword_match(book_id, user_id)
             logger.info(f"Phase 3 done: {len(occurrences)} occurrences")
 
             cls._save_occurrences(book_id, user_id, occurrences)
@@ -69,11 +78,99 @@ class ConceptService:
             raise
 
     # ===================================================================
-    # Phase 1: 逐章概念扫描
+    # Phase 0: 书籍分析
     # ===================================================================
 
     @classmethod
-    def _phase1_extract(cls, book_id: str, user_id: str) -> list[dict]:
+    def _phase0_analyze(cls, book_id: str, user_id: str) -> dict:
+        chapters = IndexService.get_chapters(book_id, user_id)
+        toc = cls._build_toc(chapters)
+
+        # 采样前两个有内容的章节
+        sample_texts = []
+        for chapter in chapters:
+            if len(sample_texts) >= 2:
+                break
+            paragraphs = IndexService.get_paragraphs(
+                book_id, user_id, chapter_idx=chapter["chapter_idx"]
+            )
+            if len(paragraphs) < 3:
+                continue
+            sample = "\n".join(p["text"] for p in paragraphs[:10])
+            sample_texts.append(f"### {chapter['chapter_title']}\n{sample}")
+
+        samples = "\n\n".join(sample_texts)
+
+        prompt = f"""你是一个书籍分析专家。请根据以下信息分析这本书的类型和特点, 并生成概念抽取策略。
+
+## 全书目录
+
+{toc}
+
+## 前两章采样
+
+{samples}
+
+## 任务
+
+分析这本书, 输出严格 JSON:
+
+{{
+  "book_type": "书的类型 (如: 学术专著, 社科非虚构, 文学小说, 历史传记, 经济金融, 心理自助, 科普, 哲学 等)",
+  "book_summary": "一句话概括这本书的内容和特点",
+  "categories": ["适合这本书的概念分类列表, 3-6 个"],
+  "extract_guidelines": "针对这本书, 什么样的内容应该被抽取为核心概念 (3-5 条具体规则)",
+  "do_not_extract": "什么不应该抽取 (3-5 条具体规则)",
+  "quantity_hint": "每 10 段大约抽取几个概念合适 (数字)"
+}}
+
+## 要求
+
+- categories 要贴合这本书的内容
+- extract_guidelines 要具体, 不要泛泛而谈
+- 用中文回答
+
+---
+
+直接输出 JSON。"""
+
+        try:
+            result = cls._call_llm(
+                system="你是一个书籍分析专家。",
+                prompt=prompt,
+                max_tokens=2000,
+            )
+            logger.info(f"Phase 0 strategy: {json.dumps(result, ensure_ascii=False)[:200]}")
+            return result
+        except Exception as e:
+            logger.warning(f"Phase 0 failed, using default strategy: {e}")
+            return cls._default_strategy()
+
+    @classmethod
+    def _default_strategy(cls) -> dict:
+        return {
+            "book_type": "非虚构",
+            "book_summary": "",
+            "categories": ["term", "term_custom", "person", "work", "theory"],
+            "extract_guidelines": (
+                "1. 作者特意定义、反复使用、有专门含义的术语\n"
+                "2. 被作者引用其观点/研究/理论的人名\n"
+                "3. 被引用的作品: 书籍、论文、理论流派"
+            ),
+            "do_not_extract": (
+                "1. 常识词 / 过于泛泛的词\n"
+                "2. 例子里偶然出现的人名\n"
+                "3. 普通描述中出现的物品/动作"
+            ),
+            "quantity_hint": 5,
+        }
+
+    # ===================================================================
+    # Phase 1: 逐章概念扫描 (含 initial_definition)
+    # ===================================================================
+
+    @classmethod
+    def _phase1_extract(cls, book_id: str, user_id: str, strategy: dict) -> list[dict]:
         chapters = IndexService.get_chapters(book_id, user_id)
         toc = cls._build_toc(chapters)
 
@@ -86,9 +183,10 @@ class ConceptService:
                 continue
 
             try:
-                result = cls._call_phase1_llm(toc, chapter, paragraphs)
+                result = cls._call_phase1_llm(toc, chapter, paragraphs, strategy)
                 for concept in result:
                     concept["source_chapter_idx"] = chapter["chapter_idx"]
+                    concept["source_chapter_title"] = chapter["chapter_title"]
                 all_concepts.extend(result)
                 logger.info(
                     f"Phase 1 ch{chapter['chapter_idx']}: "
@@ -103,33 +201,37 @@ class ConceptService:
         return all_concepts
 
     @classmethod
-    def _call_phase1_llm(cls, toc, chapter, paragraphs):
+    def _call_phase1_llm(cls, toc, chapter, paragraphs, strategy):
         paragraphs_text = "\n\n".join(
             f'[P{p["para_idx"]:02d}|{p["pid"]}]\n{p["text"]}'
             for p in paragraphs
         )
 
-        prompt = f"""你是一个精确的学术术语抽取助手, 服务于"书的索引库"(Book Language Server).
+        categories = ", ".join(strategy.get("categories", ["term", "person", "theme"]))
+        quantity = strategy.get("quantity_hint", 5)
 
-## 全书目录 (供判断概念全书重要性)
+        prompt = f"""你是一个精确的书籍概念抽取助手, 服务于"书的索引库"(Book Language Server).
+
+## 书籍信息
+
+类型: {strategy.get("book_type", "未知")}
+概述: {strategy.get("book_summary", "")}
+
+## 全书目录
 
 {toc}
 
 ## 当前章节: {chapter["chapter_title"]}
 
-## 什么是"核心概念"
+## 抽取规则
 
-必须抽取:
-1. 作者特意定义、反复使用、有专门含义的术语 (包括作者自创的)
-2. 被作者引用其观点/研究/理论的人名
-3. 被引用的作品: 书籍、论文、理论流派
+应该抽取:
+{strategy.get("extract_guidelines", "")}
 
 不要抽取:
-1. 常识词 / 过于泛泛的词
-2. 例子里偶然出现的人名
-3. 普通描述中出现的物品/动作
+{strategy.get("do_not_extract", "")}
 
-## 分类: term / term_custom / person / work / theory
+## 分类: {categories}
 
 ## 输出: 严格 JSON
 
@@ -138,14 +240,17 @@ class ConceptService:
     {{
       "term": "规范名",
       "aliases": ["别名1"],
-      "category": "term",
-      "reasoning": "一句话说明"
+      "category": "分类",
+      "initial_definition": "用作者原文中的话解释这个概念, 1-2 句, 控制在 100 字内"
     }}
   ]
 }}
 
-aliases 只收录原文出现过的变体, 不要自行翻译。
-宁少勿多, 每 10 段 ≤ 5 个。
+## 要求
+
+- aliases 只收录原文出现过的变体, 不要自行翻译
+- initial_definition 必须尽量使用作者的原话, 不要自己编
+- 宁少勿多, 每 10 段 ≤ {quantity} 个
 
 ## 章节文本
 
@@ -156,7 +261,7 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
 直接输出 JSON。"""
 
         return cls._call_llm(
-            system="你是一个精确的学术术语抽取助手。",
+            system="你是一个精确的书籍概念抽取助手。",
             prompt=prompt,
             max_tokens=4000,
         )["concepts"]
@@ -166,19 +271,17 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
     # ===================================================================
 
     @classmethod
-    def _phase2_deduplicate(cls, raw_concepts: list[dict]) -> list[dict]:
-        """
-        合并策略:
-          1. 完全同名 → 合并, aliases 取并集
-          2. 别名匹配 → A 的 term 出现在 B 的 aliases → 合并
-          3. embedding 相似度 > 0.85 → 合并
-        """
+    def _phase2_deduplicate(cls, raw_concepts: list[dict], strategy: dict = None) -> list[dict]:
         # 第一轮: 文本匹配
         merged = cls._text_merge(raw_concepts)
 
-        # 第二轮: embedding 相似度 (如果配置了 embedding)
+        # 第二轮: embedding (人物类跳过)
         if settings.embedding_api_key:
-            merged = cls._embedding_merge(merged, threshold=0.85)
+            person_categories = {"person", "character"}
+            non_person = [c for c in merged if c.get("category") not in person_categories]
+            persons = [c for c in merged if c.get("category") in person_categories]
+            non_person = cls._embedding_merge(non_person, threshold=0.85)
+            merged = non_person + persons
 
         return merged
 
@@ -212,17 +315,40 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
                 new_aliases.update(c.get("aliases", []))
                 new_aliases.discard(existing["term"])
                 existing["aliases"] = list(new_aliases)
+                # 保留最早的 definition
+                if not existing.get("initial_definition") and c.get("initial_definition"):
+                    existing["initial_definition"] = c["initial_definition"]
+                    existing["source_chapter_idx"] = c.get("source_chapter_idx")
+                    existing["source_chapter_title"] = c.get("source_chapter_title")
+                # 收集所有 definitions (用于弹窗多条解释)
+                existing.setdefault("all_definitions", [])
+                if c.get("initial_definition"):
+                    existing["all_definitions"].append({
+                        "text": c["initial_definition"],
+                        "chapter_idx": c.get("source_chapter_idx"),
+                        "chapter_title": c.get("source_chapter_title"),
+                    })
                 existing.setdefault("source_chapters", [])
                 if c.get("source_chapter_idx") not in existing["source_chapters"]:
                     existing["source_chapters"].append(c["source_chapter_idx"])
             else:
-                merged[term_lower] = {
+                entry = {
                     "term": term,
                     "aliases": c.get("aliases", []),
                     "category": c.get("category", "term"),
-                    "reasoning": c.get("reasoning", ""),
+                    "initial_definition": c.get("initial_definition", ""),
+                    "source_chapter_idx": c.get("source_chapter_idx"),
+                    "source_chapter_title": c.get("source_chapter_title"),
                     "source_chapters": [c.get("source_chapter_idx")],
+                    "all_definitions": [],
                 }
+                if c.get("initial_definition"):
+                    entry["all_definitions"].append({
+                        "text": c["initial_definition"],
+                        "chapter_idx": c.get("source_chapter_idx"),
+                        "chapter_title": c.get("source_chapter_title"),
+                    })
+                merged[term_lower] = entry
                 for alias in c.get("aliases", []):
                     alias_map[alias.strip().lower()] = term_lower
 
@@ -230,18 +356,16 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
 
     @classmethod
     def _embedding_merge(cls, concepts: list[dict], threshold: float = 0.85) -> list[dict]:
-        """用 embedding 相似度合并语义相近但文本不同的概念。"""
         if len(concepts) <= 1:
             return concepts
 
         terms = [c["term"] for c in concepts]
         embeddings = cls._get_embeddings(terms)
         if not embeddings or len(embeddings) != len(concepts):
-            logger.warning("Embedding call failed or size mismatch, skip embedding merge")
+            logger.warning("Embedding call failed, skip embedding merge")
             return concepts
 
-        # 找高相似度对
-        merged_into = {}  # idx → merged_into_idx
+        merged_into = {}
         for i in range(len(concepts)):
             if i in merged_into:
                 continue
@@ -256,7 +380,6 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
                     )
                     merged_into[j] = i
 
-        # 执行合并
         result = []
         for i, c in enumerate(concepts):
             if i in merged_into:
@@ -266,6 +389,9 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
                 new_aliases.update(c.get("aliases", []))
                 new_aliases.discard(target["term"])
                 target["aliases"] = list(new_aliases)
+                # 合并 definitions
+                target.setdefault("all_definitions", [])
+                target["all_definitions"].extend(c.get("all_definitions", []))
                 target.setdefault("source_chapters", [])
                 for ch in c.get("source_chapters", []):
                     if ch not in target["source_chapters"]:
@@ -276,99 +402,66 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
         return result
 
     # ===================================================================
-    # Phase 3: 全书段落标注
+    # Phase 3: 关键词匹配出现位置 (纯算法, 零 LLM)
     # ===================================================================
 
     @classmethod
-    def _phase3_annotate(cls, book_id, user_id, concepts):
-        chapters = IndexService.get_chapters(book_id, user_id)
-        concept_summary = cls._build_concept_summary(concepts)
-
-        all_occurrences = []
-        for chapter in chapters:
-            paragraphs = IndexService.get_paragraphs(
-                book_id, user_id, chapter_idx=chapter["chapter_idx"]
+    def _phase3_keyword_match(cls, book_id: str, user_id: str) -> list[dict]:
+        """
+        用概念的 term + aliases 做关键词匹配, 找出每个概念在全书中的出现位置。
+        纯文本匹配, 不调 LLM。
+        """
+        with get_db() as db:
+            concepts = db.query(Concept).filter_by(
+                book_id=book_id, user_id=user_id
+            ).all()
+            paragraphs = (
+                db.query(IndexedParagraph)
+                .filter_by(book_id=book_id, user_id=user_id)
+                .order_by(IndexedParagraph.chapter_idx, IndexedParagraph.para_idx_in_chapter)
+                .all()
             )
-            if not paragraphs:
+
+        # 构建匹配模式: concept_id → (term, [aliases], compiled_pattern)
+        matchers = []
+        for c in concepts:
+            keywords = [c.term]
+            if c.aliases:
+                aliases = c.aliases if isinstance(c.aliases, list) else json.loads(c.aliases)
+                keywords.extend(aliases)
+            # 按长度降序排列, 优先匹配长的
+            keywords = sorted(set(keywords), key=len, reverse=True)
+            # 构建正则: 匹配任意一个关键词 (忽略大小写)
+            escaped = [re.escape(kw) for kw in keywords if kw.strip()]
+            if not escaped:
                 continue
+            pattern = re.compile("|".join(escaped), re.IGNORECASE)
+            matchers.append({
+                "concept_id": c.id,
+                "concept_term": c.term,
+                "pattern": pattern,
+                "keywords": keywords,
+            })
 
-            try:
-                result = cls._call_phase3_llm(concept_summary, chapter, paragraphs)
-                for occ in result:
-                    occ["chapter_idx"] = chapter["chapter_idx"]
-                all_occurrences.extend(result)
-                logger.info(
-                    f"Phase 3 ch{chapter['chapter_idx']}: "
-                    f"{len(result)} occurrences"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Phase 3 failed for ch{chapter['chapter_idx']}: {e}"
-                )
-                continue
+        occurrences = []
+        for para in paragraphs:
+            text = para.text
+            for m in matchers:
+                match = m["pattern"].search(text)
+                if match:
+                    occurrences.append({
+                        "concept_id": m["concept_id"],
+                        "concept_term": m["concept_term"],
+                        "pid": para.id,
+                        "chapter_idx": para.chapter_idx,
+                        "matched_text": match.group(0),
+                    })
 
-        return all_occurrences
-
-    @classmethod
-    def _call_phase3_llm(cls, concept_summary, chapter, paragraphs):
-        paragraphs_text = "\n\n".join(
-            f'[P{p["para_idx"]:02d}|{p["pid"]}]\n{p["text"]}'
-            for p in paragraphs
+        logger.info(
+            f"Phase 3 keyword match: {len(occurrences)} occurrences "
+            f"from {len(paragraphs)} paragraphs × {len(matchers)} concepts"
         )
-
-        prompt = f"""## 已知概念列表
-
-{concept_summary}
-
-## 当前章节: {chapter["chapter_title"]}
-
-## 任务
-
-对以下每个段落:
-1. 判断该段落是否提到了上述概念（通过术语名、别名、或同义表述）
-2. 对每次出现，标注类型:
-   - `definition`: 作者在此处定义或解释这个概念
-   - `refinement`: 作者在此处深化、补充、举例说明
-   - `mention`: 顺带提及，未展开
-3. 提取 core_sentence: 如果是 definition 或 refinement, 提取作者原文中最核心的 1-2 句话（用于悬浮弹窗展示, 控制在 100 字内）
-4. 没提到任何概念的段落跳过
-
-## 输出: 严格 JSON
-
-{{
-  "occurrences": [
-    {{
-      "pid": "段落ID (用 [P##|pid] 中的 pid)",
-      "concept_term": "概念规范名",
-      "occurrence_type": "definition|refinement|mention",
-      "matched_text": "段落中匹配到概念的原文片段 (10-30字)",
-      "core_sentence": "作者解释该概念的核心句 (仅 definition/refinement, 100字内)",
-      "reasoning": "一句话说明为什么是这个类型"
-    }}
-  ]
-}}
-
-## 重要原则
-
-- 一个段落可出现多个概念, 每个单独一条
-- definition 应很少——通常一个概念全书只有 1-2 处真正在定义
-- refinement 比 definition 多但也不泛滥
-- mention 最常见
-- core_sentence 只在 definition 和 refinement 时提供, mention 留空
-
-## 段落文本
-
-{paragraphs_text}
-
----
-
-直接输出 JSON。"""
-
-        return cls._call_llm(
-            system="你是一个精确的文本分析助手，服务于书的索引库。",
-            prompt=prompt,
-            max_tokens=8000,
-        )["occurrences"]
+        return occurrences
 
     # ===================================================================
     # 存储
@@ -391,6 +484,7 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
                     term=c["term"],
                     aliases=c["aliases"],
                     category=c["category"],
+                    initial_definition=c.get("initial_definition", ""),
                 ))
             db.commit()
 
@@ -401,11 +495,6 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
                 book_id=book_id, user_id=user_id
             ).delete()
 
-            concepts = db.query(Concept).filter_by(
-                book_id=book_id, user_id=user_id
-            ).all()
-            term_to_id = {c.term: c.id for c in concepts}
-
             valid_pids = {
                 p.id for p in db.query(IndexedParagraph.id).filter_by(
                     book_id=book_id, user_id=user_id
@@ -414,28 +503,52 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
 
             skipped = 0
             for occ in occurrences:
-                concept_id = term_to_id.get(occ["concept_term"])
-                if not concept_id:
-                    skipped += 1
-                    continue
                 if occ["pid"] not in valid_pids:
-                    logger.warning(f"Invalid pid from LLM: {occ['pid']}")
                     skipped += 1
                     continue
                 db.add(ConceptOccurrence(
                     id=f"occ:{uuid4()}",
-                    concept_id=concept_id,
+                    concept_id=occ["concept_id"],
                     paragraph_id=occ["pid"],
                     user_id=user_id,
                     book_id=book_id,
                     chapter_idx=occ["chapter_idx"],
-                    occurrence_type=occ["occurrence_type"],
+                    occurrence_type="mention",  # 关键词匹配默认 mention
                     matched_text=occ.get("matched_text"),
-                    core_sentence=occ.get("core_sentence"),
-                    reasoning=occ.get("reasoning"),
+                    core_sentence=None,
+                    reasoning=None,
                 ))
             if skipped:
-                logger.warning(f"Skipped {skipped} occurrences (invalid concept/pid)")
+                logger.warning(f"Skipped {skipped} occurrences (invalid pid)")
+            db.commit()
+
+        # 标记 definition: 概念的 initial_definition 来源段落
+        cls._mark_definitions(book_id, user_id)
+
+    @classmethod
+    def _mark_definitions(cls, book_id, user_id):
+        """
+        概念首次出现的 occurrence 标记为 definition,
+        core_sentence 填入 Concept.initial_definition。
+        """
+        with get_db() as db:
+            concepts = db.query(Concept).filter_by(
+                book_id=book_id, user_id=user_id
+            ).all()
+
+            for c in concepts:
+                if not c.initial_definition:
+                    continue
+                first_occ = (
+                    db.query(ConceptOccurrence)
+                    .filter_by(concept_id=c.id)
+                    .order_by(ConceptOccurrence.chapter_idx)
+                    .first()
+                )
+                if first_occ:
+                    first_occ.occurrence_type = "definition"
+                    first_occ.core_sentence = c.initial_definition
+
             db.commit()
 
     @classmethod
@@ -537,12 +650,8 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
         """
         返回某章的概念角标数据 (前端渲染用)。
 
-        逻辑:
-          1. 查该章所有 occurrences
-          2. 按 concept 分组, 每个取首次出现段落
-          3. 弹窗内容: 只取 chapter_idx <= 当前章 的 definition/refinement
-          4. badge 按首次出现顺序编号
-          5. 只返回有 definition/refinement 的概念
+        弹窗内容来自 Phase 1 的 initial_definition (存在 Concept 表)。
+        只展示 chapter_idx <= 当前章 的概念 (防剧透)。
         """
         with get_db() as db:
             # 该章所有 occurrences
@@ -567,34 +676,20 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
                         para.para_idx_in_chapter if para else 999
                     )
 
-            # 全书中有 definition/refinement 的概念 (截止到当前章)
-            concepts_with_explanation = set()
-            def_ref_occs = (
-                db.query(ConceptOccurrence)
-                .filter(
-                    ConceptOccurrence.book_id == book_id,
-                    ConceptOccurrence.user_id == user_id,
-                    ConceptOccurrence.chapter_idx <= chapter_idx,
-                    ConceptOccurrence.occurrence_type.in_(
-                        ["definition", "refinement"]
-                    ),
-                )
-                .all()
-            )
-            for occ in def_ref_occs:
-                concepts_with_explanation.add(occ.concept_id)
+            # 只标注有 initial_definition 的概念 (有内容可弹窗的才值得标角标)
+            concepts_with_def = set()
+            for cid in concept_first_para:
+                c = db.query(Concept).filter_by(id=cid).first()
+                if c and c.initial_definition:
+                    concepts_with_def.add(cid)
 
-            # 过滤: 该章出现过 + 有 definition/refinement
-            valid_concepts = {
-                cid for cid in concept_first_para
-                if cid in concepts_with_explanation
-            }
-            if not valid_concepts:
+            if not concepts_with_def:
                 return []
 
             # 按首次出现顺序编号
             sorted_concepts = sorted(
-                valid_concepts, key=lambda cid: concept_first_para[cid]
+                concepts_with_def,
+                key=lambda cid: concept_first_para[cid]
             )
 
             annotations = []
@@ -602,22 +697,6 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
                 c = db.query(Concept).filter_by(id=concept_id).first()
                 if not c:
                     continue
-
-                # 弹窗: chapter_idx <= 当前章 的 def/ref, 最多 2 条
-                explanations = (
-                    db.query(ConceptOccurrence)
-                    .filter(
-                        ConceptOccurrence.concept_id == concept_id,
-                        ConceptOccurrence.chapter_idx <= chapter_idx,
-                        ConceptOccurrence.occurrence_type.in_(
-                            ["definition", "refinement"]
-                        ),
-                        ConceptOccurrence.core_sentence.isnot(None),
-                    )
-                    .order_by(ConceptOccurrence.chapter_idx)
-                    .limit(2)
-                    .all()
-                )
 
                 # 首次出现的 pid
                 first_occ = min(
@@ -632,14 +711,7 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
                     "first_pid_in_chapter": first_occ.paragraph_id,
                     "popover": {
                         "term": c.term,
-                        "explanations": [
-                            {
-                                "core_sentence": e.core_sentence,
-                                "chapter_idx": e.chapter_idx,
-                                "pid": e.paragraph_id,
-                            }
-                            for e in explanations
-                        ],
+                        "initial_definition": c.initial_definition,
                     },
                 })
 
@@ -702,10 +774,8 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
 
     @classmethod
     def _get_embeddings(cls, texts: list[str]) -> list[list[float]] | None:
-        """批量获取文本的 embedding 向量。"""
         if not settings.embedding_api_key:
             return None
-
         try:
             results = []
             for text in texts:
@@ -715,15 +785,11 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
                         "Authorization": f"Bearer {settings.embedding_api_key}",
                         "Content-Type": "application/json",
                     },
-                    json={
-                        "model": settings.embedding_model,
-                        "input": text,
-                    },
+                    json={"model": settings.embedding_model, "input": text},
                     timeout=30,
                 )
                 resp.raise_for_status()
-                data = resp.json()
-                results.append(data["data"][0]["embedding"])
+                results.append(resp.json()["data"][0]["embedding"])
             return results
         except Exception as e:
             logger.warning(f"Embedding API error: {e}")
@@ -745,17 +811,9 @@ aliases 只收录原文出现过的变体, 不要自行翻译。
     @classmethod
     def _build_toc(cls, chapters):
         return "\n".join(
-            f'{ch["chapter_idx"]}. {ch["chapter_title"]} ({ch["paragraph_count"]}段)'
+            f'{ch["chapter_idx"]}. {ch["chapter_title"]}'
             for ch in chapters
         )
-
-    @classmethod
-    def _build_concept_summary(cls, concepts):
-        lines = []
-        for c in concepts:
-            aliases = ", ".join(c["aliases"]) if c["aliases"] else "无"
-            lines.append(f'- {c["term"]} (别名: {aliases}) [{c["category"]}]')
-        return "\n".join(lines)
 
     @classmethod
     def _set_status(cls, book_id, user_id, status, error=None):

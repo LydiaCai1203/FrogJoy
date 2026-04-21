@@ -26,17 +26,36 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> str:
     token = credentials.credentials
-    user_id = AuthService.decode_token(token)
+    result = AuthService.decode_token(token)
 
-    if not user_id:
+    if not result:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    _track_active(user_id)
-    return user_id
+    _track_active(result["user_id"])
+    return result["user_id"]
+
+
+async def get_current_session(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> dict:
+    """Returns {"user_id": ..., "session_id": ...}. Use when session_id is needed."""
+    token = credentials.credentials
+    result = AuthService.decode_token(token)
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    _track_active(result["user_id"])
+    return result
+
 
 async def get_optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security)
@@ -46,7 +65,8 @@ async def get_optional_user(
 
     try:
         token = credentials.credentials
-        return AuthService.decode_token(token)
+        result = AuthService.decode_token(token)
+        return result["user_id"] if result else None
     except Exception:
         return None
 

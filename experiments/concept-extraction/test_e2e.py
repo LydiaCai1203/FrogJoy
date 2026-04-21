@@ -142,15 +142,12 @@ def check_chapter_annotations(concepts):
             print(f"\n  ① {ann['term']}  (badge #{ann['badge_number']})")
             print(f"    首次出现段落: {ann['first_pid_in_chapter']}")
             popover = ann.get("popover", {})
-            explanations = popover.get("explanations", [])
-            print(f"    弹窗解释数: {len(explanations)}")
-            for exp in explanations:
-                sentence = exp.get("core_sentence", "")
-                if sentence:
-                    # 截取前 80 字展示
-                    display = sentence[:80] + ("..." if len(sentence) > 80 else "")
-                    print(f"    「{display}」")
-                    print(f"      —— ch{exp['chapter_idx']}")
+            definition = popover.get("initial_definition", "")
+            if definition:
+                display = definition[:80] + ("..." if len(definition) > 80 else "")
+                print(f"    弹窗: 「{display}」")
+            else:
+                print(f"    弹窗: (无定义)")
 
 
 def check_concept_detail(concepts):

@@ -58,3 +58,28 @@ class VerifyRequest(BaseModel):
 
 class ResendRequest(BaseModel):
     email: EmailStr
+
+
+class TokenPair(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+    device_name: Optional[str] = None
+    device_type: Optional[str] = "web"
+
+
+class DeviceInfo(BaseModel):
+    session_id: str
+    device_name: str
+    device_type: str
+    last_active: str
+    is_current: bool = False

@@ -18,6 +18,7 @@ class Concept(Base):
     term        = Column(String, nullable=False)                            # 规范名
     aliases     = Column(JSON, nullable=False, server_default="[]")         # 别名列表
     category    = Column(String, nullable=False)                            # term/term_custom/person/work/theory
+    initial_definition = Column(Text, nullable=True)                        # 作者原文解释 (弹窗展示)
 
     # 频次统计 (Phase 3 后回填)
     total_occurrences = Column(Integer, nullable=False, server_default="0")

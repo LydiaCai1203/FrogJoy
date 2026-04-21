@@ -28,6 +28,7 @@ def upgrade() -> None:
         sa.Column("term", sa.String(), nullable=False),
         sa.Column("aliases", sa.JSON(), nullable=False, server_default="[]"),
         sa.Column("category", sa.String(), nullable=False),
+        sa.Column("initial_definition", sa.Text(), nullable=True),
         sa.Column("total_occurrences", sa.Integer(), nullable=False,
                   server_default="0"),
         sa.Column("chapter_count", sa.Integer(), nullable=False,

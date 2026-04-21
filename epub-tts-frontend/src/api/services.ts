@@ -5,22 +5,80 @@ import type { IBookService, ITTSService, TTSOptions, TTSResponse, ChapterContent
 import { API_BASE, API_URL } from "@/config";
 
 function getEffectiveToken(): string | null {
-  return localStorage.getItem("auth_token") || localStorage.getItem("guest_token");
+  return localStorage.getItem("auth_access_token") || localStorage.getItem("guest_access_token");
+}
+
+// Refresh deduplication
+let refreshPromise: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    // Try auth refresh first, then guest
+    const authRefresh = localStorage.getItem("auth_refresh_token");
+    const guestRefresh = localStorage.getItem("guest_refresh_token");
+    const refreshToken = authRefresh || guestRefresh;
+    const prefix = authRefresh ? "auth" : "guest";
+
+    if (!refreshToken) return null;
+
+    try {
+      const res = await fetch(`${API_URL}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+
+      if (!res.ok) {
+        localStorage.removeItem(`${prefix}_access_token`);
+        localStorage.removeItem(`${prefix}_refresh_token`);
+        return null;
+      }
+
+      const data = await res.json();
+      localStorage.setItem(`${prefix}_access_token`, data.access_token);
+      localStorage.setItem(`${prefix}_refresh_token`, data.refresh_token);
+      return data.access_token as string;
+    } catch {
+      localStorage.removeItem(`${prefix}_access_token`);
+      localStorage.removeItem(`${prefix}_refresh_token`);
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = getEffectiveToken();
+  const headers = new Headers(options.headers);
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(url, { ...options, headers });
+
+  if (response.status === 401) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      headers.set("Authorization", `Bearer ${newToken}`);
+      return fetch(url, { ...options, headers });
+    }
+  }
+
+  return response;
 }
 
 export class BookService implements IBookService {
-  private getAuthHeaders(): HeadersInit {
-    const token = getEffectiveToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }
-
   async uploadBook(file: File): Promise<{ bookId: string; metadata: BookMetadata; toc: NavItem[]; coverUrl?: string }> {
     const formData = new FormData();
     formData.append("file", file);
 
-    const response = await fetch(`${API_URL}/books`, {
+    const response = await fetchWithAuth(`${API_URL}/books`, {
       method: "POST",
-      headers: this.getAuthHeaders(),
       body: formData,
     });
 
@@ -38,9 +96,8 @@ export class BookService implements IBookService {
   }
 
   async getChapter(bookId: string, href: string): Promise<ChapterContent> {
-    const response = await fetch(
-      `${API_URL}/books/${bookId}/chapters?href=${encodeURIComponent(href)}`,
-      { headers: this.getAuthHeaders() }
+    const response = await fetchWithAuth(
+      `${API_URL}/books/${bookId}/chapters?href=${encodeURIComponent(href)}`
     );
 
     if (!response.ok) {
@@ -61,12 +118,6 @@ export class TTSService implements ITTSService {
   // 复用同一个 Audio 元素，避免移动端浏览器阻止新建 Audio
   private audio: HTMLAudioElement;
 
-  private getAuthHeaders(): HeadersInit {
-    const token = getEffectiveToken();
-    return token
-      ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
-      : { "Content-Type": "application/json" };
-  }
   private currentResolve: (() => void) | null = null;
   private currentReject: ((e: Error) => void) | null = null;
   private timeUpdateCallback: ((time: number) => void) | null = null;
@@ -169,9 +220,9 @@ export class TTSService implements ITTSService {
 
     this.preloadInFlight.add(key);
     try {
-      const response = await fetch(`${API_URL}/tts/speak`, {
+      const response = await fetchWithAuth(`${API_URL}/tts/speak`, {
         method: "POST",
-        headers: this.getAuthHeaders(),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text,
           voice: options?.voice || "en-US-ChristopherNeural",
@@ -231,9 +282,9 @@ export class TTSService implements ITTSService {
       this.preloadCache.delete(key!);
     } else {
       // No preload hit — fetch from backend
-      const response = await fetch(`${API_URL}/tts/speak`, {
+      const response = await fetchWithAuth(`${API_URL}/tts/speak`, {
         method: "POST",
-        headers: this.getAuthHeaders(),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text,
           voice: options?.voice || "en-US-ChristopherNeural",
@@ -292,7 +343,7 @@ export class TTSService implements ITTSService {
     this.currentResolve = null;
     this.currentReject = null;
     this._currentWordTimestamps = [];
-    
+
     // 暂停当前播放
     if (!this.audio.paused) {
       this.audio.pause();
@@ -307,35 +358,26 @@ export class TTSService implements ITTSService {
 }
 
 export class HighlightService {
-  private getAuthHeaders(): HeadersInit {
-    const token = getEffectiveToken();
-    return token
-      ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
-      : { "Content-Type": "application/json" };
-  }
-
   async listByChapter(bookId: string, chapterHref: string): Promise<Highlight[]> {
-    const response = await fetch(
-      `${API_URL}/highlights?book_id=${encodeURIComponent(bookId)}&chapter_href=${encodeURIComponent(chapterHref)}`,
-      { headers: this.getAuthHeaders() }
+    const response = await fetchWithAuth(
+      `${API_URL}/highlights?book_id=${encodeURIComponent(bookId)}&chapter_href=${encodeURIComponent(chapterHref)}`
     );
     if (!response.ok) throw new Error("Failed to load highlights");
     return response.json();
   }
 
   async listByBook(bookId: string): Promise<Highlight[]> {
-    const response = await fetch(
-      `${API_URL}/highlights?book_id=${encodeURIComponent(bookId)}`,
-      { headers: this.getAuthHeaders() }
+    const response = await fetchWithAuth(
+      `${API_URL}/highlights?book_id=${encodeURIComponent(bookId)}`
     );
     if (!response.ok) throw new Error("Failed to load highlights");
     return response.json();
   }
 
   async create(req: CreateHighlightRequest): Promise<Highlight> {
-    const response = await fetch(`${API_URL}/highlights`, {
+    const response = await fetchWithAuth(`${API_URL}/highlights`, {
       method: "POST",
-      headers: this.getAuthHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),
     });
     if (!response.ok) throw new Error("Failed to create highlight");
@@ -343,9 +385,9 @@ export class HighlightService {
   }
 
   async update(id: string, data: { color?: string; note?: string }): Promise<Highlight> {
-    const response = await fetch(`${API_URL}/highlights/${id}`, {
+    const response = await fetchWithAuth(`${API_URL}/highlights/${id}`, {
       method: "PUT",
-      headers: this.getAuthHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
     if (!response.ok) throw new Error("Failed to update highlight");
@@ -353,17 +395,15 @@ export class HighlightService {
   }
 
   async delete(id: string): Promise<void> {
-    const response = await fetch(`${API_URL}/highlights/${id}`, {
+    const response = await fetchWithAuth(`${API_URL}/highlights/${id}`, {
       method: "DELETE",
-      headers: this.getAuthHeaders(),
     });
     if (!response.ok) throw new Error("Failed to delete highlight");
   }
 
   async search(bookId: string, query: string): Promise<Highlight[]> {
-    const response = await fetch(
-      `${API_URL}/highlights/search?book_id=${encodeURIComponent(bookId)}&q=${encodeURIComponent(query)}`,
-      { headers: this.getAuthHeaders() }
+    const response = await fetchWithAuth(
+      `${API_URL}/highlights/search?book_id=${encodeURIComponent(bookId)}&q=${encodeURIComponent(query)}`
     );
     if (!response.ok) throw new Error("Failed to search highlights");
     return response.json();
@@ -373,42 +413,29 @@ export class HighlightService {
 export const highlightService = new HighlightService();
 
 export class ReadingStatsService {
-  private getAuthHeaders(): HeadersInit {
-    const token = getEffectiveToken();
-    return token
-      ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
-      : { "Content-Type": "application/json" };
-  }
-
   async heartbeat(bookId: string, seconds: number): Promise<void> {
-    const response = await fetch(`${API_URL}/reading/stats/heartbeat`, {
+    const response = await fetchWithAuth(`${API_URL}/reading/stats/heartbeat`, {
       method: "POST",
-      headers: this.getAuthHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ book_id: bookId, seconds }),
     });
     if (!response.ok) throw new Error("Failed to record heartbeat");
   }
 
   async getHeatmap(year: number): Promise<ReadingHeatmapEntry[]> {
-    const response = await fetch(`${API_URL}/reading/stats/heatmap?year=${year}`, {
-      headers: this.getAuthHeaders(),
-    });
+    const response = await fetchWithAuth(`${API_URL}/reading/stats/heatmap?year=${year}`);
     if (!response.ok) throw new Error("Failed to load heatmap");
     return response.json();
   }
 
   async getBookStats(): Promise<BookReadingStats[]> {
-    const response = await fetch(`${API_URL}/reading/stats/books`, {
-      headers: this.getAuthHeaders(),
-    });
+    const response = await fetchWithAuth(`${API_URL}/reading/stats/books`);
     if (!response.ok) throw new Error("Failed to load book stats");
     return response.json();
   }
 
   async getSummary(): Promise<ReadingSummary> {
-    const response = await fetch(`${API_URL}/reading/stats/summary`, {
-      headers: this.getAuthHeaders(),
-    });
+    const response = await fetchWithAuth(`${API_URL}/reading/stats/summary`);
     if (!response.ok) throw new Error("Failed to load summary");
     return response.json();
   }
@@ -417,26 +444,17 @@ export class ReadingStatsService {
 export const readingStatsService = new ReadingStatsService();
 
 export class ReadingProgressService {
-  private getAuthHeaders(): HeadersInit {
-    const token = getEffectiveToken();
-    return token
-      ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
-      : { "Content-Type": "application/json" };
-  }
-
   async get(bookId: string): Promise<ReadingProgress | null> {
-    const response = await fetch(`${API_URL}/reading/progress/${bookId}`, {
-      headers: this.getAuthHeaders(),
-    });
+    const response = await fetchWithAuth(`${API_URL}/reading/progress/${bookId}`);
     if (response.status === 404) return null;
     if (!response.ok) throw new Error("Failed to load progress");
     return response.json();
   }
 
   async save(bookId: string, chapterHref: string, paragraphIndex: number): Promise<void> {
-    const response = await fetch(`${API_URL}/reading/progress/${bookId}`, {
+    const response = await fetchWithAuth(`${API_URL}/reading/progress/${bookId}`, {
       method: "PUT",
-      headers: this.getAuthHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chapter_href: chapterHref, paragraph_index: paragraphIndex }),
     });
     if (!response.ok) throw new Error("Failed to save progress");
@@ -450,23 +468,16 @@ export const readingProgressService = new ReadingProgressService();
 import type { AIModelConfig, UserAIPreferences, ChatMessage, ModelOption, ChapterTranslation } from "@/lib/ai/types";
 
 export class AIService {
-  private getAuthHeaders(): HeadersInit {
-    const token = getEffectiveToken();
-    return token
-      ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
-      : { "Content-Type": "application/json" };
-  }
-
   async getConfig(): Promise<AIModelConfig> {
-    const res = await fetch(`${API_URL}/ai/config`, { headers: this.getAuthHeaders() });
+    const res = await fetchWithAuth(`${API_URL}/ai/config`);
     if (!res.ok) throw new Error("Failed to fetch AI config");
     return res.json();
   }
 
   async saveConfig(config: AIModelConfig): Promise<AIModelConfig> {
-    const res = await fetch(`${API_URL}/ai/config`, {
+    const res = await fetchWithAuth(`${API_URL}/ai/config`, {
       method: "PUT",
-      headers: this.getAuthHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config),
     });
     if (!res.ok) throw new Error("Failed to save AI config");
@@ -474,15 +485,15 @@ export class AIService {
   }
 
   async getPreferences(): Promise<UserAIPreferences> {
-    const res = await fetch(`${API_URL}/ai/preferences`, { headers: this.getAuthHeaders() });
+    const res = await fetchWithAuth(`${API_URL}/ai/preferences`);
     if (!res.ok) throw new Error("Failed to fetch AI preferences");
     return res.json();
   }
 
   async savePreferences(prefs: UserAIPreferences): Promise<UserAIPreferences> {
-    const res = await fetch(`${API_URL}/ai/preferences`, {
+    const res = await fetchWithAuth(`${API_URL}/ai/preferences`, {
       method: "PUT",
-      headers: this.getAuthHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(prefs),
     });
     if (!res.ok) throw new Error("Failed to save AI preferences");
@@ -493,9 +504,7 @@ export class AIService {
     const params = new URLSearchParams({ provider_type: providerType });
     if (baseUrl) params.set("base_url", baseUrl);
     if (apiKey) params.set("api_key", apiKey);
-    const res = await fetch(`${API_URL}/ai/models?${params}`, {
-      headers: this.getAuthHeaders(),
-    });
+    const res = await fetchWithAuth(`${API_URL}/ai/models?${params}`);
     if (!res.ok) throw new Error("Failed to fetch model list");
     return res.json();
   }
@@ -507,9 +516,9 @@ export class AIService {
     chapterTitle?: string,
     signal?: AbortSignal,
   ): AsyncGenerator<string, void, unknown> {
-    const res = await fetch(`${API_URL}/ai/chat`, {
+    const res = await fetchWithAuth(`${API_URL}/ai/chat`, {
       method: "POST",
-      headers: this.getAuthHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages, book_id: bookId, chapter_href: chapterHref, chapter_title: chapterTitle }),
       signal,
     });
@@ -546,9 +555,9 @@ export class AIService {
   }
 
   async detectLanguage(text: string): Promise<string> {
-    const res = await fetch(`${API_URL}/ai/chat`, {
+    const res = await fetchWithAuth(`${API_URL}/ai/chat`, {
       method: "POST",
-      headers: this.getAuthHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         messages: [
           {
@@ -591,9 +600,9 @@ export class AIService {
     sentences: string[],
     targetLang = "Chinese",
   ): AsyncGenerator<{ progress: number; sentences: string[]; partialSentence?: string; index?: number; total?: number; done: boolean }> {
-    const res = await fetch(`${API_URL}/ai/translate/chapter`, {
+    const res = await fetchWithAuth(`${API_URL}/ai/translate/chapter`, {
       method: "POST",
-      headers: this.getAuthHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ book_id: bookId, chapter_href: chapterHref, sentences, target_lang: targetLang }),
     });
     if (!res.ok) {
@@ -639,9 +648,9 @@ export class AIService {
   }
 
   async translateBook(bookId: string, mode = "whole-book"): Promise<{ task_id: string }> {
-    const res = await fetch(`${API_URL}/ai/translate/book`, {
+    const res = await fetchWithAuth(`${API_URL}/ai/translate/book`, {
       method: "POST",
-      headers: this.getAuthHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ book_id: bookId, mode }),
     });
     if (!res.ok) throw new Error("Failed to start book translation");
@@ -653,9 +662,8 @@ export class AIService {
     chapterHref: string,
     targetLang = "Chinese",
   ): Promise<{ original: string; translated: string }[] | null> {
-    const res = await fetch(
-      `${API_URL}/ai/translate/${bookId}/chapter?chapter_href=${encodeURIComponent(chapterHref)}&target_lang=${encodeURIComponent(targetLang)}`,
-      { headers: this.getAuthHeaders() },
+    const res = await fetchWithAuth(
+      `${API_URL}/ai/translate/${bookId}/chapter?chapter_href=${encodeURIComponent(chapterHref)}&target_lang=${encodeURIComponent(targetLang)}`
     );
     if (res.status === 404) return null;
     if (!res.ok) return null;
@@ -665,7 +673,7 @@ export class AIService {
   }
 
   async getBookTranslations(bookId: string): Promise<ChapterTranslation[]> {
-    const res = await fetch(`${API_URL}/ai/translate/${bookId}`, { headers: this.getAuthHeaders() });
+    const res = await fetchWithAuth(`${API_URL}/ai/translate/${bookId}`);
     if (!res.ok) throw new Error("Failed to fetch translations");
     return res.json();
   }
@@ -686,34 +694,24 @@ export interface IndexStatus {
 }
 
 export class IndexService {
-  private getAuthHeaders(): HeadersInit {
-    const token = getEffectiveToken();
-    return token
-      ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
-      : { "Content-Type": "application/json" };
-  }
-
   async getStatus(bookId: string): Promise<IndexStatus> {
-    const res = await fetch(`${API_URL}/books/${bookId}/index/status`, {
-      headers: this.getAuthHeaders(),
-    });
+    const res = await fetchWithAuth(`${API_URL}/books/${bookId}/index/status`);
     if (!res.ok) throw new Error("Failed to fetch index status");
     return res.json();
   }
 
   async buildIndex(bookId: string, rebuild = false): Promise<IndexStatus> {
-    const res = await fetch(`${API_URL}/books/${bookId}/index?rebuild=${rebuild}`, {
+    const res = await fetchWithAuth(`${API_URL}/books/${bookId}/index?rebuild=${rebuild}`, {
       method: "POST",
-      headers: this.getAuthHeaders(),
+      headers: { "Content-Type": "application/json" },
     });
     if (!res.ok) throw new Error("Failed to build index");
     return res.json();
   }
 
   async deleteIndex(bookId: string): Promise<void> {
-    const res = await fetch(`${API_URL}/books/${bookId}/index`, {
+    const res = await fetchWithAuth(`${API_URL}/books/${bookId}/index`, {
       method: "DELETE",
-      headers: this.getAuthHeaders(),
     });
     if (!res.ok) throw new Error("Failed to delete index");
   }

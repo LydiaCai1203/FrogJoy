@@ -4,13 +4,14 @@ from datetime import datetime, timedelta
 from typing import Optional
 import uuid
 import base64
+import os
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-SECRET_KEY = "your-secret-key-change-in-production"  # TODO: 从环境变量读取
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "your-secret-key-change-in-production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_DAYS = 30
+ACCESS_TOKEN_EXPIRE_HOURS = 24
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -40,21 +41,26 @@ class AuthService:
         return pwd_context.verify(plain_password, hashed_password)
 
     @staticmethod
-    def create_access_token(user_id: str) -> str:
-        expire = datetime.utcnow() + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
+    def create_access_token(user_id: str, session_id: str = "") -> str:
+        expire = datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
         to_encode = {
             "sub": user_id,
-            "exp": expire
+            "sid": session_id,
+            "exp": expire,
         }
         encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
         return encoded_jwt
 
     @staticmethod
-    def decode_token(token: str) -> Optional[str]:
+    def decode_token(token: str) -> Optional[dict]:
+        """Decode JWT token. Returns {"user_id": ..., "session_id": ...} or None."""
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             user_id: str = payload.get("sub")
-            return user_id
+            session_id: str = payload.get("sid", "")
+            if not user_id:
+                return None
+            return {"user_id": user_id, "session_id": session_id}
         except JWTError:
             return None
 

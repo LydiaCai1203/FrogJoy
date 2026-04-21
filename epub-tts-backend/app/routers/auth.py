@@ -2,19 +2,39 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Depends
 from sqlalchemy.exc import IntegrityError
 from shared.schemas.auth import (
-    UserCreate, UserLogin, UserResponse, Token,
+    UserCreate, UserResponse, TokenPair,
     ThemeIn, ThemeOut, FontSizeIn, FontSizeOut,
-    VerifyRequest, ResendRequest,
+    VerifyRequest, ResendRequest, RefreshRequest, LoginRequest, DeviceInfo,
 )
 from shared.models import User, UserPreferences
 from shared.database import get_db
 from app.services.auth_service import AuthService
 from app.services.email_service import EmailService
-from app.middleware.auth import get_current_user
+from app.services import session_service
+from app.middleware.auth import get_current_user, get_current_session
 from shared.config import settings
 from app.services.system_settings import get_system_setting, get_system_setting_bool
+from app.middleware.rate_limit import is_guest_user
+from typing import List
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+MAX_DEVICES = 3
+
+
+def _create_token_pair(user_id: str, device_name: str = "Unknown", device_type: str = "web") -> dict:
+    """Create a session and return access + refresh tokens."""
+    session_id, refresh_token = session_service.create_session(
+        user_id=user_id,
+        device_name=device_name,
+        device_type=device_type,
+    )
+    access_token = AuthService.create_access_token(user_id, session_id)
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+    }
 
 
 @router.post("/register")
@@ -38,8 +58,7 @@ async def register(user_data: UserCreate):
                     else:
                         existing.is_verified = True
                         db.commit()
-                        access_token = AuthService.create_access_token(existing.id)
-                        return Token(access_token=access_token)
+                        return TokenPair(**_create_token_pair(existing.id))
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="该邮箱已注册"
@@ -62,9 +81,7 @@ async def register(user_data: UserCreate):
                 EmailService.send_verification_email(user_data.email, token)
                 return {"message": "验证邮件已发送，请查收邮箱"}
             else:
-                # No email service, activate directly
-                access_token = AuthService.create_access_token(user_id)
-                return Token(access_token=access_token)
+                return TokenPair(**_create_token_pair(user_id))
         except HTTPException:
             raise
         except IntegrityError:
@@ -94,16 +111,11 @@ async def verify_email(data: VerifyRequest):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="用户不存在"
             )
-        if user.is_verified:
-            # Already verified, just return a token
-            access_token = AuthService.create_access_token(user.id)
-            return Token(access_token=access_token)
+        if not user.is_verified:
+            user.is_verified = True
+            db.commit()
 
-        user.is_verified = True
-        db.commit()
-
-        access_token = AuthService.create_access_token(user.id)
-        return Token(access_token=access_token)
+        return TokenPair(**_create_token_pair(user.id))
 
 
 @router.post("/resend-verification")
@@ -111,7 +123,6 @@ async def resend_verification(data: ResendRequest):
     with get_db() as db:
         user = db.query(User).filter(User.email == data.email).first()
         if not user:
-            # Don't reveal whether email exists
             return {"message": "如果该邮箱已注册，验证邮件将会发送"}
         if user.is_verified:
             raise HTTPException(
@@ -123,8 +134,8 @@ async def resend_verification(data: ResendRequest):
         return {"message": "验证邮件已发送，请查收邮箱"}
 
 
-@router.post("/login", response_model=Token)
-async def login(user_data: UserLogin):
+@router.post("/login", response_model=TokenPair)
+async def login(user_data: LoginRequest):
     with get_db() as db:
         user = db.query(User).filter(User.email == user_data.email).first()
 
@@ -146,11 +157,117 @@ async def login(user_data: UserLogin):
                 detail="请先验证邮箱"
             )
 
+        # Check device limit (skip for guest)
+        if not is_guest_user(user.id):
+            current_count = session_service.count_sessions(user.id)
+            if current_count >= MAX_DEVICES:
+                devices = session_service.list_sessions(user.id)
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "message": f"已达最大设备数({MAX_DEVICES})，请先退出其他设备",
+                        "devices": [
+                            {
+                                "session_id": s["session_id"],
+                                "device_name": s.get("device_name", "Unknown"),
+                                "device_type": s.get("device_type", "web"),
+                                "last_active": s.get("last_active", ""),
+                            }
+                            for s in devices
+                        ],
+                    },
+                )
+
         user.last_login_at = datetime.utcnow()
         db.commit()
 
-        access_token = AuthService.create_access_token(user.id)
-        return Token(access_token=access_token)
+        return TokenPair(**_create_token_pair(
+            user.id,
+            device_name=user_data.device_name or "Unknown",
+            device_type=user_data.device_type or "web",
+        ))
+
+
+@router.post("/refresh", response_model=TokenPair)
+async def refresh_token(data: RefreshRequest):
+    """Refresh access token using a valid refresh token."""
+    # Refresh token format: "session_id:random_part"
+    parts = data.refresh_token.split(":", 1)
+    if len(parts) != 2:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+
+    session_id, _ = parts
+    session = session_service.validate_refresh_token(session_id, data.refresh_token)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+    # Rotate refresh token
+    new_refresh_token = session_service.generate_refresh_token(session_id)
+    session_service.rotate_refresh_token(session_id, new_refresh_token)
+
+    access_token = AuthService.create_access_token(session["user_id"], session_id)
+    return TokenPair(
+        access_token=access_token,
+        refresh_token=new_refresh_token,
+    )
+
+
+@router.post("/logout")
+async def logout(session_info: dict = Depends(get_current_session)):
+    """Logout current device — delete the session from Redis."""
+    session_service.delete_session(session_info["user_id"], session_info["session_id"])
+    return {"message": "已退出登录"}
+
+
+@router.post("/logout-all")
+async def logout_all(user_id: str = Depends(get_current_user)):
+    """Logout all devices — delete all sessions for the user."""
+    session_service.delete_all_sessions(user_id)
+    return {"message": "已退出所有设备"}
+
+
+@router.get("/devices", response_model=List[DeviceInfo])
+async def list_devices(session_info: dict = Depends(get_current_session)):
+    """List all active devices/sessions for the current user."""
+    sessions = session_service.list_sessions(session_info["user_id"])
+    return [
+        DeviceInfo(
+            session_id=s["session_id"],
+            device_name=s.get("device_name", "Unknown"),
+            device_type=s.get("device_type", "web"),
+            last_active=s.get("last_active", ""),
+            is_current=(s["session_id"] == session_info["session_id"]),
+        )
+        for s in sessions
+    ]
+
+
+@router.delete("/devices/{session_id}")
+async def remove_device(session_id: str, session_info: dict = Depends(get_current_session)):
+    """Kick a specific device. Cannot kick your own session."""
+    if session_id == session_info["session_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="不能踢出当前设备，请使用退出登录",
+        )
+
+    # Verify the session belongs to the current user
+    target_session = session_service.get_session(session_id)
+    if not target_session or target_session["user_id"] != session_info["user_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="设备不存在",
+        )
+
+    session_service.delete_session(session_info["user_id"], session_id)
+    return {"message": "设备已退出"}
+
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(user_id: str = Depends(get_current_user)):
@@ -170,6 +287,7 @@ async def get_me(user_id: str = Depends(get_current_user)):
             created_at=user.created_at.isoformat() if user.created_at else None,
         )
 
+
 @router.get("/theme", response_model=ThemeOut)
 async def get_theme(user_id: str = Depends(get_current_user)):
     with get_db() as db:
@@ -177,6 +295,7 @@ async def get_theme(user_id: str = Depends(get_current_user)):
     if not row:
         return ThemeOut(theme=get_system_setting("default_theme", "eye-care"))
     return ThemeOut(theme=row.theme)
+
 
 @router.put("/theme", response_model=ThemeOut)
 async def save_theme(theme_data: ThemeIn, user_id: str = Depends(get_current_user)):
@@ -193,6 +312,7 @@ async def save_theme(theme_data: ThemeIn, user_id: str = Depends(get_current_use
         db.commit()
     return ThemeOut(theme=theme_data.theme)
 
+
 @router.get("/font-size", response_model=FontSizeOut)
 async def get_font_size(user_id: str = Depends(get_current_user)):
     with get_db() as db:
@@ -201,6 +321,7 @@ async def get_font_size(user_id: str = Depends(get_current_user)):
         from app.services.system_settings import get_system_setting_int
         return FontSizeOut(font_size=get_system_setting_int("default_font_size", 18))
     return FontSizeOut(font_size=row.font_size)
+
 
 @router.put("/font-size", response_model=FontSizeOut)
 async def save_font_size(font_size_data: FontSizeIn, user_id: str = Depends(get_current_user)):
@@ -218,7 +339,7 @@ async def save_font_size(font_size_data: FontSizeIn, user_id: str = Depends(get_
     return FontSizeOut(font_size=font_size)
 
 
-@router.get("/guest-token")
+@router.get("/guest-token", response_model=TokenPair)
 async def get_guest_token():
     if not settings.guest_email:
         raise HTTPException(status_code=404, detail="Guest account not configured")
@@ -226,5 +347,8 @@ async def get_guest_token():
         user = db.query(User).filter(User.email == settings.guest_email).first()
         if not user:
             raise HTTPException(status_code=404, detail="Guest account not found")
-        access_token = AuthService.create_access_token(user.id)
-        return Token(access_token=access_token)
+        return TokenPair(**_create_token_pair(
+            user.id,
+            device_name="Guest",
+            device_type="web",
+        ))
