@@ -1,25 +1,20 @@
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Depends
-from pydantic import BaseModel, EmailStr
 from sqlalchemy.exc import IntegrityError
-from app.models.user import UserCreate, UserLogin, UserResponse, Token, ThemeIn, ThemeOut, FontSizeIn, FontSizeOut
-from app.models.database import get_db
-from app.models.models import User, UserThemePreferences
+from shared.schemas.auth import (
+    UserCreate, UserLogin, UserResponse, Token,
+    ThemeIn, ThemeOut, FontSizeIn, FontSizeOut,
+    VerifyRequest, ResendRequest,
+)
+from shared.models import User, UserPreferences
+from shared.database import get_db
 from app.services.auth_service import AuthService
 from app.services.email_service import EmailService
 from app.middleware.auth import get_current_user
-from app.config import settings
+from shared.config import settings
 from app.services.system_settings import get_system_setting, get_system_setting_bool
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-class VerifyRequest(BaseModel):
-    token: str
-
-
-class ResendRequest(BaseModel):
-    email: EmailStr
 
 
 @router.post("/register")
@@ -178,7 +173,7 @@ async def get_me(user_id: str = Depends(get_current_user)):
 @router.get("/theme", response_model=ThemeOut)
 async def get_theme(user_id: str = Depends(get_current_user)):
     with get_db() as db:
-        row = db.query(UserThemePreferences).filter(UserThemePreferences.user_id == user_id).first()
+        row = db.query(UserPreferences).filter(UserPreferences.user_id == user_id).first()
     if not row:
         return ThemeOut(theme=get_system_setting("default_theme", "eye-care"))
     return ThemeOut(theme=row.theme)
@@ -189,11 +184,11 @@ async def save_theme(theme_data: ThemeIn, user_id: str = Depends(get_current_use
     if theme_data.theme not in valid_themes:
         raise HTTPException(status_code=400, detail="Invalid theme")
     with get_db() as db:
-        existing = db.query(UserThemePreferences).filter(UserThemePreferences.user_id == user_id).first()
+        existing = db.query(UserPreferences).filter(UserPreferences.user_id == user_id).first()
         if existing:
             existing.theme = theme_data.theme
         else:
-            existing = UserThemePreferences(user_id=user_id, theme=theme_data.theme)
+            existing = UserPreferences(user_id=user_id, theme=theme_data.theme)
             db.add(existing)
         db.commit()
     return ThemeOut(theme=theme_data.theme)
@@ -201,7 +196,7 @@ async def save_theme(theme_data: ThemeIn, user_id: str = Depends(get_current_use
 @router.get("/font-size", response_model=FontSizeOut)
 async def get_font_size(user_id: str = Depends(get_current_user)):
     with get_db() as db:
-        row = db.query(UserThemePreferences).filter(UserThemePreferences.user_id == user_id).first()
+        row = db.query(UserPreferences).filter(UserPreferences.user_id == user_id).first()
     if not row or row.font_size is None:
         from app.services.system_settings import get_system_setting_int
         return FontSizeOut(font_size=get_system_setting_int("default_font_size", 18))
@@ -213,11 +208,11 @@ async def save_font_size(font_size_data: FontSizeIn, user_id: str = Depends(get_
     if font_size < 12 or font_size > 32:
         raise HTTPException(status_code=400, detail="Font size must be between 12 and 32")
     with get_db() as db:
-        existing = db.query(UserThemePreferences).filter(UserThemePreferences.user_id == user_id).first()
+        existing = db.query(UserPreferences).filter(UserPreferences.user_id == user_id).first()
         if existing:
             existing.font_size = font_size
         else:
-            existing = UserThemePreferences(user_id=user_id, font_size=font_size)
+            existing = UserPreferences(user_id=user_id, font_size=font_size)
             db.add(existing)
         db.commit()
     return FontSizeOut(font_size=font_size)
