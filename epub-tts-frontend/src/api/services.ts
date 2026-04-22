@@ -725,6 +725,8 @@ export interface ConceptStatus {
   concept_status: "extracting" | "enriched" | "failed" | null;
   concept_error?: string | null;
   total_concepts?: number;
+  progress?: number | null;
+  progress_text?: string | null;
 }
 
 export interface ConceptItem {

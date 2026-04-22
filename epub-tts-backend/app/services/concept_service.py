@@ -25,17 +25,25 @@ from shared.config import settings
 from shared.database import get_db
 from shared.models import IndexedBook, IndexedParagraph, Concept, ConceptOccurrence
 from app.services.index_service import IndexService
+from app.services.task_service import task_manager, TaskStatus
 
 
 class ConceptService:
+
+    # 取消信号: task_id → True 表示要取消
+    _cancel_flags: dict[str, bool] = {}
+
 
     # ===================================================================
     # Build (主入口)
     # ===================================================================
 
     @classmethod
-    def build_concepts(cls, book_id: str, user_id: str, rebuild: bool = False):
-        """全流程: Phase 0 → 1 → 2 → 3"""
+    def build_concepts(cls, book_id: str, user_id: str, rebuild: bool = False) -> str | None:
+        """
+        全流程: Phase 0 → 1 → 2 → 3
+        返回 task_id 供前端轮询进度。
+        """
         status = IndexService.get_status(book_id, user_id)
         if not status or status["status"] != "parsed":
             raise ValueError("Index not ready, build index first")
@@ -46,35 +54,67 @@ class ConceptService:
                     book_id=book_id, user_id=user_id
                 ).first()
                 if record and record.concept_status == "enriched":
-                    return
+                    return None
 
+        # 获取章节数用于进度计算
+        chapters = IndexService.get_chapters(book_id, user_id)
+        total_chapters = len(chapters)
+
+        # 创建任务
+        task_id = task_manager.create_task(
+            task_type="concept_extraction",
+            params={"book_id": book_id, "rebuild": rebuild},
+            title=f"概念提取 ({total_chapters}章)",
+            user_id=user_id,
+        )
+        task_manager.start_task(task_id)
         cls._set_status(book_id, user_id, "extracting")
+
         try:
             # Phase 0: 分析书籍类型
+            task_manager.update_progress(task_id, 2, "Phase 0: 分析书籍类型...")
             strategy = cls._phase0_analyze(book_id, user_id)
             logger.info(f"Phase 0 done: type={strategy.get('book_type')}")
+            task_manager.update_progress(task_id, 5, f"Phase 0 完成: {strategy.get('book_type')}")
 
-            # Phase 1: 逐章概念扫描 (含 initial_definition)
-            raw_concepts = cls._phase1_extract(book_id, user_id, strategy)
+            # Phase 1: 逐章概念扫描
+            raw_concepts = cls._phase1_extract(book_id, user_id, strategy, task_id, total_chapters)
             logger.info(f"Phase 1 done: {len(raw_concepts)} raw concepts")
 
             # Phase 2: 去重合并
+            task_manager.update_progress(task_id, 85, f"Phase 2: 去重合并 {len(raw_concepts)} 个概念...")
             concepts = cls._phase2_deduplicate(raw_concepts, strategy)
             logger.info(f"Phase 2 done: {len(concepts)} merged concepts")
+            task_manager.update_progress(task_id, 90, f"Phase 2 完成: {len(concepts)} 个概念")
 
             cls._save_concepts(book_id, user_id, concepts)
 
-            # Phase 3: 关键词匹配出现位置 (纯算法)
+            # Phase 3: 关键词匹配
+            task_manager.update_progress(task_id, 92, "Phase 3: 关键词匹配...")
             occurrences = cls._phase3_keyword_match(book_id, user_id)
             logger.info(f"Phase 3 done: {len(occurrences)} occurrences")
+            task_manager.update_progress(task_id, 97, f"Phase 3 完成: {len(occurrences)} 处出现")
 
             cls._save_occurrences(book_id, user_id, occurrences)
             cls._update_stats(book_id, user_id)
             cls._set_status(book_id, user_id, "enriched")
 
+            task_manager.complete_task(task_id, {
+                "concepts": len(concepts),
+                "occurrences": len(occurrences),
+            })
+            return task_id
+
+        except InterruptedError as e:
+            logger.info(f"Concept extraction cancelled: book={book_id}")
+            cls._set_status(book_id, user_id, None, str(e))
+            task_manager.fail_task(task_id, str(e))
+            return task_id
+
         except Exception as e:
             logger.exception(f"Concept extraction failed: book={book_id}")
             cls._set_status(book_id, user_id, "failed", str(e))
+            task_manager.fail_task(task_id, str(e))
             raise
 
     # ===================================================================
@@ -170,17 +210,34 @@ class ConceptService:
     # ===================================================================
 
     @classmethod
-    def _phase1_extract(cls, book_id: str, user_id: str, strategy: dict) -> list[dict]:
+    def _phase1_extract(
+        cls, book_id: str, user_id: str, strategy: dict,
+        task_id: str = None, total_chapters: int = 0,
+    ) -> list[dict]:
         chapters = IndexService.get_chapters(book_id, user_id)
         toc = cls._build_toc(chapters)
 
         all_concepts = []
-        for chapter in chapters:
+        for i, chapter in enumerate(chapters):
+            # 检查取消信号
+            if task_id and cls._cancel_flags.get(task_id):
+                logger.info(f"Phase 1 cancelled at ch{i}/{total_chapters}")
+                del cls._cancel_flags[task_id]
+                raise InterruptedError("用户取消了概念提取")
+
             paragraphs = IndexService.get_paragraphs(
                 book_id, user_id, chapter_idx=chapter["chapter_idx"]
             )
             if not paragraphs:
                 continue
+
+            # 进度: Phase 1 占 5%~85% 的进度条
+            if task_id and total_chapters > 0:
+                pct = 5 + int(80 * i / total_chapters)
+                task_manager.update_progress(
+                    task_id, pct,
+                    f"Phase 1: {i+1}/{total_chapters} 章 '{chapter['chapter_title']}'"
+                )
 
             try:
                 result = cls._call_phase1_llm(toc, chapter, paragraphs, strategy)
@@ -605,10 +662,25 @@ class ConceptService:
                         record.concept_error = "extraction interrupted"
                         db.commit()
 
+            # 如果正在提取, 查 TaskManager 获取实时进度
+            progress = None
+            progress_text = None
+            if record.concept_status == "extracting":
+                tasks = task_manager.get_all_tasks(user_id)
+                for t in tasks:
+                    if (t.get("type") == "concept_extraction"
+                        and t.get("params", {}).get("book_id") == book_id
+                        and t.get("status") == TaskStatus.RUNNING):
+                        progress = t.get("progress", 0)
+                        progress_text = t.get("progressText", "")
+                        break
+
             return {
                 "concept_status": record.concept_status,
                 "concept_error": record.concept_error,
                 "total_concepts": record.total_concepts,
+                "progress": progress,
+                "progress_text": progress_text,
             }
 
     @classmethod
@@ -737,6 +809,20 @@ class ConceptService:
                 })
 
             return annotations
+
+    @classmethod
+    def cancel_extraction(cls, book_id, user_id) -> bool:
+        """取消正在进行的概念提取。"""
+        # 找到该书正在运行的任务
+        tasks = task_manager.get_all_tasks(user_id)
+        for t in tasks:
+            if (t.get("type") == "concept_extraction"
+                and t.get("params", {}).get("book_id") == book_id
+                and t.get("status") == TaskStatus.RUNNING):
+                cls._cancel_flags[t["id"]] = True
+                logger.info(f"Cancel requested for task {t['id']}")
+                return True
+        return False
 
     @classmethod
     def delete_concepts(cls, book_id, user_id) -> bool:

@@ -216,11 +216,14 @@ export default function Home() {
       return;
     }
 
+    // 已完成时 rebuild
+    const rebuild = current?.concept_status === "enriched";
+
     try {
-      const result = await conceptService.buildConcepts(bookId);
+      const result = await conceptService.buildConcepts(bookId, rebuild);
       setConceptStatuses((prev) => ({ ...prev, [bookId]: result }));
       if (result.concept_status === "extracting") {
-        toast.success("概念提取已启动");
+        toast.success(rebuild ? "重新提取概念已启动" : "概念提取已启动");
       } else if (result.concept_status === "enriched") {
         toast.success(`概念已就绪 (${result.total_concepts || 0}个)`);
       }
@@ -586,7 +589,7 @@ export default function Home() {
                           cStatus === "enriched"
                             ? `概念已就绪 (${cs?.total_concepts || 0}个)`
                             : cStatus === "extracting"
-                            ? "正在提取概念..."
+                            ? `正在提取概念... ${cs?.progress != null ? `${cs.progress}%` : ""} ${cs?.progress_text || ""}`
                             : cStatus === "failed"
                             ? `概念提取失败: ${cs?.concept_error || "未知错误"}`
                             : "点击提取概念"

@@ -52,7 +52,9 @@ async def build_concepts(
 
 def _build_concepts_bg(book_id: str, user_id: str, rebuild: bool):
     try:
-        ConceptService.build_concepts(book_id, user_id, rebuild)
+        task_id = ConceptService.build_concepts(book_id, user_id, rebuild)
+        if task_id:
+            logger.info(f"Concept extraction done: task={task_id}")
     except Exception:
         logger.exception("Concept extraction crashed")
 
