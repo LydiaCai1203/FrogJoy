@@ -75,6 +75,16 @@ async def update_highlight(
     return result
 
 
+@router.delete("/chapter")
+async def delete_chapter_highlights(
+    book_id: str,
+    chapter_href: str,
+    user_id: str = Depends(get_current_user),
+):
+    count = HighlightService.delete_by_chapter(book_id, chapter_href, user_id)
+    return {"message": "Deleted", "count": count}
+
+
 @router.delete("/{highlight_id}")
 async def delete_highlight(
     highlight_id: str,

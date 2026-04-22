@@ -119,6 +119,21 @@ class HighlightService:
                 raise
 
     @staticmethod
+    def delete_by_chapter(book_id: str, chapter_href: str, user_id: str) -> int:
+        with get_db() as db:
+            try:
+                count = (
+                    db.query(Highlight)
+                    .filter_by(book_id=book_id, chapter_href=chapter_href, user_id=user_id)
+                    .delete()
+                )
+                db.commit()
+                return count
+            except Exception:
+                db.rollback()
+                raise
+
+    @staticmethod
     def search(book_id: str, user_id: str, query: str) -> list[dict]:
         with get_db() as db:
             pattern = f"%{query}%"
