@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     smtp_from: str = ""
     app_url: str = "https://deepkb.com.cn"
 
+    # Agent Server (A2A)
+    agent_server_url: str = "http://agent-server:9000"
+
     # Guest account
     guest_email: str = ""
 
