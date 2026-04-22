@@ -585,6 +585,26 @@ class ConceptService:
             ).first()
             if not record:
                 return None
+
+            # 修复中断的 extracting 状态:
+            # 如果标记为 extracting 但已有概念数据 → 实际已完成
+            # 如果标记为 extracting 但超过 2 小时没更新 → 中断了, 重置
+            if record.concept_status == "extracting":
+                concept_count = db.query(Concept).filter_by(
+                    book_id=book_id, user_id=user_id
+                ).count()
+                if concept_count > 0:
+                    record.concept_status = "enriched"
+                    record.total_concepts = concept_count
+                    record.concept_error = None
+                    db.commit()
+                elif record.updated_at:
+                    from datetime import datetime, timedelta
+                    if datetime.utcnow() - record.updated_at > timedelta(hours=2):
+                        record.concept_status = None
+                        record.concept_error = "extraction interrupted"
+                        db.commit()
+
             return {
                 "concept_status": record.concept_status,
                 "concept_error": record.concept_error,
