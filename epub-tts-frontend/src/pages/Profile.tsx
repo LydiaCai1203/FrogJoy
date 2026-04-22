@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useReadingHeatmap, useBookReadingStats, useReadingSummary } from "@/hooks/use-reading-stats";
@@ -7,11 +8,13 @@ import { VoiceConfigPanel } from "@/components/profile/VoiceConfigPanel";
 import { DeviceManagement } from "@/components/profile/DeviceManagement";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, BrainCircuit, Book, Clock, Flame, BookOpen, LogOut } from "lucide-react";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { ArrowLeft, BrainCircuit, Book, Clock, Flame, BookOpen, LogOut, Camera } from "lucide-react";
 import { API_BASE } from "@/config";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { FontSizeSwitcher } from "@/components/FontSizeSwitcher";
 import { TasksPanel } from "@/components/player/TasksPanel";
+import { uploadAvatar } from "@/api/services";
 
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -25,6 +28,9 @@ export default function Profile() {
   const [, navigate] = useLocation();
   const { user, isGuest, logout } = useAuth();
   const year = new Date().getFullYear();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [avatarKey, setAvatarKey] = useState(0);
+  const [uploading, setUploading] = useState(false);
 
   const { data: heatmapData = [] } = useReadingHeatmap(year);
   const { data: bookStats = [] } = useBookReadingStats();
@@ -163,7 +169,55 @@ export default function Profile() {
           {/* 账户与设备 */}
           {!isGuest && (
             <TabsContent value="account" className="space-y-6 mt-6">
-              <div className="text-sm text-muted-foreground font-mono">{user.email}</div>
+              {/* Avatar + Email */}
+              <div className="flex items-center gap-4">
+                <div
+                  className="relative cursor-pointer group"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Avatar className="size-16">
+                    {user.avatar_url && (
+                      <AvatarImage
+                        src={`${API_BASE}${user.avatar_url}?v=${avatarKey}`}
+                        alt={user.email}
+                      />
+                    )}
+                    <AvatarFallback className="text-lg">
+                      {user.email.charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Camera className="w-5 h-5 text-white" />
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setUploading(true);
+                      try {
+                        await uploadAvatar(file);
+                        setAvatarKey((k) => k + 1);
+                      } catch {
+                        // silently fail
+                      } finally {
+                        setUploading(false);
+                        e.target.value = "";
+                      }
+                    }}
+                    disabled={uploading}
+                  />
+                </div>
+                <div>
+                  <div className="text-sm font-medium">{user.email}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {uploading ? "上传中..." : "点击头像更换"}
+                  </div>
+                </div>
+              </div>
               <DeviceManagement />
               <Button
                 variant="outline"

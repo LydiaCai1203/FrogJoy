@@ -6,6 +6,21 @@ from app.middleware.auth import get_current_user
 
 router = APIRouter(prefix="/files", tags=["files"])
 
+AVATAR_MEDIA_TYPES = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
+
+
+@router.get("/avatar/{user_id}")
+async def serve_avatar(user_id: str):
+    """Serve user avatar image. No auth required."""
+    avatar_dir = os.path.join(settings.data_dir, "users", user_id)
+    if os.path.isdir(avatar_dir):
+        for fname in os.listdir(avatar_dir):
+            if fname.startswith("avatar."):
+                ext = fname.rsplit(".", 1)[-1].lower()
+                media_type = AVATAR_MEDIA_TYPES.get(ext, "image/jpeg")
+                return FileResponse(os.path.join(avatar_dir, fname), media_type=media_type)
+    raise HTTPException(status_code=404, detail="Avatar not found")
+
 
 @router.get("/audio/{user_id}/{book_id}/{filename}")
 async def serve_audio(user_id: str, book_id: str, filename: str):

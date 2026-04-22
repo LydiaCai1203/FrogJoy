@@ -1,5 +1,6 @@
+import os
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, status, Depends, Request
+from fastapi import APIRouter, HTTPException, status, Depends, Request, UploadFile, File
 from sqlalchemy.exc import IntegrityError
 from user_agents import parse as parse_ua
 from shared.schemas.auth import (
@@ -306,8 +307,46 @@ async def get_me(user_id: str = Depends(get_current_user)):
             id=user.id,
             email=user.email,
             is_admin=bool(user.is_admin),
+            avatar_url=user.avatar_url,
             created_at=user.created_at.isoformat() if user.created_at else None,
         )
+
+
+ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/webp"}
+AVATAR_MAX_SIZE = 2 * 1024 * 1024  # 2MB
+MIME_TO_EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+
+
+@router.post("/avatar")
+async def upload_avatar(file: UploadFile = File(...), user_id: str = Depends(get_current_user)):
+    if file.content_type not in ALLOWED_AVATAR_TYPES:
+        raise HTTPException(status_code=400, detail="仅支持 JPEG、PNG、WebP 格式")
+
+    data = await file.read()
+    if len(data) > AVATAR_MAX_SIZE:
+        raise HTTPException(status_code=400, detail="头像文件不能超过 2MB")
+
+    ext = MIME_TO_EXT[file.content_type]
+    avatar_dir = os.path.join(settings.data_dir, "users", user_id)
+    os.makedirs(avatar_dir, exist_ok=True)
+
+    # Remove old avatar files
+    for old in os.listdir(avatar_dir):
+        if old.startswith("avatar."):
+            os.remove(os.path.join(avatar_dir, old))
+
+    avatar_path = os.path.join(avatar_dir, f"avatar.{ext}")
+    with open(avatar_path, "wb") as f:
+        f.write(data)
+
+    avatar_url = f"/api/files/avatar/{user_id}"
+    with get_db() as db:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            user.avatar_url = avatar_url
+            db.commit()
+
+    return {"avatar_url": avatar_url}
 
 
 @router.get("/theme", response_model=ThemeOut)

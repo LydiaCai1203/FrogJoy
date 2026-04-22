@@ -14,6 +14,7 @@ class User(Base):
     is_active = Column(Boolean, default=True, server_default="true")
     created_at = Column(DateTime, server_default=func.now())
     last_login_at = Column(DateTime, nullable=True)
+    avatar_url = Column(String, nullable=True)
 
     books = relationship("Book", back_populates="user")
     highlights = relationship("Highlight", back_populates="user")
