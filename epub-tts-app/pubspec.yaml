@@ -1,0 +1,36 @@
+name: book_reader_app
+description: "FrogJoy - AI-powered EPUB reader"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_riverpod: ^2.6.1
+  go_router: ^14.8.1
+  dio: ^5.7.0
+  hive_flutter: ^1.1.0
+  flutter_secure_storage: ^9.2.4
+  cached_network_image: ^3.4.1
+  image_picker: ^1.1.2
+  file_picker: ^8.1.7
+  json_annotation: ^4.9.0
+  webview_flutter: ^4.10.0
+  just_audio: ^0.9.40
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  json_serializable: ^6.9.0
+  build_runner: ^2.4.14
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/images/frog_frames/
