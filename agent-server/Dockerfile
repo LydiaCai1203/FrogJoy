@@ -25,8 +25,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 复制 shared 层 (复用 epub-tts-backend 的 shared)
 COPY epub-tts-backend/shared/ /app/shared/
 
-# 复制 agent-server 代码
-COPY agent-server/ /app/
+# 复制 agent-server 代码 (逐个复制，跳过 shared symlink)
+COPY agent-server/main.py /app/
+COPY agent-server/agents/ /app/agents/
+COPY agent-server/services/ /app/services/
 
 EXPOSE 9000
 
