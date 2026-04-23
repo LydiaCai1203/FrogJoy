@@ -68,7 +68,25 @@ class _SplashPageState extends State<SplashPage>
       backgroundColor: _bgColor,
       body: FadeTransition(
         opacity: ReverseAnimation(_fadeController),
-        child: Stack(
+        child: Container(
+          margin: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: const Color(0xFF4CAF50).withValues(alpha: 0.18),
+              width: 1,
+            ),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Container(
+            margin: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: const Color(0xFF4CAF50).withValues(alpha: 0.12),
+                width: 0.5,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Stack(
           children: [
             // Decorative top-left arc
             Positioned(
@@ -143,6 +161,8 @@ class _SplashPageState extends State<SplashPage>
               ),
             ),
           ],
+        ),
+        ),
         ),
       ),
     );
