@@ -19,7 +19,13 @@ class BookshelfApi {
     final formData = FormData.fromMap({
       'file': MultipartFile.fromFileSync(filePath, filename: fileName),
     });
-    return _dio.post('/books/upload', data: formData);
+    return _dio.post('/books',
+      data: formData,
+      options: Options(
+        sendTimeout: const Duration(minutes: 5),
+        receiveTimeout: const Duration(minutes: 5),
+      ),
+    );
   }
 
   Future<Response> deleteBook(String bookId) {

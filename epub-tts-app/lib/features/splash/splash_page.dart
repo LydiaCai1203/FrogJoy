@@ -66,7 +66,8 @@ class _SplashPageState extends State<SplashPage>
 
     return Scaffold(
       backgroundColor: _bgColor,
-      body: FadeTransition(
+      body: SafeArea(
+        child: FadeTransition(
         opacity: ReverseAnimation(_fadeController),
         child: Container(
           margin: const EdgeInsets.all(16),
@@ -164,6 +165,7 @@ class _SplashPageState extends State<SplashPage>
         ),
         ),
         ),
+      ),
       ),
     );
   }

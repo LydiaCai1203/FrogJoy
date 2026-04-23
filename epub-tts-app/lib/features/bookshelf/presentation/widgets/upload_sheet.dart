@@ -41,9 +41,10 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
         );
       }
     } catch (e) {
+      print('[Upload] error: $e');
       if (mounted) {
         setState(() {
-          _error = '上传失败，请重试';
+          _error = '上传失败: $e';
         });
       }
     } finally {

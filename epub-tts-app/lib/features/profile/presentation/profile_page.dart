@@ -20,36 +20,63 @@ class ProfilePage extends ConsumerStatefulWidget {
 
 class _ProfilePageState extends ConsumerState<ProfilePage> {
   bool _uploading = false;
-  bool _editingName = false;
-  bool _savingName = false;
-  late TextEditingController _nameController;
 
-  @override
-  void initState() {
-    super.initState();
-    _nameController = TextEditingController();
-  }
+  void _showEditNameDialog(String currentName) {
+    final controller = TextEditingController(text: currentName);
+    final theme = Theme.of(context);
 
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _saveName() async {
-    setState(() => _savingName = true);
-    try {
-      await ref.read(authProvider.notifier).updateName(_nameController.text);
-      if (mounted) setState(() => _editingName = false);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('修改失败: ${AuthNotifier.getErrorMessage(e)}')),
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        bool saving = false;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('修改用户名', style: TextStyle(fontSize: 16)),
+              content: TextField(
+                controller: controller,
+                autofocus: true,
+                style: const TextStyle(fontSize: 15),
+                decoration: InputDecoration(
+                  hintText: '输入新用户名',
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                enabled: !saving,
+              ),
+              actions: [
+                TextButton(
+                  onPressed: saving ? null : () => Navigator.pop(ctx),
+                  child: Text('取消', style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
+                ),
+                TextButton(
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          setDialogState(() => saving = true);
+                          try {
+                            await ref.read(authProvider.notifier).updateName(controller.text);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('修改失败: ${AuthNotifier.getErrorMessage(e)}')),
+                              );
+                            }
+                            setDialogState(() => saving = false);
+                          }
+                        },
+                  child: saving
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('保存'),
+                ),
+              ],
+            );
+          },
         );
-      }
-    } finally {
-      if (mounted) setState(() => _savingName = false);
-    }
+      },
+    );
   }
 
   Future<void> _pickAndUploadAvatar() async {
@@ -163,71 +190,30 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Name — primary display
-                        if (_editingName)
-                          Row(
+                        // Name
+                        GestureDetector(
+                          onTap: () => _showEditNameDialog(user?.name ?? ''),
+                          child: Row(
                             children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _nameController,
-                                  autofocus: true,
-                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                                  decoration: const InputDecoration(
-                                    hintText: '输入用户名',
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.symmetric(vertical: 4),
-                                  ),
-                                  onSubmitted: (_) => _saveName(),
-                                  enabled: !_savingName,
+                              Flexible(
+                                child: Text(
+                                  (user?.name != null && user!.name!.isNotEmpty)
+                                      ? user.name!
+                                      : user?.email ?? '',
+                                  style: const TextStyle(
+                                      fontSize: 16, fontWeight: FontWeight.w600),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                               const SizedBox(width: 4),
-                              if (_savingName)
-                                const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              else ...[
-                                GestureDetector(
-                                  onTap: _saveName,
-                                  child: Icon(Icons.check, size: 20, color: theme.colorScheme.primary),
-                                ),
-                                const SizedBox(width: 4),
-                                GestureDetector(
-                                  onTap: () => setState(() => _editingName = false),
-                                  child: Icon(Icons.close, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
-                                ),
-                              ],
+                              Icon(Icons.edit, size: 13,
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.25)),
                             ],
-                          )
-                        else
-                          GestureDetector(
-                            onTap: () {
-                              _nameController.text = user?.name ?? '';
-                              setState(() => _editingName = true);
-                            },
-                            child: Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    (user?.name != null && user!.name!.isNotEmpty)
-                                        ? user.name!
-                                        : user?.email ?? '',
-                                    style: const TextStyle(
-                                        fontSize: 18, fontWeight: FontWeight.w600),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Icon(Icons.edit, size: 14,
-                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.3)),
-                              ],
-                            ),
                           ),
+                        ),
                         const SizedBox(height: 2),
-                        // Email — secondary
+                        // Email
                         Text(
                           user?.email ?? '',
                           style: TextStyle(
