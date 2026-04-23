@@ -9,6 +9,7 @@ import '../../domain/translation_provider.dart';
 import '../../domain/highlight_provider.dart';
 import 'highlight_context_menu.dart';
 import 'annotation_dialog.dart';
+import 'ai_chat_sheet.dart';
 
 /// Native Flutter sentence-by-sentence view for play mode.
 class PlayModeView extends ConsumerStatefulWidget {
@@ -282,6 +283,28 @@ class _PlayModeViewState extends ConsumerState<PlayModeView> {
             );
           }
         },
+        onAskAI: selectedText.isNotEmpty
+            ? () {
+                editableTextState.hideToolbar();
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                  ),
+                  builder: (_) => DraggableScrollableSheet(
+                    initialChildSize: 0.75,
+                    minChildSize: 0.4,
+                    maxChildSize: 0.95,
+                    expand: false,
+                    builder: (_, scrollController) => AiChatSheet(
+                      bookId: widget.bookId,
+                      selectedText: selectedText,
+                    ),
+                  ),
+                );
+              }
+            : null,
         onCopy: () {
           editableTextState.copySelection(SelectionChangedCause.toolbar);
           editableTextState.hideToolbar();

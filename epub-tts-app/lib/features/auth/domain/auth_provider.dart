@@ -1,4 +1,3 @@
-import 'dart:developer' as dev;
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/theme_provider.dart';
@@ -77,16 +76,13 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
   Future<void> updateAvatar(String filePath) async {
     final repo = ref.read(authRepositoryProvider);
-    dev.log('[Avatar] uploading: $filePath');
     final user = await repo.uploadAvatar(filePath);
-    dev.log('[Avatar] upload done, avatarUrl=${user.avatarUrl}');
     final current = state.valueOrNull;
     if (current != null) {
       // Append timestamp to bust CachedNetworkImage cache
       final bustUrl = user.avatarUrl != null
           ? '${user.avatarUrl}${user.avatarUrl!.contains('?') ? '&' : '?'}t=${DateTime.now().millisecondsSinceEpoch}'
           : null;
-      dev.log('[Avatar] final URL=$bustUrl');
       final refreshedUser = User(
         id: user.id,
         email: user.email,
@@ -96,6 +92,11 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       );
       state = AsyncData(current.copyWith(user: refreshedUser));
     }
+  }
+
+  Future<void> changePassword(String oldPassword, String newPassword) async {
+    final repo = ref.read(authRepositoryProvider);
+    await repo.changePassword(oldPassword, newPassword);
   }
 
   Future<void> logout() async {

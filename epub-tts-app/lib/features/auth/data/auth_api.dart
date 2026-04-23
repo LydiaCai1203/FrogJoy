@@ -61,4 +61,11 @@ class AuthApi {
   Future<Response> updateProfile({required String name}) {
     return _dio.put('/auth/profile', data: {'name': name});
   }
+
+  Future<Response> changePassword(String oldPassword, String newPassword) {
+    return _dio.put('/auth/change-password', data: {
+      'old_password': oldPassword,
+      'new_password': newPassword,
+    });
+  }
 }

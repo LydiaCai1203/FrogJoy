@@ -8,7 +8,7 @@ from shared.schemas.auth import (
     UserCreate, UserResponse, TokenPair,
     ThemeIn, ThemeOut, FontSizeIn, FontSizeOut,
     VerifyRequest, ResendRequest, RefreshRequest, LoginRequest, DeviceInfo,
-    ProfileUpdate,
+    ProfileUpdate, ChangePasswordRequest,
 )
 from shared.models import User, UserPreferences
 from shared.database import get_db
@@ -364,6 +364,30 @@ async def update_profile(data: ProfileUpdate, user_id: str = Depends(get_current
             avatar_url=user.avatar_url,
             created_at=user.created_at.isoformat() if user.created_at else None,
         )
+
+
+@router.put("/change-password")
+async def change_password(data: ChangePasswordRequest, user_id: str = Depends(get_current_user)):
+    if is_guest_user(user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="游客账户不支持此操作",
+        )
+    with get_db() as db:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="用户不存在",
+            )
+        if not AuthService.verify_password(data.old_password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="原密码错误",
+            )
+        user.password_hash = AuthService.hash_password(data.new_password)
+        db.commit()
+    return {"message": "密码修改成功"}
 
 
 ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/webp"}

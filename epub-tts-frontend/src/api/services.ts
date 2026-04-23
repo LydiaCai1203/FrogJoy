@@ -86,6 +86,18 @@ export async function uploadAvatar(file: File): Promise<{ avatar_url: string }> 
   return response.json();
 }
 
+export async function changePassword(oldPassword: string, newPassword: string): Promise<void> {
+  const response = await fetchWithAuth(`${API_URL}/auth/change-password`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ detail: "修改失败" }));
+    throw new Error(err.detail || "修改失败");
+  }
+}
+
 export class BookService implements IBookService {
   async uploadBook(file: File): Promise<{ bookId: string; metadata: BookMetadata; toc: NavItem[]; coverUrl?: string }> {
     const formData = new FormData();

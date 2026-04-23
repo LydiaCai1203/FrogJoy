@@ -339,6 +339,28 @@ class _ReadModeViewState extends ConsumerState<ReadModeView> {
             );
           }
         },
+        onAskAI: selectedText.isNotEmpty
+            ? () {
+                editableTextState.hideToolbar();
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                  ),
+                  builder: (_) => DraggableScrollableSheet(
+                    initialChildSize: 0.75,
+                    minChildSize: 0.4,
+                    maxChildSize: 0.95,
+                    expand: false,
+                    builder: (_, scrollController) => AiChatSheet(
+                      bookId: widget.bookId,
+                      selectedText: selectedText,
+                    ),
+                  ),
+                );
+              }
+            : null,
         onCopy: () {
           editableTextState.copySelection(SelectionChangedCause.toolbar);
           editableTextState.hideToolbar();

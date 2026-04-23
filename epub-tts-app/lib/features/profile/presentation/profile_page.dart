@@ -274,6 +274,22 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             // ── Gap ──
             SizedBox(height: 10, child: ColoredBox(color: gapColor)),
 
+            // ── Group: Security ──
+            _CardGroup(
+              cardColor: cardColor,
+              dividerColor: dividerColor,
+              children: [
+                _CellTile(
+                  icon: Icons.lock_outlined,
+                  label: '修改密码',
+                  onTap: () => _showChangePasswordDialog(),
+                ),
+              ],
+            ),
+
+            // ── Gap ──
+            SizedBox(height: 10, child: ColoredBox(color: gapColor)),
+
             // ── Group 2: AI ──
             _CardGroup(
               cardColor: cardColor,
@@ -334,6 +350,116 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           ],
         ),
       ),
+    );
+  }
+
+  void _showChangePasswordDialog() {
+    final oldPwdCtrl = TextEditingController();
+    final newPwdCtrl = TextEditingController();
+    final confirmPwdCtrl = TextEditingController();
+    final theme = Theme.of(context);
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        bool saving = false;
+        String? errorText;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('修改密码', style: TextStyle(fontSize: 16)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: oldPwdCtrl,
+                    obscureText: true,
+                    style: const TextStyle(fontSize: 15),
+                    decoration: InputDecoration(
+                      hintText: '当前密码',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    enabled: !saving,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: newPwdCtrl,
+                    obscureText: true,
+                    style: const TextStyle(fontSize: 15),
+                    decoration: InputDecoration(
+                      hintText: '新密码（至少6位）',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    enabled: !saving,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: confirmPwdCtrl,
+                    obscureText: true,
+                    style: const TextStyle(fontSize: 15),
+                    decoration: InputDecoration(
+                      hintText: '确认新密码',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    enabled: !saving,
+                  ),
+                  if (errorText != null) ...[
+                    const SizedBox(height: 8),
+                    Text(errorText!, style: TextStyle(color: theme.colorScheme.error, fontSize: 13)),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: saving ? null : () => Navigator.pop(ctx),
+                  child: Text('取消', style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
+                ),
+                TextButton(
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          if (newPwdCtrl.text.length < 6) {
+                            setDialogState(() => errorText = '新密码至少需要6位');
+                            return;
+                          }
+                          if (newPwdCtrl.text != confirmPwdCtrl.text) {
+                            setDialogState(() => errorText = '两次输入的新密码不一致');
+                            return;
+                          }
+                          setDialogState(() { saving = true; errorText = null; });
+                          try {
+                            await ref.read(authProvider.notifier).changePassword(
+                              oldPwdCtrl.text,
+                              newPwdCtrl.text,
+                            );
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('密码修改成功')),
+                              );
+                            }
+                          } catch (e) {
+                            setDialogState(() {
+                              saving = false;
+                              errorText = AuthNotifier.getErrorMessage(e);
+                            });
+                          }
+                        },
+                  child: saving
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('确认'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 

@@ -42,6 +42,9 @@ epub-tts-backend/data/
 soft-article
 .playwright-mcp
 
+# ========== 演示视频 ==========
+epub-tts-app/demo.*
+
 # ========== 其他 ==========
 # 测试覆盖率
 .coverage

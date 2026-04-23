@@ -27,9 +27,7 @@ class AuthRepository {
     if (authToken != null) {
       try {
         final response = await _api.getMe();
-        print('[Auth] getMe response: ${response.data}');
         final user = User.fromJson(response.data);
-        print('[Auth] parsed user: name=${user.name}, email=${user.email}, avatar=${user.avatarUrl}');
         return AuthState(
           status: AuthStatus.authenticated,
           user: user,
@@ -155,6 +153,10 @@ class AuthRepository {
     await _api.uploadAvatar(filePath);
     final meResponse = await _api.getMe();
     return User.fromJson(meResponse.data);
+  }
+
+  Future<void> changePassword(String oldPassword, String newPassword) async {
+    await _api.changePassword(oldPassword, newPassword);
   }
 
   Future<AuthState> _fetchGuestToken() async {
