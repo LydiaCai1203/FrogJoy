@@ -163,18 +163,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Email — always visible
-                        Text(
-                          user?.email ?? '',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        // Name editing / display
+                        // Name — primary display
                         if (_editingName)
                           Row(
                             children: [
@@ -182,7 +171,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                                 child: TextField(
                                   controller: _nameController,
                                   autofocus: true,
-                                  style: const TextStyle(fontSize: 16),
+                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                                   decoration: const InputDecoration(
                                     hintText: '输入用户名',
                                     isDense: true,
@@ -212,7 +201,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                               ],
                             ],
                           )
-                        else if (user?.name != null && user!.name!.isNotEmpty)
+                        else
                           GestureDetector(
                             onTap: () {
                               _nameController.text = user?.name ?? '';
@@ -222,9 +211,11 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                               children: [
                                 Flexible(
                                   child: Text(
-                                    user!.name!,
+                                    (user?.name != null && user!.name!.isNotEmpty)
+                                        ? user.name!
+                                        : user?.email ?? '',
                                     style: const TextStyle(
-                                        fontSize: 16, fontWeight: FontWeight.w600),
+                                        fontSize: 18, fontWeight: FontWeight.w600),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -234,21 +225,18 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                                     color: theme.colorScheme.onSurface.withValues(alpha: 0.3)),
                               ],
                             ),
-                          )
-                        else
-                          GestureDetector(
-                            onTap: () {
-                              _nameController.text = '';
-                              setState(() => _editingName = true);
-                            },
-                            child: Text(
-                              '设置用户名',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: theme.colorScheme.primary,
-                              ),
-                            ),
                           ),
+                        const SizedBox(height: 2),
+                        // Email — secondary
+                        Text(
+                          user?.email ?? '',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                         const SizedBox(height: 4),
                         Container(
                           padding: const EdgeInsets.symmetric(

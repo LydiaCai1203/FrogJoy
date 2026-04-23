@@ -323,6 +323,13 @@ async def get_me(user_id: str = Depends(get_current_user)):
                 detail="User not found"
             )
 
+        # Backfill random frog name for old users
+        if not user.name:
+            user.name = random.choice(FROG_NAMES)
+            if not user.avatar_url:
+                user.avatar_url = f"/api/files/default-avatar/{random.choice(DEFAULT_AVATARS)}"
+            db.commit()
+
         return UserResponse(
             id=user.id,
             email=user.email,

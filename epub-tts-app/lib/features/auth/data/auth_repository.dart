@@ -27,7 +27,9 @@ class AuthRepository {
     if (authToken != null) {
       try {
         final response = await _api.getMe();
+        print('[Auth] getMe response: ${response.data}');
         final user = User.fromJson(response.data);
+        print('[Auth] parsed user: name=${user.name}, email=${user.email}, avatar=${user.avatarUrl}');
         return AuthState(
           status: AuthStatus.authenticated,
           user: user,
