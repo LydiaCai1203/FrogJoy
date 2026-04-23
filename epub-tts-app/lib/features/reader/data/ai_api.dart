@@ -17,6 +17,7 @@ class AiApi {
     String? bookId,
     String? chapterHref,
     String? chapterTitle,
+    CancelToken? cancelToken,
   }) {
     return _dio.post(
       '/ai/chat',
@@ -27,6 +28,7 @@ class AiApi {
         if (chapterTitle != null) 'chapter_title': chapterTitle,
       },
       options: Options(responseType: ResponseType.stream),
+      cancelToken: cancelToken,
     );
   }
 

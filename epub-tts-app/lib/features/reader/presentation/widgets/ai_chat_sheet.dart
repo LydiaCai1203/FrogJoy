@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/ai_api.dart';
@@ -17,19 +18,18 @@ class AiChatSheet extends ConsumerStatefulWidget {
   });
 
   /// Show AI chat as a draggable bottom sheet.
-  static void show(BuildContext context, {required String bookId, required String selectedText}) {
+  static void show(BuildContext context,
+      {required String bookId, required String selectedText}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.75,
+        initialChildSize: 0.78,
         minChildSize: 0.4,
         maxChildSize: 0.95,
         expand: false,
-        builder: (_, __) => AiChatSheet(
+        builder: (ctx, scrollController) => AiChatSheet(
           bookId: bookId,
           selectedText: selectedText,
         ),
@@ -48,17 +48,18 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
   bool _isStreaming = false;
   StreamSubscription? _streamSub;
   String _currentResponse = '';
+  CancelToken? _cancelToken;
 
   @override
   void initState() {
     super.initState();
-    // Auto-ask about selected text
     _sendMessage('请解释以下内容：\n\n"${widget.selectedText}"');
   }
 
   @override
   void dispose() {
     _streamSub?.cancel();
+    _cancelToken?.cancel();
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -67,153 +68,332 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final bgColor = theme.scaffoldBackgroundColor;
+    final primary = theme.colorScheme.primary;
 
     return Container(
-      height: MediaQuery.of(context).size.height * 0.75,
       decoration: BoxDecoration(
-        color: theme.scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        color: bgColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
         children: [
-          // Header
-          const SizedBox(height: 8),
+          // ── Header ──
+          _buildHeader(theme, primary),
+
+          // ── Messages ──
+          Expanded(
+            child: Container(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.03),
+              child: ListView.builder(
+                controller: _scrollController,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                itemCount: _messages.length + (_isStreaming ? 1 : 0),
+                itemBuilder: (context, index) {
+                  if (index == _messages.length && _isStreaming) {
+                    return _buildBubble(
+                      AiMessage(
+                        role: 'assistant',
+                        content: _currentResponse.isEmpty
+                            ? ''
+                            : _currentResponse,
+                      ),
+                      theme,
+                      isTyping: _currentResponse.isEmpty,
+                    );
+                  }
+                  return _buildBubble(_messages[index], theme);
+                },
+              ),
+            ),
+          ),
+
+          // ── Input bar ──
+          _buildInputBar(theme, primary),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(ThemeData theme, Color primary) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow: [
+          BoxShadow(
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.04),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
           Container(
             width: 36,
             height: 4,
+            margin: const EdgeInsets.only(bottom: 10),
             decoration: BoxDecoration(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Icon(Icons.smart_toy_outlined,
-                    size: 20, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
-                Text('问 AI',
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.bold)),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 20),
-                  onPressed: () => Navigator.pop(context),
+          Row(
+            children: [
+              // AI avatar
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-              ],
-            ),
-          ),
-
-          // Selected text preview
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 12),
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              widget.selectedText,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                child: Icon(Icons.auto_awesome, size: 18, color: primary),
               ),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-
-          const Divider(),
-
-          // Messages
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(12),
-              itemCount: _messages.length + (_isStreaming ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (index == _messages.length && _isStreaming) {
-                  return _buildMessage(
-                    AiMessage(
-                        role: 'assistant',
-                        content: _currentResponse.isEmpty
-                            ? 'AI 正在思考...'
-                            : _currentResponse),
-                    theme,
-                  );
-                }
-                return _buildMessage(_messages[index], theme);
-              },
-            ),
-          ),
-
-          // Input
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _inputController,
-                      decoration: InputDecoration(
-                        hintText: '继续提问...',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
-                        isDense: true,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AI 阅读助手',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.onSurface,
                       ),
-                      onSubmitted: (_) => _onSend(),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  if (_isStreaming)
-                    IconButton(
-                      icon: const Icon(Icons.stop_rounded),
-                      onPressed: _stopStreaming,
-                      color: theme.colorScheme.error,
-                    )
-                  else
-                    IconButton(
-                      icon: const Icon(Icons.send_rounded),
-                      onPressed: _onSend,
-                      color: theme.colorScheme.primary,
-                    ),
-                ],
+                    if (_isStreaming)
+                      Text(
+                        '正在输入...',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: primary,
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
+              IconButton(
+                icon: Icon(Icons.close,
+                    size: 20,
+                    color:
+                        theme.colorScheme.onSurface.withValues(alpha: 0.4)),
+                onPressed: () => Navigator.pop(context),
+                splashRadius: 18,
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildMessage(AiMessage msg, ThemeData theme) {
+  Widget _buildBubble(AiMessage msg, ThemeData theme,
+      {bool isTyping = false}) {
     final isUser = msg.role == 'user';
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(10),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.8,
-        ),
-        decoration: BoxDecoration(
-          color: isUser
-              ? theme.colorScheme.primary.withValues(alpha: 0.1)
-              : theme.colorScheme.secondary,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: SelectableText(
-          msg.content,
-          style: theme.textTheme.bodySmall,
+    final primary = theme.colorScheme.primary;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment:
+            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        children: [
+          // AI avatar (left)
+          if (!isUser) ...[
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child:
+                  Icon(Icons.auto_awesome, size: 16, color: primary),
+            ),
+            const SizedBox(width: 8),
+          ],
+          // Bubble
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: isUser
+                    ? primary.withValues(alpha: 0.15)
+                    : theme.cardColor,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(isUser ? 16 : 4),
+                  topRight: Radius.circular(isUser ? 4 : 16),
+                  bottomLeft: const Radius.circular(16),
+                  bottomRight: const Radius.circular(16),
+                ),
+                boxShadow: isUser
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.05),
+                          blurRadius: 6,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+              ),
+              child: isTyping
+                  ? _buildTypingIndicator(theme)
+                  : SelectableText(
+                      msg.content,
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        height: 1.5,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+            ),
+          ),
+          // User avatar (right)
+          if (isUser) ...[
+            const SizedBox(width: 8),
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: primary,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.person, size: 18,
+                  color: theme.colorScheme.onPrimary),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypingIndicator(ThemeData theme) {
+    return SizedBox(
+      width: 48,
+      height: 20,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List.generate(3, (i) {
+          return TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: Duration(milliseconds: 600 + i * 200),
+            builder: (_, value, child) {
+              return Container(
+                width: 7,
+                height: 7,
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.onSurface
+                      .withValues(alpha: 0.15 + 0.2 * value),
+                  shape: BoxShape.circle,
+                ),
+              );
+            },
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildInputBar(ThemeData theme, Color primary) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        12,
+        10,
+        8,
+        10 + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        boxShadow: [
+          BoxShadow(
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.04),
+            blurRadius: 4,
+            offset: const Offset(0, -1),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            // Input field
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: TextField(
+                  controller: _inputController,
+                  style: TextStyle(
+                      fontSize: 15, color: theme.colorScheme.onSurface),
+                  decoration: InputDecoration(
+                    hintText: '继续提问...',
+                    hintStyle: TextStyle(
+                      fontSize: 14,
+                      color: theme.colorScheme.onSurface
+                          .withValues(alpha: 0.3),
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                  ),
+                  onSubmitted: (_) => _onSend(),
+                  textInputAction: TextInputAction.send,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            // Send / Stop button
+            if (_isStreaming)
+              _buildCircleButton(
+                icon: Icons.stop_rounded,
+                color: theme.colorScheme.error,
+                onTap: _stopStreaming,
+              )
+            else
+              _buildCircleButton(
+                icon: Icons.arrow_upward_rounded,
+                color: primary,
+                onTap: _onSend,
+              ),
+          ],
         ),
       ),
     );
   }
+
+  Widget _buildCircleButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, size: 20, color: Colors.white),
+      ),
+    );
+  }
+
+  // ── Logic ──
 
   void _onSend() {
     final text = _inputController.text.trim();
@@ -234,20 +414,42 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
       final readerState = ref.read(readerProvider(widget.bookId));
       final aiApi = ref.read(aiApiProvider);
 
-      final chatMessages = _messages
-          .map((m) => {'role': m.role, 'content': m.content})
-          .toList();
+      // Build system prompt (same as web frontend)
+      final bookTitle = readerState.book?.metadata.title;
+      final chapterIdx = readerState.currentChapterIndex;
+      final chapterTitle = chapterIdx >= 0
+          ? readerState.book?.flatToc[chapterIdx].label
+          : null;
+
+      final systemPrompt = [
+        if (bookTitle != null && bookTitle.isNotEmpty)
+          'Current book: $bookTitle',
+        'You are a helpful reading assistant. Help the user understand and analyze the book content.',
+        'Provide clear, thoughtful, and accurate responses.',
+        if (chapterTitle != null) 'Current chapter: $chapterTitle',
+      ].join('\n');
+
+      final chatMessages = <Map<String, String>>[
+        {'role': 'system', 'content': systemPrompt},
+        ..._messages.map((m) => {'role': m.role, 'content': m.content}),
+      ];
+
+      _cancelToken = CancelToken();
 
       final res = await aiApi.chat(
         messages: chatMessages,
         bookId: widget.bookId,
         chapterHref: readerState.currentHref,
+        chapterTitle: chapterTitle,
+        cancelToken: _cancelToken,
       );
 
-      final stream = (res.data as dynamic).stream as Stream<List<int>>;
+      final ResponseBody responseBody = res.data as ResponseBody;
       String buffer = '';
 
-      _streamSub = stream.transform(utf8.decoder).listen(
+      _streamSub = responseBody.stream
+          .transform(utf8.decoder)
+          .listen(
         (chunk) {
           buffer += chunk;
           while (buffer.contains('\n\n')) {
@@ -262,15 +464,25 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
                 try {
                   final data =
                       jsonDecode(jsonStr) as Map<String, dynamic>;
+                  if (data.containsKey('error')) {
+                    final error = data['error'] as String? ?? '未知错误';
+                    setState(() {
+                      _currentResponse += '\n\n[错误: $error]';
+                    });
+                    continue;
+                  }
                   final content = data['content'] as String? ?? '';
-                  setState(() => _currentResponse += content);
-                  _scrollToBottom();
+                  if (content.isNotEmpty) {
+                    setState(() => _currentResponse += content);
+                    _scrollToBottom();
+                  }
                 } catch (_) {}
               }
             }
           }
         },
         onDone: () {
+          if (!mounted) return;
           setState(() {
             if (_currentResponse.isNotEmpty) {
               _messages.add(AiMessage(
@@ -280,28 +492,39 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
             _currentResponse = '';
           });
         },
-        onError: (_) {
+        onError: (e) {
+          if (!mounted) return;
           setState(() {
-            _isStreaming = false;
             if (_currentResponse.isNotEmpty) {
               _messages.add(AiMessage(
                   role: 'assistant', content: _currentResponse));
+            } else {
+              _messages.add(AiMessage(
+                  role: 'assistant',
+                  content: '请求出错: ${e.toString().length > 100 ? e.toString().substring(0, 100) : e}'));
             }
+            _isStreaming = false;
             _currentResponse = '';
           });
         },
       );
-    } catch (_) {
+    } catch (e) {
+      if (!mounted) return;
+      final errorMsg = e is DioException
+          ? (e.response?.statusCode == 422
+              ? 'AI 未配置，请先在「AI 配置」中设置'
+              : e.message ?? '网络请求失败')
+          : e.toString();
       setState(() {
         _isStreaming = false;
-        _messages.add(
-            const AiMessage(role: 'assistant', content: '请求失败，请重试'));
+        _messages.add(AiMessage(role: 'assistant', content: errorMsg));
       });
     }
   }
 
   void _stopStreaming() {
     _streamSub?.cancel();
+    _cancelToken?.cancel();
     setState(() {
       if (_currentResponse.isNotEmpty) {
         _messages.add(
