@@ -357,105 +357,205 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final oldPwdCtrl = TextEditingController();
     final newPwdCtrl = TextEditingController();
     final confirmPwdCtrl = TextEditingController();
-    final theme = Theme.of(context);
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
         bool saving = false;
         String? errorText;
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
-            return AlertDialog(
-              title: const Text('修改密码', style: TextStyle(fontSize: 16)),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: oldPwdCtrl,
-                    obscureText: true,
-                    style: const TextStyle(fontSize: 15),
-                    decoration: InputDecoration(
-                      hintText: '当前密码',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    enabled: !saving,
+            final theme = Theme.of(ctx);
+            final primary = theme.colorScheme.primary;
+            final bgColor = theme.cardColor;
+            final inputFill = theme.colorScheme.onSurface.withValues(alpha: 0.04);
+            final hintColor = theme.colorScheme.onSurface.withValues(alpha: 0.3);
+
+            Widget buildField({
+              required TextEditingController controller,
+              required String hint,
+              required IconData icon,
+            }) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: inputFill,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: TextField(
+                  controller: controller,
+                  obscureText: true,
+                  enabled: !saving,
+                  style: TextStyle(fontSize: 15, color: theme.colorScheme.onSurface),
+                  decoration: InputDecoration(
+                    hintText: hint,
+                    hintStyle: TextStyle(fontSize: 14, color: hintColor),
+                    prefixIcon: Icon(icon, size: 20, color: primary.withValues(alpha: 0.6)),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: newPwdCtrl,
-                    obscureText: true,
-                    style: const TextStyle(fontSize: 15),
-                    decoration: InputDecoration(
-                      hintText: '新密码（至少6位）',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    enabled: !saving,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: confirmPwdCtrl,
-                    obscureText: true,
-                    style: const TextStyle(fontSize: 15),
-                    decoration: InputDecoration(
-                      hintText: '确认新密码',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    enabled: !saving,
-                  ),
-                  if (errorText != null) ...[
-                    const SizedBox(height: 8),
-                    Text(errorText!, style: TextStyle(color: theme.colorScheme.error, fontSize: 13)),
-                  ],
-                ],
+                ),
+              );
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
               ),
-              actions: [
-                TextButton(
-                  onPressed: saving ? null : () => Navigator.pop(ctx),
-                  child: Text('取消', style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
                 ),
-                TextButton(
-                  onPressed: saving
-                      ? null
-                      : () async {
-                          if (newPwdCtrl.text.length < 6) {
-                            setDialogState(() => errorText = '新密码至少需要6位');
-                            return;
-                          }
-                          if (newPwdCtrl.text != confirmPwdCtrl.text) {
-                            setDialogState(() => errorText = '两次输入的新密码不一致');
-                            return;
-                          }
-                          setDialogState(() { saving = true; errorText = null; });
-                          try {
-                            await ref.read(authProvider.notifier).changePassword(
-                              oldPwdCtrl.text,
-                              newPwdCtrl.text,
-                            );
-                            if (ctx.mounted) Navigator.pop(ctx);
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('密码修改成功')),
-                              );
-                            }
-                          } catch (e) {
-                            setDialogState(() {
-                              saving = false;
-                              errorText = AuthNotifier.getErrorMessage(e);
-                            });
-                          }
-                        },
-                  child: saving
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('确认'),
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Drag handle
+                        Container(
+                          width: 36,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        // Shield icon
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: primary.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.shield_outlined, size: 28, color: primary),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          '修改密码',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '请输入当前密码以验证身份',
+                          style: TextStyle(fontSize: 13, color: hintColor),
+                        ),
+                        const SizedBox(height: 24),
+                        // Fields
+                        buildField(controller: oldPwdCtrl, hint: '当前密码', icon: Icons.lock_outline),
+                        const SizedBox(height: 12),
+                        buildField(controller: newPwdCtrl, hint: '新密码（至少6位）', icon: Icons.lock_reset),
+                        const SizedBox(height: 12),
+                        buildField(controller: confirmPwdCtrl, hint: '确认新密码', icon: Icons.check_circle_outline),
+                        // Error
+                        if (errorText != null) ...[
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Icon(Icons.error_outline, size: 15, color: theme.colorScheme.error),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  errorText!,
+                                  style: TextStyle(color: theme.colorScheme.error, fontSize: 13),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 24),
+                        // Buttons
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 46,
+                                child: OutlinedButton(
+                                  onPressed: saving ? null : () => Navigator.pop(ctx),
+                                  style: OutlinedButton.styleFrom(
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                    side: BorderSide(color: theme.colorScheme.onSurface.withValues(alpha: 0.12)),
+                                  ),
+                                  child: Text(
+                                    '取消',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 2,
+                              child: SizedBox(
+                                height: 46,
+                                child: ElevatedButton(
+                                  onPressed: saving
+                                      ? null
+                                      : () async {
+                                          if (newPwdCtrl.text.length < 6) {
+                                            setDialogState(() => errorText = '新密码至少需要6位');
+                                            return;
+                                          }
+                                          if (newPwdCtrl.text != confirmPwdCtrl.text) {
+                                            setDialogState(() => errorText = '两次输入的新密码不一致');
+                                            return;
+                                          }
+                                          setDialogState(() { saving = true; errorText = null; });
+                                          try {
+                                            await ref.read(authProvider.notifier).changePassword(
+                                              oldPwdCtrl.text,
+                                              newPwdCtrl.text,
+                                            );
+                                            if (ctx.mounted) Navigator.pop(ctx);
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(content: Text('密码修改成功')),
+                                              );
+                                            }
+                                          } catch (e) {
+                                            setDialogState(() {
+                                              saving = false;
+                                              errorText = AuthNotifier.getErrorMessage(e);
+                                            });
+                                          }
+                                        },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: primary,
+                                    foregroundColor: theme.colorScheme.onPrimary,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                  ),
+                                  child: saving
+                                      ? SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: theme.colorScheme.onPrimary,
+                                          ),
+                                        )
+                                      : const Text('确认修改', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ],
+              ),
             );
           },
         );
