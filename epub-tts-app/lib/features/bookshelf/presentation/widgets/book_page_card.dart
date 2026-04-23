@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../auth/domain/auth_provider.dart';
 import '../../domain/book_model.dart';
 import '../../domain/bookshelf_provider.dart';
-import '../../../reader/presentation/widgets/voice_settings_sheet.dart';
+import '../../../reader/domain/voice_provider.dart';
 import 'vinyl_player.dart';
 
 class BookPageCard extends ConsumerWidget {
@@ -26,7 +26,8 @@ class BookPageCard extends ConsumerWidget {
         final available = constraints.maxHeight;
         final topReserve = MediaQuery.of(context).padding.top + 72;
         final bottomReserve = MediaQuery.of(context).padding.bottom + 56 + 24;
-        const fixedContent = 36.0 + 22.0 + 44.0 + 60.0; // title + author + button + spacing
+        // title(36) + author(26) + button row(42) + spacing(20+12+16+16) + wiggle room(8)
+        const fixedContent = 36.0 + 26.0 + 42.0 + 64.0 + 8.0;
         final progressSpace =
             book.readingProgress.percentage > 0 ? 44.0 : 0.0;
         final coverHeight =
@@ -294,53 +295,31 @@ class BookPageCard extends ConsumerWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // Voice settings button
-                        SizedBox(
-                          height: 44,
-                          width: 44,
-                          child: IconButton(
-                            onPressed: () => _showVoiceSettings(context),
-                            icon: const Icon(Icons.graphic_eq_rounded,
-                                size: 20),
-                            style: IconButton.styleFrom(
-                              backgroundColor:
-                                  Colors.white.withValues(alpha: 0.15),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(22),
-                                side: BorderSide(
-                                  color: Colors.white
-                                      .withValues(alpha: 0.2),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
                         // Continue reading button
                         SizedBox(
-                          height: 44,
-                          width: 160,
+                          height: 42,
                           child: ElevatedButton.icon(
                             onPressed: () =>
                                 context.push('/book/${book.id}'),
                             icon: const Icon(
                                 Icons.auto_stories_rounded,
-                                size: 18),
+                                size: 17),
                             label: Text(
                               book.readingProgress.percentage > 0
                                   ? '继续阅读'
                                   : '开始阅读',
                               style: const TextStyle(
-                                  fontSize: 15,
+                                  fontSize: 14,
                                   fontWeight: FontWeight.w600),
                             ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor:
                                   Colors.white.withValues(alpha: 0.2),
                               foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(22),
+                                borderRadius: BorderRadius.circular(21),
                                 side: BorderSide(
                                   color: Colors.white
                                       .withValues(alpha: 0.25),
@@ -350,6 +329,9 @@ class BookPageCard extends ConsumerWidget {
                             ),
                           ),
                         ),
+                        const SizedBox(width: 10),
+                        // Inline voice scroller
+                        const _InlineVoicePicker(),
                       ],
                     ),
 
@@ -412,6 +394,119 @@ class BookPageCard extends ConsumerWidget {
               foregroundColor: Theme.of(ctx).colorScheme.error,
             ),
             child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Inline voice scroll wheel — swipe vertically to cycle voices.
+class _InlineVoicePicker extends ConsumerStatefulWidget {
+  const _InlineVoicePicker();
+
+  @override
+  ConsumerState<_InlineVoicePicker> createState() => _InlineVoicePickerState();
+}
+
+class _InlineVoicePickerState extends ConsumerState<_InlineVoicePicker> {
+  FixedExtentScrollController? _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    // Jump to current voice once voices load
+    ref.listenManual(voiceProvider, (prev, next) {
+      if ((prev?.voices.isEmpty ?? true) && next.voices.isNotEmpty) {
+        _jumpToCurrent(next);
+      }
+    });
+  }
+
+  void _jumpToCurrent(VoiceState vs) {
+    final idx = vs.voices.indexWhere((v) => v.name == vs.preference.voice);
+    if (idx >= 0 && _controller != null && _controller!.hasClients) {
+      _controller!.jumpToItem(idx);
+    }
+  }
+
+  FixedExtentScrollController _getController(VoiceState vs) {
+    if (_controller != null) return _controller!;
+    final idx = vs.voices.indexWhere((v) => v.name == vs.preference.voice);
+    _controller = FixedExtentScrollController(initialItem: idx >= 0 ? idx : 0);
+    return _controller!;
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final voiceState = ref.watch(voiceProvider);
+    final voices = voiceState.voices;
+
+    final boxDeco = BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.15),
+      borderRadius: BorderRadius.circular(21),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+    );
+
+    if (voices.isEmpty) {
+      return Container(
+        height: 42,
+        width: 120,
+        decoration: boxDeco,
+        child: Center(
+          child: Text('加载中…',
+              style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.white.withValues(alpha: 0.5))),
+        ),
+      );
+    }
+
+    return Container(
+      height: 42,
+      width: 120,
+      decoration: boxDeco,
+      child: Row(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 10),
+            child: Icon(Icons.record_voice_over_rounded,
+                size: 14, color: Colors.white.withValues(alpha: 0.7)),
+          ),
+          Expanded(
+            child: ListWheelScrollView.useDelegate(
+              controller: _getController(voiceState),
+              itemExtent: 28,
+              diameterRatio: 1.2,
+              perspective: 0.003,
+              physics: const FixedExtentScrollPhysics(),
+              onSelectedItemChanged: (index) {
+                final v = voices[index];
+                ref.read(voiceProvider.notifier).setVoice(v.name, v.type);
+              },
+              childDelegate: ListWheelChildBuilderDelegate(
+                childCount: voices.length,
+                builder: (context, index) {
+                  return Center(
+                    child: Text(
+                      voices[index].displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
           ),
         ],
       ),
