@@ -373,7 +373,7 @@ class EpubIndexParser:
         result: list[tuple[str, list[str]]] = []
         for i, (label, start) in enumerate(boundaries):
             end = boundaries[i + 1][1] if i + 1 < len(boundaries) else len(all_paras)
-            result.append((label, all_paras[start:end]))
+            result.append((label, all_paras[start + 1:end]))
         return result
 
     def _extract_first_heading(self, item: epub.EpubHtml) -> str | None:

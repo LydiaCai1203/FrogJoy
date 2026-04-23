@@ -608,7 +608,7 @@ class BookService:
                             else len(all_elements))
 
                 blocks = []
-                for el in all_elements[start_para:end_para]:
+                for el in all_elements[start_para + 1:end_para]:
                     text = ' '.join(el.get_text(separator=' ').split())
                     if text:
                         blocks.append(text)
