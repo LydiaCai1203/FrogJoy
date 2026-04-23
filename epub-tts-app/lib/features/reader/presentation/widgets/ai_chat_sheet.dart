@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../auth/domain/auth_provider.dart';
+import '../../../auth/domain/user_model.dart';
 import '../../data/ai_api.dart';
 import '../../domain/reader_models.dart';
 import '../../domain/reader_provider.dart';
@@ -41,7 +44,8 @@ class AiChatSheet extends ConsumerStatefulWidget {
   ConsumerState<AiChatSheet> createState() => _AiChatSheetState();
 }
 
-class _AiChatSheetState extends ConsumerState<AiChatSheet> {
+class _AiChatSheetState extends ConsumerState<AiChatSheet>
+    with TickerProviderStateMixin {
   final _messages = <AiMessage>[];
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
@@ -49,15 +53,22 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
   StreamSubscription? _streamSub;
   String _currentResponse = '';
   CancelToken? _cancelToken;
+  String? _contextText;
+  late final AnimationController _typingController;
 
   @override
   void initState() {
     super.initState();
-    _sendMessage('请解释以下内容：\n\n"${widget.selectedText}"');
+    _contextText = widget.selectedText.isNotEmpty ? widget.selectedText : null;
+    _typingController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
   }
 
   @override
   void dispose() {
+    _typingController.dispose();
     _streamSub?.cancel();
     _cancelToken?.cancel();
     _inputController.dispose();
@@ -74,7 +85,7 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
     return Container(
       decoration: BoxDecoration(
         color: bgColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         children: [
@@ -118,10 +129,10 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
 
   Widget _buildHeader(ThemeData theme, Color primary) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 10),
       decoration: BoxDecoration(
         color: theme.cardColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         boxShadow: [
           BoxShadow(
             color: theme.colorScheme.onSurface.withValues(alpha: 0.04),
@@ -137,7 +148,7 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
           Container(
             width: 36,
             height: 4,
-            margin: const EdgeInsets.only(bottom: 10),
+            margin: const EdgeInsets.only(bottom: 8),
             decoration: BoxDecoration(
               color: theme.colorScheme.onSurface.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(2),
@@ -145,15 +156,15 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
           ),
           Row(
             children: [
-              // AI avatar
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
+              // AI frog avatar
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.asset(
+                  'assets/images/avatars/green_frog.png',
+                  width: 36,
+                  height: 36,
+                  fit: BoxFit.cover,
                 ),
-                child: Icon(Icons.auto_awesome, size: 18, color: primary),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -161,27 +172,33 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'AI 阅读助手',
+                      '小青蛙',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         color: theme.colorScheme.onSurface,
                       ),
                     ),
-                    if (_isStreaming)
-                      Text(
-                        '正在输入...',
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      child: Text(
+                        _isStreaming ? '正在输入...' : 'FrogJoy',
+                        key: ValueKey(_isStreaming),
                         style: TextStyle(
                           fontSize: 11,
-                          color: primary,
+                          color: _isStreaming
+                              ? primary
+                              : theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.45),
                         ),
                       ),
+                    ),
                   ],
                 ),
               ),
               IconButton(
-                icon: Icon(Icons.close,
-                    size: 20,
+                icon: Icon(Icons.keyboard_arrow_down_rounded,
+                    size: 24,
                     color:
                         theme.colorScheme.onSurface.withValues(alpha: 0.4)),
                 onPressed: () => Navigator.pop(context),
@@ -199,45 +216,65 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
     final isUser = msg.role == 'user';
     final primary = theme.colorScheme.primary;
 
+    final bubbleRadius = BorderRadius.only(
+      topLeft: Radius.circular(isUser ? 18 : 6),
+      topRight: Radius.circular(isUser ? 6 : 18),
+      bottomLeft: const Radius.circular(18),
+      bottomRight: const Radius.circular(18),
+    );
+
+    final content = isTyping
+        ? _buildTypingIndicator(theme)
+        : SelectableText(
+            msg.content,
+            style: TextStyle(
+              fontSize: 14.5,
+              height: 1.5,
+              color: theme.colorScheme.onSurface,
+            ),
+          );
+
+    final maxBubbleWidth = MediaQuery.of(context).size.width * 0.72;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment:
-            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
-          // AI avatar (left)
+          // AI avatar (left) — only for AI messages
           if (!isUser) ...[
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: primary.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                'assets/images/avatars/green_frog.png',
+                width: 34,
+                height: 34,
+                fit: BoxFit.cover,
               ),
-              child:
-                  Icon(Icons.auto_awesome, size: 16, color: primary),
             ),
             const SizedBox(width: 8),
           ],
-          // Bubble
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: isUser
-                    ? primary.withValues(alpha: 0.15)
-                    : theme.cardColor,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(isUser ? 16 : 4),
-                  topRight: Radius.circular(isUser ? 4 : 16),
-                  bottomLeft: const Radius.circular(16),
-                  bottomRight: const Radius.circular(16),
-                ),
-                boxShadow: isUser
-                    ? null
-                    : [
+
+          // Spacer pushes user bubble to the right
+          if (isUser) const Spacer(),
+
+          // Bubble — constrained max width
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+            child: isUser
+                ? Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: primary.withValues(alpha: 0.15),
+                      borderRadius: bubbleRadius,
+                    ),
+                    child: content,
+                  )
+                : Container(
+                    decoration: BoxDecoration(
+                      borderRadius: bubbleRadius,
+                      boxShadow: [
                         BoxShadow(
                           color: theme.colorScheme.onSurface
                               .withValues(alpha: 0.05),
@@ -245,34 +282,79 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
                           offset: const Offset(0, 1),
                         ),
                       ],
-              ),
-              child: isTyping
-                  ? _buildTypingIndicator(theme)
-                  : SelectableText(
-                      msg.content,
-                      style: TextStyle(
-                        fontSize: 14.5,
-                        height: 1.5,
-                        color: theme.colorScheme.onSurface,
+                    ),
+                    child: ClipRRect(
+                      borderRadius: bubbleRadius,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: theme.cardColor,
+                          border: Border(
+                            left: BorderSide(
+                              color: primary.withValues(alpha: 0.30),
+                              width: 3,
+                            ),
+                          ),
+                        ),
+                        child: content,
                       ),
                     ),
-            ),
+                  ),
           ),
-          // User avatar (right)
+
+          // User avatar (right) — only for user messages
           if (isUser) ...[
             const SizedBox(width: 8),
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: primary,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(Icons.person, size: 18,
-                  color: theme.colorScheme.onPrimary),
-            ),
+            _buildUserAvatar(theme),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildUserAvatar(ThemeData theme) {
+    final user = ref.watch(currentUserProvider);
+    final primary = theme.colorScheme.primary;
+
+    if (user?.avatarUrl != null && user!.avatarUrl!.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: CachedNetworkImage(
+          imageUrl: user.avatarUrl!,
+          width: 34,
+          height: 34,
+          fit: BoxFit.cover,
+          errorWidget: (_, __, ___) =>
+              _buildLetterAvatar(theme, user, primary),
+        ),
+      );
+    }
+
+    return _buildLetterAvatar(theme, user, primary);
+  }
+
+  Widget _buildLetterAvatar(ThemeData theme, User? user, Color primary) {
+    final letter = (user?.name?.isNotEmpty == true
+            ? user!.name!
+            : user?.email ?? '?')
+        .substring(0, 1)
+        .toUpperCase();
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: primary,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        letter,
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onPrimary,
+        ),
       ),
     );
   }
@@ -281,26 +363,86 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
     return SizedBox(
       width: 48,
       height: 20,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: List.generate(3, (i) {
-          return TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0.0, end: 1.0),
-            duration: Duration(milliseconds: 600 + i * 200),
-            builder: (_, value, child) {
-              return Container(
-                width: 7,
-                height: 7,
-                margin: const EdgeInsets.symmetric(horizontal: 2),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurface
-                      .withValues(alpha: 0.15 + 0.2 * value),
-                  shape: BoxShape.circle,
+      child: AnimatedBuilder(
+        animation: _typingController,
+        builder: (_, __) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(3, (i) {
+              final t = ((_typingController.value + i * 0.2) % 1.0);
+              final bounce = t < 0.5 ? t * 2 : 2 - t * 2;
+              return Transform.translate(
+                offset: Offset(0, -3.0 * bounce),
+                child: Container(
+                  width: 7,
+                  height: 7,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.onSurface
+                        .withValues(alpha: 0.2 + 0.15 * bounce),
+                    shape: BoxShape.circle,
+                  ),
                 ),
               );
-            },
+            }),
           );
-        }),
+        },
+      ),
+    );
+  }
+
+  Widget _buildContextCard(ThemeData theme, Color primary) {
+    if (_contextText == null) return const SizedBox.shrink();
+
+    final text = _contextText!;
+    String display;
+    if (text.length <= 30) {
+      display = '「$text」';
+    } else {
+      display =
+          '「${text.substring(0, 12)}…${text.substring(text.length - 12)}」';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+      decoration: BoxDecoration(
+        color: primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: primary.withValues(alpha: 0.15),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.format_quote_rounded,
+              size: 16, color: primary.withValues(alpha: 0.6)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              display,
+              style: TextStyle(
+                fontSize: 13,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              icon: Icon(Icons.close_rounded,
+                  size: 16,
+                  color:
+                      theme.colorScheme.onSurface.withValues(alpha: 0.35)),
+              onPressed: () => setState(() => _contextText = null),
+              splashRadius: 14,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -325,49 +467,62 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
       ),
       child: SafeArea(
         top: false,
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Input field
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: TextField(
-                  controller: _inputController,
-                  style: TextStyle(
-                      fontSize: 15, color: theme.colorScheme.onSurface),
-                  decoration: InputDecoration(
-                    hintText: '继续提问...',
-                    hintStyle: TextStyle(
-                      fontSize: 14,
+            _buildContextCard(theme, primary),
+            Row(
+              children: [
+                // Input field
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
                       color: theme.colorScheme.onSurface
-                          .withValues(alpha: 0.3),
+                          .withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(
+                        color: theme.colorScheme.onSurface
+                            .withValues(alpha: 0.08),
+                      ),
                     ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
+                    child: TextField(
+                      controller: _inputController,
+                      style: TextStyle(
+                          fontSize: 15, color: theme.colorScheme.onSurface),
+                      decoration: InputDecoration(
+                        hintText: _contextText != null
+                            ? '关于选中内容提问...'
+                            : '向 AI 提问...',
+                        hintStyle: TextStyle(
+                          fontSize: 14,
+                          color: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.3),
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 10),
+                      ),
+                      onSubmitted: (_) => _onSend(),
+                      textInputAction: TextInputAction.send,
+                    ),
                   ),
-                  onSubmitted: (_) => _onSend(),
-                  textInputAction: TextInputAction.send,
                 ),
-              ),
+                const SizedBox(width: 6),
+                // Send / Stop button
+                if (_isStreaming)
+                  _buildCircleButton(
+                    icon: Icons.stop_rounded,
+                    color: theme.colorScheme.error,
+                    onTap: _stopStreaming,
+                  )
+                else
+                  _buildCircleButton(
+                    icon: Icons.arrow_upward_rounded,
+                    color: primary,
+                    onTap: _onSend,
+                  ),
+              ],
             ),
-            const SizedBox(width: 6),
-            // Send / Stop button
-            if (_isStreaming)
-              _buildCircleButton(
-                icon: Icons.stop_rounded,
-                color: theme.colorScheme.error,
-                onTap: _stopStreaming,
-              )
-            else
-              _buildCircleButton(
-                icon: Icons.arrow_upward_rounded,
-                color: primary,
-                onTap: _onSend,
-              ),
           ],
         ),
       ),
@@ -399,7 +554,13 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
     final text = _inputController.text.trim();
     if (text.isEmpty || _isStreaming) return;
     _inputController.clear();
-    _sendMessage(text);
+
+    String messageText = text;
+    if (_contextText != null) {
+      messageText = '关于以下内容：\n"$_contextText"\n\n$text';
+      setState(() => _contextText = null);
+    }
+    _sendMessage(messageText);
   }
 
   Future<void> _sendMessage(String text) async {
@@ -502,7 +663,8 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
             } else {
               _messages.add(AiMessage(
                   role: 'assistant',
-                  content: '请求出错: ${e.toString().length > 100 ? e.toString().substring(0, 100) : e}'));
+                  content:
+                      '请求出错: ${e.toString().length > 100 ? e.toString().substring(0, 100) : e}'));
             }
             _isStreaming = false;
             _currentResponse = '';
