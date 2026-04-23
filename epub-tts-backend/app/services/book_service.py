@@ -15,6 +15,45 @@ from shared.config import settings
 
 IMAGES_DIR = "data/images"
 
+# 章节标题正则 — 用于单文件 EPUB 自动拆章
+_CHAPTER_HEADING_RE = re.compile(
+    r'^(?:'
+    r'第[一二三四五六七八九十百千万零○〇\d]+[章回节篇卷集部]'  # 中文: 第X章/回/节/篇/卷
+    r'|Chapter\s+\d+'                                          # English
+    r'|CHAPTER\s+\d+'
+    r')'
+)
+
+
+def _detect_chapters_in_html(html_content: bytes | str) -> list[dict]:
+    """扫描单个 HTML 文件, 检测章节标题模式, 返回虚拟章节列表.
+
+    Returns:
+        [{label, para_index}, ...] 其中 para_index 是该章节标题在 <p> 序列中的位置.
+        如果检测不到 ≥2 个章节, 返回空列表(不做拆分).
+    """
+    if isinstance(html_content, bytes):
+        html_content = html_content.decode('utf-8', errors='replace')
+
+    soup = BeautifulSoup(html_content, 'html.parser')
+    body = soup.find('body') or soup
+
+    chapters = []
+    para_index = 0
+
+    for el in body.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+        text = el.get_text().strip()
+        if not text:
+            para_index += 1
+            continue
+        if _CHAPTER_HEADING_RE.match(text):
+            # 提取章节标题: 取整段文字, 但截断过长的
+            label = text[:50].strip()
+            chapters.append({"label": label, "para_index": para_index})
+        para_index += 1
+
+    return chapters if len(chapters) >= 2 else []
+
 
 class BookService:
     @staticmethod
@@ -334,6 +373,45 @@ class BookService:
                 except Exception as e:
                     logger.warning(f" Last resort failed: {e}")
 
+            # ---- 单文件自动拆章 ----
+            # 过滤掉封面等非正文条目, 看实际内容条目数
+            content_toc = [
+                t for t in toc
+                if not any(skip in t.get('href', '').lower()
+                           for skip in ['cover', 'titlepage', 'toc', 'nav'])
+            ]
+            if len(content_toc) <= 2:
+                # 尝试对每个内容文件做章节检测
+                for toc_item in content_toc:
+                    try:
+                        item_href = toc_item['href'].split('#')[0]
+                        target = None
+                        for item in book.get_items():
+                            n = item.get_name()
+                            if n == item_href or n.endswith('/' + item_href) or item_href.endswith(n):
+                                target = item
+                                break
+                        if not target:
+                            continue
+
+                        detected = _detect_chapters_in_html(target.get_content())
+                        if detected:
+                            virtual_toc = []
+                            for i, ch in enumerate(detected):
+                                virtual_toc.append({
+                                    "id": str(uuid.uuid4()),
+                                    "href": f"{target.get_name()}#__auto_ch:{i}",
+                                    "label": ch['label'],
+                                    "subitems": []
+                                })
+                            # 替换原来的单条目
+                            toc = [t for t in toc if t is not toc_item] + virtual_toc
+                            # 保持顺序: 封面在前, 虚拟章节在后
+                            toc = [t for t in toc if '__auto_ch:' not in t.get('href', '')] + virtual_toc
+                            print(f"Auto-split single file into {len(detected)} virtual chapters")
+                    except Exception as e:
+                        logger.warning(f"Auto chapter detection failed: {e}")
+
             print(f"TOC parsed: {len(toc)} items")
             if toc:
                 print(f"First chapter: {toc[0]}")
@@ -509,65 +587,94 @@ class BookService:
                 img['src'] = server_url
                 img['style'] = img.get('style', '') + '; max-width: 100%; height: auto;'
 
-        target_element = None
-        if anchor:
-            target_element = soup.find(id=anchor)
-            if not target_element:
-                target_element = soup.find(attrs={"name": anchor})
+        # ---- 处理 __auto_ch:N 虚拟锚点 ----
+        auto_ch_index = None
+        if anchor and anchor.startswith('__auto_ch:'):
+            try:
+                auto_ch_index = int(anchor.split(':')[1])
+            except (ValueError, IndexError):
+                pass
 
-        heading_tags = {'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}
-        leaf_block_tags = {'p', 'blockquote', 'li', 'dt', 'dd', 'tr'}
-        container_tags = {'div', 'section', 'article', 'ul', 'ol', 'nav', 'dl',
-                          'table', 'thead', 'tbody', 'tfoot'}
-        all_block_tags = heading_tags | leaf_block_tags | container_tags
+        if auto_ch_index is not None:
+            # 用同样的检测逻辑拆分, 只返回第 N 章的内容
+            detected = _detect_chapters_in_html(content)
+            if detected and auto_ch_index < len(detected):
+                body = soup.find('body') or soup
+                all_elements = body.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
 
-        def collect_blocks(element):
-            """Walk DOM tree, collect each block-level element as one text block."""
-            blocks = []
-            if element is None:
-                return blocks
+                start_para = detected[auto_ch_index]['para_index']
+                end_para = (detected[auto_ch_index + 1]['para_index']
+                            if auto_ch_index + 1 < len(detected)
+                            else len(all_elements))
 
-            # Text node
-            if not hasattr(element, 'name') or element.name is None:
-                text = element.get_text().strip() if hasattr(element, 'get_text') else str(element).strip()
-                if text:
-                    blocks.append(text)
-                return blocks
-
-            tag = element.name
-
-            # If this block element has block-level children, recurse into them
-            has_block_children = any(
-                hasattr(c, 'name') and c.name in all_block_tags
-                for c in element.children
-            )
-
-            if tag in (heading_tags | leaf_block_tags) and not has_block_children:
-                # Leaf block: collect as single text block
-                text = ' '.join(element.get_text(separator=' ').split())
-                if text:
-                    blocks.append(text)
+                blocks = []
+                for el in all_elements[start_para:end_para]:
+                    text = ' '.join(el.get_text(separator=' ').split())
+                    if text:
+                        blocks.append(text)
             else:
-                # Container or block-with-sub-blocks: recurse
-                for child in element.children:
-                    blocks.extend(collect_blocks(child))
-
-            return blocks
-
-        if target_element:
-            elements = [target_element]
-            for sibling in target_element.find_next_siblings():
-                if hasattr(sibling, 'name') and sibling.name in heading_tags and sibling.get('id'):
-                    break
-                elements.append(sibling)
-            blocks = []
-            for el in elements:
-                blocks.extend(collect_blocks(el))
+                blocks = []
         else:
-            body = soup.find('body') or soup
-            blocks = []
-            for child in body.children:
-                blocks.extend(collect_blocks(child))
+            # ---- 正常锚点/无锚点逻辑 ----
+            target_element = None
+            if anchor:
+                target_element = soup.find(id=anchor)
+                if not target_element:
+                    target_element = soup.find(attrs={"name": anchor})
+
+            heading_tags = {'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}
+            leaf_block_tags = {'p', 'blockquote', 'li', 'dt', 'dd', 'tr'}
+            container_tags = {'div', 'section', 'article', 'ul', 'ol', 'nav', 'dl',
+                              'table', 'thead', 'tbody', 'tfoot'}
+            all_block_tags = heading_tags | leaf_block_tags | container_tags
+
+            def collect_blocks(element):
+                """Walk DOM tree, collect each block-level element as one text block."""
+                blocks = []
+                if element is None:
+                    return blocks
+
+                # Text node
+                if not hasattr(element, 'name') or element.name is None:
+                    text = element.get_text().strip() if hasattr(element, 'get_text') else str(element).strip()
+                    if text:
+                        blocks.append(text)
+                    return blocks
+
+                tag = element.name
+
+                # If this block element has block-level children, recurse into them
+                has_block_children = any(
+                    hasattr(c, 'name') and c.name in all_block_tags
+                    for c in element.children
+                )
+
+                if tag in (heading_tags | leaf_block_tags) and not has_block_children:
+                    # Leaf block: collect as single text block
+                    text = ' '.join(element.get_text(separator=' ').split())
+                    if text:
+                        blocks.append(text)
+                else:
+                    # Container or block-with-sub-blocks: recurse
+                    for child in element.children:
+                        blocks.extend(collect_blocks(child))
+
+                return blocks
+
+            if target_element:
+                elements = [target_element]
+                for sibling in target_element.find_next_siblings():
+                    if hasattr(sibling, 'name') and sibling.name in heading_tags and sibling.get('id'):
+                        break
+                    elements.append(sibling)
+                blocks = []
+                for el in elements:
+                    blocks.extend(collect_blocks(el))
+            else:
+                body = soup.find('body') or soup
+                blocks = []
+                for child in body.children:
+                    blocks.extend(collect_blocks(child))
 
         text = '\n\n'.join(blocks)
 

@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from urllib.parse import unquote
 from typing import Iterable
 
+import re
+
 import ebooklib
 from bs4 import BeautifulSoup, Tag
 from ebooklib import epub
@@ -98,6 +100,14 @@ class EpubIndexParser:
             # Fallback: 以物理文件作章节
             logger.warning(f"EPUB has no TOC, falling back to per-file chapters: {self.epub_path}")
             logical_chapters = self._split_by_physical_file(items)
+
+        # 单文件自动拆章: 当结果只有 ≤2 章且段落很多时, 尝试按标题模式拆分
+        if len(logical_chapters) <= 2:
+            total_paras = sum(len(p) for _, p in logical_chapters)
+            if total_paras > 50:
+                split = self._try_split_by_heading_pattern(logical_chapters)
+                if split:
+                    logical_chapters = split
 
         from .paragraph_id import book_id as gen_book_id, chapter_fp as gen_cfp
         book_fp = gen_book_id(meta)
@@ -330,6 +340,41 @@ class EpubIndexParser:
             title = self._extract_first_heading(item)
             chapters.append((title, paras))
         return chapters
+
+    # 章节标题正则 (与 book_service.py 保持一致)
+    _HEADING_RE = re.compile(
+        r'^(?:'
+        r'第[一二三四五六七八九十百千万零○〇\d]+[章回节篇卷集部]'
+        r'|Chapter\s+\d+'
+        r'|CHAPTER\s+\d+'
+        r')'
+    )
+
+    def _try_split_by_heading_pattern(
+        self, chapters: list[tuple[str | None, list[str]]]
+    ) -> list[tuple[str, list[str]]] | None:
+        """尝试在已有章节的段落中检测标题模式, 进一步拆分."""
+        # 合并所有段落
+        all_paras: list[str] = []
+        for _, paras in chapters:
+            all_paras.extend(paras)
+
+        # 检测章节边界
+        boundaries: list[tuple[str, int]] = []  # (label, para_index)
+        for i, text in enumerate(all_paras):
+            if self._HEADING_RE.match(text):
+                boundaries.append((text[:50].strip(), i))
+
+        if len(boundaries) < 2:
+            return None
+
+        logger.info(f"Auto-split single-file EPUB into {len(boundaries)} chapters by heading pattern")
+
+        result: list[tuple[str, list[str]]] = []
+        for i, (label, start) in enumerate(boundaries):
+            end = boundaries[i + 1][1] if i + 1 < len(boundaries) else len(all_paras)
+            result.append((label, all_paras[start:end]))
+        return result
 
     def _extract_first_heading(self, item: epub.EpubHtml) -> str | None:
         html = item.get_body_content()

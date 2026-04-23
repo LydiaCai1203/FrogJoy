@@ -9,6 +9,7 @@ import '../../domain/translation_provider.dart';
 import '../../domain/highlight_provider.dart';
 import 'highlight_context_menu.dart';
 import 'annotation_dialog.dart';
+import 'ai_chat_sheet.dart';
 
 /// Native Flutter paragraph view for read mode.
 class ReadModeView extends ConsumerStatefulWidget {

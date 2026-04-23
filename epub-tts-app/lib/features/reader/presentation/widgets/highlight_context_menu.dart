@@ -6,6 +6,7 @@ class HighlightToolbar extends StatelessWidget {
   final void Function(String color) onColor;
   final VoidCallback onNote;
   final VoidCallback onCopy;
+  final VoidCallback? onAskAI;
 
   const HighlightToolbar({
     super.key,
@@ -13,6 +14,7 @@ class HighlightToolbar extends StatelessWidget {
     required this.onColor,
     required this.onNote,
     required this.onCopy,
+    this.onAskAI,
   });
 
   // Muted, semi-transparent pastel colors
@@ -60,6 +62,15 @@ class HighlightToolbar extends StatelessWidget {
                     onTap: onNote,
                     isDark: isDark,
                   ),
+                  if (onAskAI != null) ...[
+                    _divider(isDark),
+                    _ActionIcon(
+                      icon: Icons.auto_awesome_rounded,
+                      size: 15,
+                      onTap: onAskAI!,
+                      isDark: isDark,
+                    ),
+                  ],
                   _divider(isDark),
                   _ActionIcon(
                     icon: Icons.copy_rounded,
