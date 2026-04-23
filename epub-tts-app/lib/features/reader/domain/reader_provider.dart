@@ -97,10 +97,15 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, String> {
     // Restore saved mode, defaults: play + non-immersive
     final savedMode = LocalStorage.getInteractionMode(arg);
     final savedToolbar = LocalStorage.getToolbarVisible(arg);
+    final savedContentMode = LocalStorage.getContentMode(arg);
     return ReaderState(
       interactionMode: savedMode == 'read'
           ? InteractionMode.read
           : InteractionMode.play,
+      contentMode: ContentMode.values.firstWhere(
+        (e) => e.name == savedContentMode,
+        orElse: () => ContentMode.original,
+      ),
       toolbarVisible: savedToolbar,
     );
   }
@@ -211,6 +216,7 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, String> {
 
   void setContentMode(ContentMode mode) {
     state = state.copyWith(contentMode: mode);
+    LocalStorage.setContentMode(_bookId, mode.name);
   }
 
   void updateParagraphIndex(int index) {

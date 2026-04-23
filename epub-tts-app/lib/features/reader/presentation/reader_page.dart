@@ -79,16 +79,19 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       });
     }
 
-    // Auto-switch to bilingual mode when translation first becomes available
+    // Auto-switch to bilingual mode when translation first becomes available,
+    // but only if user hasn't previously chosen a content mode for this book.
     if (translationState.hasTranslation && !_hasAutoSwitchedToBilingual) {
       _hasAutoSwitchedToBilingual = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          ref
-              .read(readerProvider(widget.bookId).notifier)
-              .setContentMode(ContentMode.bilingual);
-        }
-      });
+      if (readerState.contentMode == ContentMode.original) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ref
+                .read(readerProvider(widget.bookId).notifier)
+                .setContentMode(ContentMode.bilingual);
+          }
+        });
+      }
     }
     if (!translationState.hasTranslation) {
       _hasAutoSwitchedToBilingual = false;

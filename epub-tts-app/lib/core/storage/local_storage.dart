@@ -42,6 +42,16 @@ class LocalStorage {
     return _settingsBox.put('interactionMode_$bookId', mode);
   }
 
+  // Content mode (per book): original / translated / bilingual
+  static String getContentMode(String bookId) {
+    return _settingsBox.get('contentMode_$bookId',
+        defaultValue: 'original') as String;
+  }
+
+  static Future<void> setContentMode(String bookId, String mode) {
+    return _settingsBox.put('contentMode_$bookId', mode);
+  }
+
   static bool getToolbarVisible(String bookId) {
     return _settingsBox.get('toolbarVisible_$bookId',
         defaultValue: true) as bool;

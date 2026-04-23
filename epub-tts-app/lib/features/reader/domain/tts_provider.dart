@@ -50,6 +50,9 @@ final ttsProvider =
   TtsNotifier.new,
 );
 
+/// Tracks which book is currently playing TTS. Null means nothing playing.
+final activeTtsBookIdProvider = StateProvider<String?>((ref) => null);
+
 class TtsNotifier extends FamilyNotifier<TtsState, String> {
   AudioPlayer? _player;
   StreamSubscription? _completeSub;

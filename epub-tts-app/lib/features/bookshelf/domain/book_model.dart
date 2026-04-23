@@ -27,6 +27,7 @@ class Book {
   final bool isPublic;
   final String? userId;
   final ReadingProgress readingProgress;
+  final DateTime? lastOpenedAt;
 
   const Book({
     required this.id,
@@ -36,6 +37,7 @@ class Book {
     this.isPublic = false,
     this.userId,
     this.readingProgress = const ReadingProgress(),
+    this.lastOpenedAt,
   });
 
   factory Book.fromJson(Map<String, dynamic> json) {
@@ -48,6 +50,13 @@ class Book {
       userId: (json['userId'] ?? json['user_id'])?.toString(),
       readingProgress:
           ReadingProgress.fromJson((json['readingProgress'] ?? json['reading_progress']) as Map<String, dynamic>?),
+      lastOpenedAt: _parseDateTime(json['lastOpenedAt'] ?? json['last_opened_at']),
     );
+  }
+
+  static DateTime? _parseDateTime(dynamic value) {
+    if (value == null) return null;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
   }
 }

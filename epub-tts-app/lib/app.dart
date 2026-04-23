@@ -122,49 +122,71 @@ class MainShell extends ConsumerWidget {
     final avatarUrl = user?.avatarUrl;
     final isProfileSelected = navigationShell.currentIndex == 1;
 
-    final isDark = theme.brightness == Brightness.dark;
+    final isBookshelf = navigationShell.currentIndex == 0;
 
     return Scaffold(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
       body: navigationShell,
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(
-              color: theme.colorScheme.onSurface.withValues(alpha: isDark ? 0.1 : 0.08),
-            ),
+      bottomNavigationBar: Theme(
+        data: theme.copyWith(
+          navigationBarTheme: NavigationBarThemeData(
+            labelTextStyle: WidgetStateProperty.resolveWith((states) {
+              final selected = states.contains(WidgetState.selected);
+              return TextStyle(
+                fontSize: 11,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                color: isBookshelf
+                    ? (selected ? Colors.white : Colors.white70)
+                    : (selected
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+              );
+            }),
+            iconTheme: WidgetStateProperty.resolveWith((states) {
+              final selected = states.contains(WidgetState.selected);
+              return IconThemeData(
+                color: isBookshelf
+                    ? (selected ? Colors.white : Colors.white70)
+                    : (selected
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+              );
+            }),
           ),
         ),
         child: NavigationBar(
-        selectedIndex: navigationShell.currentIndex,
-        onDestinationSelected: (index) {
-          navigationShell.goBranch(index,
-              initialLocation: index == navigationShell.currentIndex);
-        },
-        height: 56,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        backgroundColor: theme.colorScheme.surface,
-        indicatorColor: Colors.transparent,
-        destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.menu_book_outlined),
-            selectedIcon: Icon(Icons.menu_book),
-            label: '书架',
-          ),
-          NavigationDestination(
-            icon: _AvatarIcon(
-              url: avatarUrl,
-              selected: isProfileSelected,
-              theme: theme,
+          selectedIndex: navigationShell.currentIndex,
+          onDestinationSelected: (index) {
+            navigationShell.goBranch(index,
+                initialLocation: index == navigationShell.currentIndex);
+          },
+          height: 56,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          indicatorColor: Colors.transparent,
+          destinations: [
+            const NavigationDestination(
+              icon: Icon(Icons.menu_book_outlined),
+              selectedIcon: Icon(Icons.menu_book),
+              label: '书架',
             ),
-            selectedIcon: _AvatarIcon(
-              url: avatarUrl,
-              selected: true,
-              theme: theme,
+            NavigationDestination(
+              icon: _AvatarIcon(
+                url: avatarUrl,
+                selected: isProfileSelected,
+                theme: theme,
+              ),
+              selectedIcon: _AvatarIcon(
+                url: avatarUrl,
+                selected: true,
+                theme: theme,
+              ),
+              label: '我的',
             ),
-            label: '我的',
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
