@@ -16,6 +16,27 @@ class AiChatSheet extends ConsumerStatefulWidget {
     required this.selectedText,
   });
 
+  /// Show AI chat as a draggable bottom sheet.
+  static void show(BuildContext context, {required String bookId, required String selectedText}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.75,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, __) => AiChatSheet(
+          bookId: bookId,
+          selectedText: selectedText,
+        ),
+      ),
+    );
+  }
+
   @override
   ConsumerState<AiChatSheet> createState() => _AiChatSheetState();
 }
