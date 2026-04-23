@@ -5,6 +5,7 @@ import { API_URL } from "@/config";
 interface User {
   id: string;
   email: string;
+  name?: string;
   is_admin?: boolean;
   avatar_url?: string;
 }
@@ -19,6 +20,7 @@ interface AuthContextType {
   verifyEmail: (token: string) => Promise<void>;
   resendVerification: (email: string) => Promise<void>;
   logout: () => void;
+  updateProfile: (data: { name: string }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -263,12 +265,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchGuestToken();
   };
 
+  const updateProfile = async (data: { name: string }) => {
+    const token = accessToken;
+    if (!token) return;
+    const res = await fetch(`${API_URL}/auth/profile`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Update failed" }));
+      throw new Error(err.detail || "Update failed");
+    }
+    const updated = await res.json();
+    setUser((prev) => (prev ? { ...prev, ...updated } : prev));
+  };
+
   // Effective token: prefer user token, fallback to guest token
   const effectiveToken = accessToken || guestAccessToken;
   const isGuest = !accessToken && !!guestAccessToken;
 
   return (
-    <AuthContext.Provider value={{ user, token: effectiveToken, isGuest, isLoading, login, register, verifyEmail, resendVerification, logout }}>
+    <AuthContext.Provider value={{ user, token: effectiveToken, isGuest, isLoading, login, register, verifyEmail, resendVerification, logout, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

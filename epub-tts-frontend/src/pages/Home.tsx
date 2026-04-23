@@ -344,7 +344,7 @@ export default function Home() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <div className="px-2 py-1.5 text-sm font-medium">
-                        {user.email}
+                        {user.name || user.email}
                       </div>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => navigate("/profile")}>

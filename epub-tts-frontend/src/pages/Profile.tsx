@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useReadingHeatmap, useBookReadingStats, useReadingSummary } from "@/hooks/use-reading-stats";
@@ -9,12 +9,14 @@ import { DeviceManagement } from "@/components/profile/DeviceManagement";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { ArrowLeft, BrainCircuit, Book, Clock, Flame, BookOpen, LogOut, Camera } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ArrowLeft, BrainCircuit, Book, Clock, Flame, BookOpen, LogOut, Camera, Pencil, Check, X } from "lucide-react";
 import { API_BASE } from "@/config";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { FontSizeSwitcher } from "@/components/FontSizeSwitcher";
 import { TasksPanel } from "@/components/player/TasksPanel";
 import { uploadAvatar } from "@/api/services";
+import { toast } from "sonner";
 
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -26,11 +28,32 @@ function formatDuration(seconds: number): string {
 
 export default function Profile() {
   const [, navigate] = useLocation();
-  const { user, isGuest, logout } = useAuth();
+  const { user, isGuest, logout, updateProfile } = useAuth();
   const year = new Date().getFullYear();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [avatarKey, setAvatarKey] = useState(0);
   const [uploading, setUploading] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState("");
+  const [savingName, setSavingName] = useState(false);
+
+  const handleEditName = useCallback(() => {
+    setNameValue(user?.name || "");
+    setEditingName(true);
+  }, [user?.name]);
+
+  const handleSaveName = useCallback(async () => {
+    setSavingName(true);
+    try {
+      await updateProfile({ name: nameValue });
+      setEditingName(false);
+      toast.success("用户名已更新");
+    } catch {
+      toast.error("用户名更新失败");
+    } finally {
+      setSavingName(false);
+    }
+  }, [nameValue, updateProfile]);
 
   const { data: heatmapData = [] } = useReadingHeatmap(year);
   const { data: bookStats = [] } = useBookReadingStats();
@@ -183,7 +206,7 @@ export default function Profile() {
                       />
                     )}
                     <AvatarFallback className="text-lg">
-                      {user.email.charAt(0).toUpperCase()}
+                      {(user.name || user.email).charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -211,11 +234,44 @@ export default function Profile() {
                     disabled={uploading}
                   />
                 </div>
-                <div>
-                  <div className="text-sm font-medium">{user.email}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {uploading ? "上传中..." : "点击头像更换"}
-                  </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-muted-foreground">{user.email}</div>
+                  {editingName ? (
+                    <div className="flex items-center gap-2 mt-1">
+                      <Input
+                        value={nameValue}
+                        onChange={(e) => setNameValue(e.target.value)}
+                        placeholder="输入用户名"
+                        className="h-8 text-sm"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSaveName();
+                          if (e.key === "Escape") setEditingName(false);
+                        }}
+                        disabled={savingName}
+                      />
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleSaveName} disabled={savingName}>
+                        <Check className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingName(false)} disabled={savingName}>
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ) : user.name ? (
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <div className="text-sm font-medium">{user.name}</div>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleEditName}>
+                        <Pencil className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <button
+                      className="text-xs text-primary hover:underline mt-1"
+                      onClick={handleEditName}
+                    >
+                      设置用户名
+                    </button>
+                  )}
                 </div>
               </div>
               <DeviceManagement />
