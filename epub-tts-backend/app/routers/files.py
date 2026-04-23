@@ -8,6 +8,20 @@ router = APIRouter(prefix="/files", tags=["files"])
 
 AVATAR_MEDIA_TYPES = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
 
+DEFAULT_AVATAR_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "default_avatars")
+
+
+@router.get("/default-avatar/{filename}")
+async def serve_default_avatar(filename: str):
+    """Serve default frog avatar image. No auth required."""
+    safe_name = os.path.basename(filename)
+    filepath = os.path.join(DEFAULT_AVATAR_DIR, safe_name)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Default avatar not found")
+    ext = safe_name.rsplit(".", 1)[-1].lower()
+    media_type = AVATAR_MEDIA_TYPES.get(ext, "image/png")
+    return FileResponse(filepath, media_type=media_type)
+
 
 @router.get("/avatar/{user_id}")
 async def serve_avatar(user_id: str):

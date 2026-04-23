@@ -1,4 +1,5 @@
 import os
+import random
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Depends, Request, UploadFile, File
 from sqlalchemy.exc import IntegrityError
@@ -23,6 +24,19 @@ from typing import List
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 MAX_DEVICES = 3
+
+FROG_NAMES = [
+    "呱呱大王", "蛙蛙勇士", "青蛙王子", "跳跳蛙",
+    "呱星人", "蛙力觉醒", "蛙界扛把子", "蛙塞雷",
+    "一只蛙", "超级蛙蛙", "蛙哈哈", "蛙了个蛙",
+    "蛙趣无穷", "呱呱叫", "蛙声四起", "蛙蛙队长",
+    "蛙之呼吸", "蛙蛙特工", "无敌蛙蛙", "蛙仙人",
+    "蛙系青年", "蛙言蛙语", "蛙力无边", "快乐蛙",
+    "蛙蛙侠", "呱呱小天才", "蛙界新星", "蛙里蛙气",
+    "蛙声嘹亮", "蛙蛙万岁",
+]
+
+DEFAULT_AVATARS = ["green_frog.png", "gold_frog.png", "pink_frog.png"]
 
 
 def _parse_device_info(request: Request) -> tuple[str, str]:
@@ -90,11 +104,16 @@ async def register(user_data: UserCreate):
             user_id = AuthService.generate_user_id()
             password_hash = AuthService.hash_password(user_data.password)
 
+            frog_name = random.choice(FROG_NAMES)
+            frog_avatar = random.choice(DEFAULT_AVATARS)
+
             user = User(
                 id=user_id,
                 email=user_data.email,
                 password_hash=password_hash,
                 is_verified=not smtp_available,
+                name=frog_name,
+                avatar_url=f"/api/files/default-avatar/{frog_avatar}",
             )
             db.add(user)
             db.commit()

@@ -34,3 +34,5 @@ flutter:
   assets:
     - assets/images/
     - assets/images/frog_frames/
+    - assets/images/splash_frames/
+    - assets/images/avatars/

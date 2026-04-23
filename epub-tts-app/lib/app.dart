@@ -9,6 +9,7 @@ import 'features/auth/presentation/auth_page.dart';
 import 'features/bookshelf/presentation/bookshelf_page.dart';
 import 'features/profile/presentation/profile_page.dart';
 import 'features/reader/presentation/reader_page.dart';
+import 'features/splash/splash_page.dart';
 
 GoRouter buildRouter(WidgetRef ref) {
   return GoRouter(
@@ -68,6 +69,7 @@ class BookReaderApp extends ConsumerStatefulWidget {
 
 class _BookReaderAppState extends ConsumerState<BookReaderApp> {
   late final GoRouter _router;
+  bool _splashDone = false;
 
   @override
   void initState() {
@@ -89,6 +91,15 @@ class _BookReaderAppState extends ConsumerState<BookReaderApp> {
   @override
   Widget build(BuildContext context) {
     final currentTheme = ref.watch(themeProvider);
+
+    if (!_splashDone) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: SplashPage(
+          onFinished: () => setState(() => _splashDone = true),
+        ),
+      );
+    }
 
     return MaterialApp.router(
       title: 'FrogJoy',
