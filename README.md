@@ -13,6 +13,12 @@
 
 ---
 
+## 演示视频
+
+https://github.com/user-attachments/assets/1f06a462-4776-4629-b709-bc459e5f3d61
+
+---
+
 ## 功能与优势
 
 | 功能 | 说明 |
