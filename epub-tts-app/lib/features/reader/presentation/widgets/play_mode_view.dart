@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/storage/local_storage.dart';
@@ -226,7 +227,7 @@ class _PlayModeViewState extends ConsumerState<PlayModeView> {
     }
     return SelectableText.rich(
       TextSpan(
-        children: _buildHighlightedSpans(text, ranges),
+        children: _buildHighlightedSpans(text, ranges, onTapHighlight: _editHighlight),
         style: style,
       ),
       contextMenuBuilder: menuBuilder,
@@ -346,6 +347,32 @@ class _PlayModeViewState extends ConsumerState<PlayModeView> {
         );
   }
 
+  void _editHighlight(Highlight h) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => AnnotationDialog(
+        selectedText: h.selectedText,
+        highlightId: h.id,
+        initialColor: h.color,
+        initialNote: h.note,
+        onSave: (color, note) {
+          ref
+              .read(highlightProvider(widget.bookId).notifier)
+              .updateHighlight(h.id, color: color, note: note);
+        },
+        onDelete: () {
+          ref
+              .read(highlightProvider(widget.bookId).notifier)
+              .deleteHighlight(h.id);
+        },
+      ),
+    );
+  }
+
   void _handleAnnotate({
     required int paragraphIndex,
     required String selectedText,
@@ -412,7 +439,7 @@ class _PlayModeViewState extends ConsumerState<PlayModeView> {
       start = start.clamp(0, textLength);
       end = end.clamp(0, textLength);
       if (start < end) {
-        ranges.add(_HighlightRange(start, end, _highlightColor(h.color)));
+        ranges.add(_HighlightRange(start, end, _highlightColor(h.color), h));
       }
     }
     ranges.sort((a, b) => a.start.compareTo(b.start));
@@ -423,6 +450,7 @@ class _PlayModeViewState extends ConsumerState<PlayModeView> {
     String text,
     List<_HighlightRange> ranges, {
     int offset = 0,
+    void Function(Highlight)? onTapHighlight,
   }) {
     if (ranges.isEmpty) return [TextSpan(text: text)];
 
@@ -434,12 +462,24 @@ class _PlayModeViewState extends ConsumerState<PlayModeView> {
       final localEnd = (range.end - offset).clamp(0, text.length);
       if (localStart >= localEnd || localStart >= text.length) continue;
 
-      if (localStart > cursor) {
-        spans.add(TextSpan(text: text.substring(cursor, localStart)));
+      // Skip regions already covered by a previous range
+      if (localEnd <= cursor) continue;
+      final effectiveStart = localStart < cursor ? cursor : localStart;
+
+      if (effectiveStart > cursor) {
+        spans.add(TextSpan(text: text.substring(cursor, effectiveStart)));
       }
+
+      GestureRecognizer? recognizer;
+      if (range.highlight != null && onTapHighlight != null) {
+        final h = range.highlight!;
+        recognizer = TapGestureRecognizer()..onTap = () => onTapHighlight(h);
+      }
+
       spans.add(TextSpan(
-        text: text.substring(localStart, localEnd),
+        text: text.substring(effectiveStart, localEnd),
         style: TextStyle(backgroundColor: range.color),
+        recognizer: recognizer,
       ));
       cursor = localEnd;
     }
@@ -467,5 +507,6 @@ class _HighlightRange {
   final int start;
   final int end;
   final Color color;
-  const _HighlightRange(this.start, this.end, this.color);
+  final Highlight? highlight;
+  const _HighlightRange(this.start, this.end, this.color, [this.highlight]);
 }

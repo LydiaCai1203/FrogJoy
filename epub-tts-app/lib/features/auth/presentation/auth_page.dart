@@ -41,13 +41,14 @@ class _AuthPageState extends State<AuthPage> {
                 'FrogJoy',
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.primary,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 'AI 智能阅读助手',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                  color: theme.colorScheme.primary.withValues(alpha: 0.5),
                 ),
               ),
               const SizedBox(height: 28),

@@ -25,23 +25,32 @@ class BookshelfPage extends ConsumerWidget {
           data: (_) => Column(
             children: [
               // Header
-              Padding(
+              Container(
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: theme.brightness == Brightness.dark ? 0.1 : 0.06,
+                      ),
+                    ),
+                  ),
+                ),
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                 child: Row(
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(10),
                       child: Image.asset(
                         'assets/images/logo.png',
-                        width: 32,
-                        height: 32,
+                        width: 42,
+                        height: 42,
                         fit: BoxFit.cover,
                       ),
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      '我的书架',
+                      '书架',
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -72,7 +81,7 @@ class BookshelfPage extends ConsumerWidget {
                         return _buildEmptyState(context, theme);
                       }
                       return GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
                         gridDelegate:
                             const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 3,

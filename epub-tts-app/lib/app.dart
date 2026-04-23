@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -98,40 +99,112 @@ class _BookReaderAppState extends ConsumerState<BookReaderApp> {
   }
 }
 
-class MainShell extends StatelessWidget {
+class MainShell extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
 
   const MainShell({super.key, required this.navigationShell});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final user = ref.watch(currentUserProvider);
+    final avatarUrl = user?.avatarUrl;
+    final isProfileSelected = navigationShell.currentIndex == 1;
+
+    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       body: navigationShell,
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: theme.colorScheme.onSurface.withValues(alpha: isDark ? 0.1 : 0.08),
+            ),
+          ),
+        ),
+        child: NavigationBar(
         selectedIndex: navigationShell.currentIndex,
         onDestinationSelected: (index) {
           navigationShell.goBranch(index,
               initialLocation: index == navigationShell.currentIndex);
         },
-        height: 60,
+        height: 56,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        backgroundColor: theme.scaffoldBackgroundColor,
-        indicatorColor: theme.colorScheme.primary.withValues(alpha: 0.12),
-        destinations: const [
-          NavigationDestination(
+        backgroundColor: theme.colorScheme.surface,
+        indicatorColor: Colors.transparent,
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.menu_book_outlined),
             selectedIcon: Icon(Icons.menu_book),
             label: '书架',
           ),
           NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
+            icon: _AvatarIcon(
+              url: avatarUrl,
+              selected: isProfileSelected,
+              theme: theme,
+            ),
+            selectedIcon: _AvatarIcon(
+              url: avatarUrl,
+              selected: true,
+              theme: theme,
+            ),
             label: '我的',
           ),
         ],
       ),
+      ),
+    );
+  }
+}
+
+class _AvatarIcon extends StatelessWidget {
+  final String? url;
+  final bool selected;
+  final ThemeData theme;
+
+  const _AvatarIcon({
+    required this.url,
+    required this.selected,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 24.0;
+    final borderColor = selected
+        ? theme.colorScheme.primary
+        : theme.colorScheme.onSurface.withValues(alpha: 0.3);
+
+    if (url != null && url!.isNotEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: borderColor, width: selected ? 1.5 : 1),
+        ),
+        child: ClipOval(
+          child: CachedNetworkImage(
+            imageUrl: url!,
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            errorWidget: (_, __, ___) => _fallback(),
+          ),
+        ),
+      );
+    }
+
+    return _fallback();
+  }
+
+  Widget _fallback() {
+    return Image.asset(
+      'assets/images/logo.png',
+      width: 24,
+      height: 24,
     );
   }
 }

@@ -42,7 +42,7 @@ class ReaderAppBar extends ConsumerWidget {
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Row(
             children: [
               // Back button
@@ -176,7 +176,7 @@ class _TranslateButton extends ConsumerWidget {
   }
 }
 
-/// Left-side drawer panel with tabs: 目录 | 笔记
+/// Left-side drawer panel
 class _DrawerPanel extends ConsumerStatefulWidget {
   final String bookId;
 
@@ -186,63 +186,131 @@ class _DrawerPanel extends ConsumerStatefulWidget {
   ConsumerState<_DrawerPanel> createState() => _DrawerPanelState();
 }
 
-class _DrawerPanelState extends ConsumerState<_DrawerPanel>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
+class _DrawerPanelState extends ConsumerState<_DrawerPanel> {
+  int _tabIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     ref
         .read(highlightProvider(widget.bookId).notifier)
         .loadBookHighlights();
   }
 
   @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final readerState = ref.read(readerProvider(widget.bookId));
     final screenWidth = MediaQuery.of(context).size.width;
+    final panelWidth = (screenWidth * 0.75).clamp(0.0, 320.0);
+
+    // Reading progress (static snapshot — doesn't need live updates)
+    final book = readerState.book;
+    final flat = book?.flatToc ?? [];
+    final currentIdx = flat.indexWhere((t) => t.href == readerState.currentHref);
+    final progressText = flat.isNotEmpty && currentIdx >= 0
+        ? '第 ${currentIdx + 1} / ${flat.length} 章'
+        : '';
 
     return Align(
       alignment: Alignment.centerLeft,
       child: Material(
-        color: theme.scaffoldBackgroundColor,
-        elevation: 8,
-        child: SizedBox(
-          width: screenWidth * 0.45,
+        color: theme.colorScheme.surface,
+        child: Container(
+          width: panelWidth,
+          decoration: BoxDecoration(
+            border: Border(
+              right: BorderSide(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+              ),
+            ),
+          ),
           child: SafeArea(
-            child: Column(
-              children: [
-                const SizedBox(height: 8),
-                TabBar(
-                  controller: _tabController,
-                  labelColor: theme.colorScheme.primary,
-                  unselectedLabelColor:
-                      theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                  indicatorColor: theme.colorScheme.primary,
-                  dividerColor: theme.dividerColor,
-                  tabs: const [
-                    Tab(text: '目录'),
-                    Tab(text: '笔记'),
-                  ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header: book title + progress
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
+                child: Text(
+                  book?.metadata.title ?? '',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _TocTab(bookId: widget.bookId),
-                      NotesSheet(bookId: widget.bookId),
-                    ],
+              ),
+              if (progressText.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                  child: Text(
+                    progressText,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                    ),
                   ),
                 ),
-              ],
+              // Capsule tab switcher
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    _tabButton(theme, '目录', 0),
+                    _tabButton(theme, '笔记', 1),
+                  ],
+                ),
+              ),
+              // Content
+              Expanded(
+                child: IndexedStack(
+                  index: _tabIndex,
+                  children: [
+                    _TocTab(bookId: widget.bookId),
+                    NotesSheet(bookId: widget.bookId),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      ),
+    );
+  }
+
+  Widget _tabButton(ThemeData theme, String label, int index) {
+    final selected = _tabIndex == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _tabIndex = index),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: selected ? theme.scaffoldBackgroundColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: selected
+                ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 3, offset: const Offset(0, 1))]
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+              color: selected
+                  ? theme.colorScheme.onSurface
+                  : theme.colorScheme.onSurface.withValues(alpha: 0.4),
             ),
           ),
         ),
@@ -263,7 +331,7 @@ class _TocTab extends ConsumerStatefulWidget {
 
 class _TocTabState extends ConsumerState<_TocTab> {
   final ScrollController _scrollController = ScrollController();
-  static const double _itemHeight = 44.0;
+  static const double _itemHeight = 48.0;
 
   @override
   void initState() {
@@ -296,7 +364,6 @@ class _TocTabState extends ConsumerState<_TocTab> {
     final maxScroll = _scrollController.position.maxScrollExtent;
     final viewportHeight = _scrollController.position.viewportDimension;
 
-    // Center the current item in view
     final offset = (targetOffset - viewportHeight / 2 + _itemHeight / 2)
         .clamp(0.0, maxScroll);
     _scrollController.jumpTo(offset);
@@ -311,15 +378,21 @@ class _TocTabState extends ConsumerState<_TocTab> {
     final flat = <_FlatEntry>[];
     _flatten(book.toc, flat, 0);
     final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
 
     return ListView.builder(
       controller: _scrollController,
+      padding: const EdgeInsets.only(top: 4, bottom: 20),
       itemCount: flat.length,
       itemExtent: _itemHeight,
       itemBuilder: (context, index) {
         final entry = flat[index];
         final isCurrent = entry.item.href == readerState.currentHref;
-        final leftPadding = 16.0 + entry.depth * 20.0;
+        final indent = 20.0 + entry.depth * 14.0;
+        final isChild = entry.depth > 0;
+
+        // Add a subtle top separator before each top-level chapter (except first)
+        final showSeparator = !isChild && index > 0;
 
         return InkWell(
           onTap: () {
@@ -327,55 +400,48 @@ class _TocTabState extends ConsumerState<_TocTab> {
                 .read(readerProvider(widget.bookId).notifier)
                 .loadChapter(entry.item.href);
           },
-          child: Row(
-            children: [
-              // Current chapter indicator: green left bar
-              Container(
-                width: 3,
-                height: _itemHeight,
-                color: isCurrent
-                    ? const Color(0xFF4CAF50)
-                    : Colors.transparent,
-              ),
-              // Depth indent with vertical connector lines
-              if (entry.depth > 0)
-                SizedBox(
-                  width: leftPadding - 16.0,
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 13),
-                      for (int i = 0; i < entry.depth; i++) ...[
-                        Container(
-                          width: 1,
-                          height: _itemHeight,
-                          color: theme.dividerColor.withValues(alpha: 0.4),
-                        ),
-                        SizedBox(width: i < entry.depth - 1 ? 19 : 0),
-                      ],
-                    ],
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: isCurrent ? primary.withValues(alpha: 0.08) : null,
+              borderRadius: BorderRadius.circular(8),
+              border: showSeparator
+                  ? Border(top: BorderSide(color: theme.colorScheme.onSurface.withValues(alpha: 0.06)))
+                  : null,
+            ),
+            padding: EdgeInsets.only(left: indent),
+            alignment: Alignment.centerLeft,
+            child: Row(
+              children: [
+                if (isCurrent)
+                  Container(
+                    width: 3,
+                    height: 16,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: primary,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-              if (entry.depth == 0) const SizedBox(width: 13),
-              // Chapter title
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 12),
+                Expanded(
                   child: Text(
                     entry.item.label,
                     style: TextStyle(
                       color: isCurrent
-                          ? const Color(0xFF4CAF50)
-                          : theme.colorScheme.onSurface,
-                      fontWeight:
-                          isCurrent ? FontWeight.bold : FontWeight.normal,
-                      fontSize: 14,
+                          ? primary
+                          : isChild
+                              ? theme.colorScheme.onSurface.withValues(alpha: 0.55)
+                              : theme.colorScheme.onSurface.withValues(alpha: 0.85),
+                      fontWeight: isCurrent ? FontWeight.w600 : FontWeight.normal,
+                      fontSize: isChild ? 13 : 14,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 12),
+              ],
+            ),
           ),
         );
       },

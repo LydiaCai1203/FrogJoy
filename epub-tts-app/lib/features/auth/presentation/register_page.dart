@@ -70,40 +70,34 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     required IconData icon,
     Widget? suffix,
   }) {
+    final cs = Theme.of(context).colorScheme;
     return InputDecoration(
       hintText: hint,
-      prefixIcon: Icon(icon, size: 20),
+      hintStyle: TextStyle(color: cs.onSurface.withValues(alpha: 0.35)),
+      prefixIcon: Icon(icon, size: 20, color: cs.primary.withValues(alpha: 0.6)),
       suffixIcon: suffix,
       filled: true,
-      fillColor: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.5),
+      fillColor: cs.surface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
+        borderSide: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
+        borderSide: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(
-          color: Theme.of(context).colorScheme.primary,
-          width: 1.5,
-        ),
+        borderSide: BorderSide(color: cs.primary, width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(
-          color: Theme.of(context).colorScheme.error.withValues(alpha: 0.5),
-        ),
+        borderSide: BorderSide(color: cs.error.withValues(alpha: 0.5)),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(
-          color: Theme.of(context).colorScheme.error,
-          width: 1.5,
-        ),
+        borderSide: BorderSide(color: cs.error, width: 1.5),
       ),
     );
   }

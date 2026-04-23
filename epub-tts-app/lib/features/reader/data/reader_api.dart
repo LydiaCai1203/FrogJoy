@@ -29,8 +29,8 @@ class ReaderApi {
     required int paragraphIndex,
   }) {
     return _dio.put('/reading/progress/$bookId', data: {
-      'chapterHref': chapterHref,
-      'paragraphIndex': paragraphIndex,
+      'chapter_href': chapterHref,
+      'paragraph_index': paragraphIndex,
     });
   }
 }

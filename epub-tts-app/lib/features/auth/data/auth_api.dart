@@ -57,4 +57,8 @@ class AuthApi {
     });
     return _dio.post('/auth/avatar', data: formData);
   }
+
+  Future<Response> updateProfile({required String name}) {
+    return _dio.put('/auth/profile', data: {'name': name});
+  }
 }

@@ -149,20 +149,21 @@ class AppThemes {
   );
 
   // 护眼 — 暖黄底，橄榄绿点缀
+  // 背景略暗、卡片略亮，色差小保持柔和
   static final _eyeCareTheme = ThemeData(
     brightness: Brightness.light,
-    scaffoldBackgroundColor: const Color(0xFFF8F2DC),
+    scaffoldBackgroundColor: const Color(0xFFF3EDD3),
     colorScheme: const ColorScheme.light(
       primary: Color(0xFF6B9E3C),
       onPrimary: Colors.white,
-      surface: Color(0xFFF3ECCE),
+      surface: Color(0xFFF8F2DC),
       onSurface: Color(0xFF4A4030),
-      secondary: Color(0xFFF0E8C8),
+      secondary: Color(0xFFF5EFDA),
       error: Color(0xFFDC2626),
     ),
-    cardColor: const Color(0xFFF3ECCE),
+    cardColor: const Color(0xFFF8F2DC),
     appBarTheme: const AppBarTheme(
-      backgroundColor: Color(0xFFF8F2DC),
+      backgroundColor: Color(0xFFF3EDD3),
       foregroundColor: Color(0xFF4A4030),
       elevation: 0,
     ),

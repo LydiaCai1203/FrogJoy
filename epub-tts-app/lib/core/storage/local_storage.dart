@@ -31,4 +31,23 @@ class LocalStorage {
   static Future<void> setFontSize(double size) {
     return _settingsBox.put('fontSize', size);
   }
+
+  // Reader mode (per book)
+  static String getInteractionMode(String bookId) {
+    return _settingsBox.get('interactionMode_$bookId',
+        defaultValue: 'play') as String;
+  }
+
+  static Future<void> setInteractionMode(String bookId, String mode) {
+    return _settingsBox.put('interactionMode_$bookId', mode);
+  }
+
+  static bool getToolbarVisible(String bookId) {
+    return _settingsBox.get('toolbarVisible_$bookId',
+        defaultValue: true) as bool;
+  }
+
+  static Future<void> setToolbarVisible(String bookId, bool visible) {
+    return _settingsBox.put('toolbarVisible_$bookId', visible);
+  }
 }

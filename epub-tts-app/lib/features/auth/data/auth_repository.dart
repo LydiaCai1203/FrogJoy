@@ -141,6 +141,13 @@ class AuthRepository {
     }
   }
 
+  /// Update user profile (name) and return refreshed user
+  Future<User> updateProfile({required String name}) async {
+    await _api.updateProfile(name: name);
+    final meResponse = await _api.getMe();
+    return User.fromJson(meResponse.data);
+  }
+
   /// Upload avatar and return refreshed user
   Future<User> uploadAvatar(String filePath) async {
     await _api.uploadAvatar(filePath);

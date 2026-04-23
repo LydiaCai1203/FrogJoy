@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/storage/local_storage.dart';
 import '../data/reader_api.dart';
 import 'reader_models.dart';
 import 'tts_provider.dart';
@@ -24,9 +25,9 @@ class ReaderState {
     this.chapterContent,
     this.sentences = const [],
     this.paragraphIndex = 0,
-    this.interactionMode = InteractionMode.read,
+    this.interactionMode = InteractionMode.play,
     this.contentMode = ContentMode.original,
-    this.toolbarVisible = false,
+    this.toolbarVisible = true,
     this.loading = true,
     this.error,
     this.jumpGeneration = 0,
@@ -92,7 +93,16 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, String> {
   ReaderState build(String arg) {
     ref.onDispose(() => _saveTimer?.cancel());
     Future.microtask(() => init());
-    return const ReaderState();
+
+    // Restore saved mode, defaults: play + non-immersive
+    final savedMode = LocalStorage.getInteractionMode(arg);
+    final savedToolbar = LocalStorage.getToolbarVisible(arg);
+    return ReaderState(
+      interactionMode: savedMode == 'read'
+          ? InteractionMode.read
+          : InteractionMode.play,
+      toolbarVisible: savedToolbar,
+    );
   }
 
   String get _bookId => arg;
@@ -190,10 +200,13 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, String> {
         );
         ref.read(ttsProvider(_bookId).notifier).stop();
         _debouncedSaveProgress();
+        LocalStorage.setInteractionMode(_bookId, 'read');
         return;
       }
     }
     state = state.copyWith(interactionMode: mode);
+    LocalStorage.setInteractionMode(
+        _bookId, mode == InteractionMode.play ? 'play' : 'read');
   }
 
   void setContentMode(ContentMode mode) {
@@ -212,7 +225,9 @@ class ReaderNotifier extends FamilyNotifier<ReaderState, String> {
   }
 
   void toggleToolbar() {
-    state = state.copyWith(toolbarVisible: !state.toolbarVisible);
+    final visible = !state.toolbarVisible;
+    state = state.copyWith(toolbarVisible: visible);
+    LocalStorage.setToolbarVisible(_bookId, visible);
   }
 
   void hideToolbar() {

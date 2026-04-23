@@ -35,8 +35,40 @@ class AiApi {
     return _dio.get('/books/$bookId/concepts/by-chapter/$chapterIdx');
   }
 
-  /// Get AI preferences (check if enabled).
-  Future<Response> getAiPreferences() {
-    return _dio.get('/ai/preferences');
+  /// Get AI config (provider, base_url, model, has_key).
+  Future<Map<String, dynamic>> getConfig() async {
+    final res = await _dio.get('/ai/config');
+    return res.data as Map<String, dynamic>;
+  }
+
+  /// Save AI config.
+  Future<void> saveConfig(Map<String, dynamic> data) {
+    return _dio.put('/ai/config', data: data);
+  }
+
+  /// Get AI preferences.
+  Future<Map<String, dynamic>> getPreferences() async {
+    final res = await _dio.get('/ai/preferences');
+    return res.data as Map<String, dynamic>;
+  }
+
+  /// Save AI preferences.
+  Future<void> savePreferences(Map<String, dynamic> data) {
+    return _dio.put('/ai/preferences', data: data);
+  }
+
+  /// Fetch available model list.
+  Future<List<Map<String, dynamic>>> getModelList({
+    required String providerType,
+    required String baseUrl,
+    String? apiKey,
+  }) async {
+    final params = <String, dynamic>{
+      'provider_type': providerType,
+      'base_url': baseUrl,
+      if (apiKey != null && apiKey.isNotEmpty) 'api_key': apiKey,
+    };
+    final res = await _dio.get('/ai/models', queryParameters: params);
+    return (res.data as List).cast<Map<String, dynamic>>();
   }
 }
