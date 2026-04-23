@@ -101,13 +101,13 @@ class ReadingStatsService:
                 .filter(ReadingStat.user_id == user_id)
                 .all()
             )
-            dates = {r[0] for r in date_rows}
+            dates = {r[0] if isinstance(r[0], date) else date.fromisoformat(str(r[0])) for r in date_rows}
 
             streak_days = 0
             check = date.today()
-            if check.isoformat() not in dates:
+            if check not in dates:
                 check = check - timedelta(days=1)
-            while check.isoformat() in dates:
+            while check in dates:
                 streak_days += 1
                 check = check - timedelta(days=1)
 

@@ -3,13 +3,14 @@ import { useLocation } from "wouter";
 import { UploadZone } from "@/components/player/UploadZone";
 import { useUploadBook } from "@/hooks/use-book";
 import { Button } from "@/components/ui/button";
-import { Loader2, Book, Trash2, BrainCircuit, Github, User, LogOut, BarChart2, AudioLines, Languages, Mic, Globe, Lock, DatabaseZap, Check, AlertTriangle } from "lucide-react";
+import { Loader2, Book, Trash2, BrainCircuit, Github, User, LogOut, BarChart2, AudioLines, Languages, Mic, Globe, Lock, DatabaseZap, Check, AlertTriangle, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { API_BASE, API_URL } from "@/config";
 import { useAuth } from "@/contexts/AuthContext";
 import { indexService, conceptService, type IndexStatus, type ConceptStatus } from "@/api/services";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { RegisterForm } from "@/components/auth/RegisterForm";
+import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import {
   AlertDialog,
@@ -54,6 +55,7 @@ export default function Home() {
   const [deleteBookId, setDeleteBookId] = useState<string | null>(null);
   const [showLogin, setShowLogin] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
+  const [showChangePwd, setShowChangePwd] = useState(false);
   
   const uploadMutation = useUploadBook();
 
@@ -351,6 +353,11 @@ export default function Home() {
                         <BarChart2 className="mr-2 h-4 w-4" />
                         个人中心
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setShowChangePwd(true)}>
+                        <KeyRound className="mr-2 h-4 w-4" />
+                        修改密码
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={handleLogout}>
                         <LogOut className="mr-2 h-4 w-4" />
                         退出登录
@@ -671,14 +678,15 @@ export default function Home() {
           setShowRegister(true);
         }}
       />
-      <RegisterForm 
-        open={showRegister} 
+      <RegisterForm
+        open={showRegister}
         onOpenChange={setShowRegister}
         onSwitchToLogin={() => {
           setShowRegister(false);
           setShowLogin(true);
         }}
       />
+      <ChangePasswordDialog open={showChangePwd} onOpenChange={setShowChangePwd} />
     </div>
   );
 }

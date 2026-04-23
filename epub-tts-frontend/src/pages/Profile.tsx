@@ -10,12 +10,12 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, BrainCircuit, Book, Clock, Flame, BookOpen, LogOut, Camera, Pencil, Check, X, Lock } from "lucide-react";
+import { ArrowLeft, BrainCircuit, Book, Clock, Flame, BookOpen, LogOut, Camera, Pencil, Check, X } from "lucide-react";
 import { API_BASE } from "@/config";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { FontSizeSwitcher } from "@/components/FontSizeSwitcher";
 import { TasksPanel } from "@/components/player/TasksPanel";
-import { uploadAvatar, changePassword } from "@/api/services";
+import { uploadAvatar } from "@/api/services";
 import { toast } from "sonner";
 
 function formatDuration(seconds: number): string {
@@ -36,10 +36,7 @@ export default function Profile() {
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState("");
   const [savingName, setSavingName] = useState(false);
-  const [oldPwd, setOldPwd] = useState("");
-  const [newPwd, setNewPwd] = useState("");
-  const [confirmPwd, setConfirmPwd] = useState("");
-  const [changingPwd, setChangingPwd] = useState(false);
+
 
   const handleEditName = useCallback(() => {
     setNameValue(user?.name || "");
@@ -279,65 +276,6 @@ export default function Profile() {
                 </div>
               </div>
               <DeviceManagement />
-
-              {/* 修改密码 */}
-              <div className="bg-card border border-border rounded-sm p-4 space-y-3">
-                <h2 className="text-sm font-display font-bold tracking-wide flex items-center gap-2">
-                  <Lock className="w-4 h-4" />
-                  修改密码
-                </h2>
-                <div className="space-y-2">
-                  <Input
-                    type="password"
-                    placeholder="当前密码"
-                    value={oldPwd}
-                    onChange={(e) => setOldPwd(e.target.value)}
-                    disabled={changingPwd}
-                  />
-                  <Input
-                    type="password"
-                    placeholder="新密码（至少6位）"
-                    value={newPwd}
-                    onChange={(e) => setNewPwd(e.target.value)}
-                    disabled={changingPwd}
-                  />
-                  <Input
-                    type="password"
-                    placeholder="确认新密码"
-                    value={confirmPwd}
-                    onChange={(e) => setConfirmPwd(e.target.value)}
-                    disabled={changingPwd}
-                  />
-                </div>
-                <Button
-                  className="w-full"
-                  disabled={changingPwd || !oldPwd || !newPwd || !confirmPwd}
-                  onClick={async () => {
-                    if (newPwd !== confirmPwd) {
-                      toast.error("两次输入的新密码不一致");
-                      return;
-                    }
-                    if (newPwd.length < 6) {
-                      toast.error("新密码至少需要6位");
-                      return;
-                    }
-                    setChangingPwd(true);
-                    try {
-                      await changePassword(oldPwd, newPwd);
-                      toast.success("密码修改成功");
-                      setOldPwd("");
-                      setNewPwd("");
-                      setConfirmPwd("");
-                    } catch (err: unknown) {
-                      toast.error(err instanceof Error ? err.message : "密码修改失败");
-                    } finally {
-                      setChangingPwd(false);
-                    }
-                  }}
-                >
-                  {changingPwd ? "修改中..." : "确认修改"}
-                </Button>
-              </div>
 
               <Button
                 variant="outline"

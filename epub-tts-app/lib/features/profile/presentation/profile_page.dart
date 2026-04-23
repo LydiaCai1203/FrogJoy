@@ -274,22 +274,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             // ── Gap ──
             SizedBox(height: 10, child: ColoredBox(color: gapColor)),
 
-            // ── Group: Security ──
-            _CardGroup(
-              cardColor: cardColor,
-              dividerColor: dividerColor,
-              children: [
-                _CellTile(
-                  icon: Icons.lock_outlined,
-                  label: '修改密码',
-                  onTap: () => _showChangePasswordDialog(),
-                ),
-              ],
-            ),
-
-            // ── Gap ──
-            SizedBox(height: 10, child: ColoredBox(color: gapColor)),
-
             // ── Group 2: AI ──
             _CardGroup(
               cardColor: cardColor,
@@ -301,6 +285,22 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const AIConfigPage()),
                   ),
+                ),
+              ],
+            ),
+
+            // ── Gap ──
+            SizedBox(height: 10, child: ColoredBox(color: gapColor)),
+
+            // ── Group: Security ──
+            _CardGroup(
+              cardColor: cardColor,
+              dividerColor: dividerColor,
+              children: [
+                _CellTile(
+                  icon: Icons.lock_outlined,
+                  label: '修改密码',
+                  onTap: () => _showChangePasswordDialog(),
                 ),
               ],
             ),
