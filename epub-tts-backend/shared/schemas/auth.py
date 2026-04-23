@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime
 
@@ -16,9 +16,14 @@ class UserLogin(BaseModel):
 class UserResponse(BaseModel):
     id: str
     email: str
+    name: Optional[str] = None
     is_admin: bool = False
     avatar_url: Optional[str] = None
     created_at: Optional[datetime] = None
+
+
+class ProfileUpdate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
 
 
 class UserInDB(BaseModel):

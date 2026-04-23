@@ -7,6 +7,7 @@ from shared.schemas.auth import (
     UserCreate, UserResponse, TokenPair,
     ThemeIn, ThemeOut, FontSizeIn, FontSizeOut,
     VerifyRequest, ResendRequest, RefreshRequest, LoginRequest, DeviceInfo,
+    ProfileUpdate,
 )
 from shared.models import User, UserPreferences
 from shared.database import get_db
@@ -306,6 +307,33 @@ async def get_me(user_id: str = Depends(get_current_user)):
         return UserResponse(
             id=user.id,
             email=user.email,
+            name=user.name,
+            is_admin=bool(user.is_admin),
+            avatar_url=user.avatar_url,
+            created_at=user.created_at.isoformat() if user.created_at else None,
+        )
+
+
+@router.put("/profile", response_model=UserResponse)
+async def update_profile(data: ProfileUpdate, user_id: str = Depends(get_current_user)):
+    if is_guest_user(user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="游客账户不支持此操作",
+        )
+    with get_db() as db:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        user.name = data.name.strip() or None
+        db.commit()
+        return UserResponse(
+            id=user.id,
+            email=user.email,
+            name=user.name,
             is_admin=bool(user.is_admin),
             avatar_url=user.avatar_url,
             created_at=user.created_at.isoformat() if user.created_at else None,

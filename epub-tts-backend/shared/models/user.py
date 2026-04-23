@@ -8,6 +8,7 @@ class User(Base):
 
     id = Column(String, primary_key=True)
     email = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=True)
     password_hash = Column(String, nullable=False)
     is_verified = Column(Boolean, default=False, server_default="false")
     is_admin = Column(Boolean, default=False, server_default="false")
