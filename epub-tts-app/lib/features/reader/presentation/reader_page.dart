@@ -126,7 +126,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                 if (showChrome) ...[
                   ReaderAppBar(bookId: widget.bookId),
                   const SizedBox(height: 6),
-                  if (hasTranslation) ModeSwitcher(bookId: widget.bookId),
+                  ModeSwitcher(bookId: widget.bookId),
                 ] else
                   SizedBox(height: MediaQuery.of(context).padding.top),
 

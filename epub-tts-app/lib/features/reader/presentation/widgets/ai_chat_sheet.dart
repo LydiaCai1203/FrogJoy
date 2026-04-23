@@ -448,6 +448,7 @@ class _AiChatSheetState extends ConsumerState<AiChatSheet> {
       String buffer = '';
 
       _streamSub = responseBody.stream
+          .cast<List<int>>()
           .transform(utf8.decoder)
           .listen(
         (chunk) {
