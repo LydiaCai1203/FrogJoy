@@ -8,7 +8,7 @@ import '../../../core/storage/local_storage.dart';
 import '../../../core/theme/app_themes.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../auth/domain/auth_provider.dart';
-import 'ai_config_page.dart';
+import 'ai_settings_section.dart';
 import 'reading_stats_page.dart';
 
 class ProfilePage extends ConsumerStatefulWidget {
@@ -112,140 +112,152 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final cardColor = theme.cardColor;
     final dividerColor = theme.dividerColor.withValues(alpha: 0.08);
 
-    return SafeArea(
-      child: Container(
-        color: gapColor,
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            // ── Profile header card ──
-            Container(
-              color: cardColor,
-              padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
-              child: Row(
-                children: [
-                  // Avatar
-                  GestureDetector(
-                    onTap: _uploading ? null : _pickAndUploadAvatar,
-                    child: Stack(
-                      children: [
-                        if (user?.avatarUrl != null)
-                          CircleAvatar(
-                            radius: 30,
-                            backgroundColor: theme.colorScheme.primary,
-                            backgroundImage:
-                                CachedNetworkImageProvider(user!.avatarUrl!),
-                          )
-                        else
-                          CircleAvatar(
-                            radius: 30,
-                            backgroundColor: theme.colorScheme.primary,
-                            child: Text(
-                              (user?.name ?? user?.email)?.isNotEmpty == true
-                                  ? (user?.name ?? user?.email)![0].toUpperCase()
-                                  : '?',
-                              style: TextStyle(
-                                color: theme.colorScheme.onPrimary,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        if (_uploading)
-                          Positioned.fill(
-                            child: CircleAvatar(
-                              radius: 30,
-                              backgroundColor: Colors.black38,
-                              child: SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: theme.colorScheme.onPrimary,
-                                ),
-                              ),
-                            ),
-                          ),
-                        if (!_uploading)
-                          Positioned(
-                            right: 0,
-                            bottom: 0,
-                            child: Container(
-                              padding: const EdgeInsets.all(3),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.primary,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: cardColor, width: 1.5),
-                              ),
-                              child: Icon(Icons.camera_alt,
-                                  size: 11, color: theme.colorScheme.onPrimary),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  // Name + email + role
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Name
-                        GestureDetector(
-                          onTap: () => _showEditNameDialog(user?.name ?? ''),
-                          child: Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  (user?.name != null && user!.name!.isNotEmpty)
-                                      ? user.name!
-                                      : user?.email ?? '',
-                                  style: const TextStyle(
-                                      fontSize: 16, fontWeight: FontWeight.w600),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(Icons.edit, size: 13,
-                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.25)),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        // Email
-                        Text(
-                          user?.email ?? '',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primary
-                                .withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            user?.isAdmin == true ? '管理员' : '普通用户',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: theme.colorScheme.primary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+    final statusBarHeight = MediaQuery.of(context).padding.top;
+    final primary = theme.colorScheme.primary;
+
+    return Container(
+      color: gapColor,
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          // ── Profile header with gradient ──
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  primary,
+                  primary.withValues(alpha: 0.75),
                 ],
               ),
             ),
+            padding: EdgeInsets.fromLTRB(20, statusBarHeight + 28, 20, 24),
+            child: Row(
+              children: [
+                // Avatar
+                GestureDetector(
+                  onTap: _uploading ? null : _pickAndUploadAvatar,
+                  child: Stack(
+                    children: [
+                      if (user?.avatarUrl != null)
+                        CircleAvatar(
+                          radius: 30,
+                          backgroundColor: Colors.white24,
+                          backgroundImage:
+                              CachedNetworkImageProvider(user!.avatarUrl!),
+                        )
+                      else
+                        CircleAvatar(
+                          radius: 30,
+                          backgroundColor: Colors.white24,
+                          child: Text(
+                            (user?.name ?? user?.email)?.isNotEmpty == true
+                                ? (user?.name ?? user?.email)![0].toUpperCase()
+                                : '?',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      if (_uploading)
+                        Positioned.fill(
+                          child: CircleAvatar(
+                            radius: 30,
+                            backgroundColor: Colors.black38,
+                            child: const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (!_uploading)
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: primary, width: 1.5),
+                            ),
+                            child: Icon(Icons.camera_alt,
+                                size: 11, color: primary),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 14),
+                // Name + email + role
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Name
+                      GestureDetector(
+                        onTap: () => _showEditNameDialog(user?.name ?? ''),
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                (user?.name != null && user!.name!.isNotEmpty)
+                                    ? user.name!
+                                    : user?.email ?? '',
+                                style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(Icons.edit, size: 13,
+                                color: Colors.white.withValues(alpha: 0.6)),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      // Email
+                      Text(
+                        user?.email ?? '',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white.withValues(alpha: 0.7),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          user?.isAdmin == true ? '管理员' : '普通用户',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
 
             // ── Gap ──
             SizedBox(height: 10, child: ColoredBox(color: gapColor)),
@@ -275,18 +287,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             SizedBox(height: 10, child: ColoredBox(color: gapColor)),
 
             // ── Group 2: AI ──
-            _CardGroup(
+            AISettingsSection(
               cardColor: cardColor,
               dividerColor: dividerColor,
-              children: [
-                _CellTile(
-                  icon: Icons.smart_toy_outlined,
-                  label: 'AI 配置',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const AIConfigPage()),
-                  ),
-                ),
-              ],
             ),
 
             // ── Gap ──
@@ -349,8 +352,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             SizedBox(height: 32, child: ColoredBox(color: gapColor)),
           ],
         ),
-      ),
-    );
+      );
   }
 
   void _showChangePasswordDialog() {

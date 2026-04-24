@@ -125,8 +125,8 @@ class MainShell extends ConsumerWidget {
     final isBookshelf = navigationShell.currentIndex == 0;
 
     return Scaffold(
-      extendBody: true,
-      extendBodyBehindAppBar: true,
+      extendBody: isBookshelf,
+      extendBodyBehindAppBar: isBookshelf,
       body: navigationShell,
       bottomNavigationBar: Theme(
         data: theme.copyWith(
@@ -163,7 +163,7 @@ class MainShell extends ConsumerWidget {
           },
           height: 56,
           labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          backgroundColor: Colors.transparent,
+          backgroundColor: isBookshelf ? Colors.transparent : theme.cardColor,
           surfaceTintColor: Colors.transparent,
           indicatorColor: Colors.transparent,
           destinations: [

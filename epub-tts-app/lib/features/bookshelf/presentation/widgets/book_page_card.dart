@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -411,13 +412,16 @@ class _InlineVoicePicker extends ConsumerStatefulWidget {
 
 class _InlineVoicePickerState extends ConsumerState<_InlineVoicePicker> {
   FixedExtentScrollController? _controller;
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
-    // Jump to current voice once voices load
+    // Jump to current voice when voices load or preference changes
     ref.listenManual(voiceProvider, (prev, next) {
-      if ((prev?.voices.isEmpty ?? true) && next.voices.isNotEmpty) {
+      if (next.voices.isNotEmpty &&
+          ((prev?.voices.isEmpty ?? true) ||
+           prev?.preference.voice != next.preference.voice)) {
         _jumpToCurrent(next);
       }
     });
@@ -439,6 +443,7 @@ class _InlineVoicePickerState extends ConsumerState<_InlineVoicePicker> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller?.dispose();
     super.dispose();
   }
@@ -485,10 +490,15 @@ class _InlineVoicePickerState extends ConsumerState<_InlineVoicePicker> {
               itemExtent: 28,
               diameterRatio: 1.2,
               perspective: 0.003,
-              physics: const FixedExtentScrollPhysics(),
+              overAndUnderCenterOpacity: 0.4,
+              squeeze: 0.9,
+              physics: const BouncingScrollPhysics(),
               onSelectedItemChanged: (index) {
-                final v = voices[index];
-                ref.read(voiceProvider.notifier).setVoice(v.name, v.type);
+                _debounce?.cancel();
+                _debounce = Timer(const Duration(milliseconds: 300), () {
+                  final v = voices[index];
+                  ref.read(voiceProvider.notifier).setVoice(v.name, v.type);
+                });
               },
               childDelegate: ListWheelChildBuilderDelegate(
                 childCount: voices.length,

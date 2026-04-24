@@ -8,6 +8,12 @@ const _providerLabels = {
   'anthropic': 'Anthropic (Claude)',
 };
 
+const _providerIcons = {
+  'openai-chat': Icons.auto_awesome,
+  'openai-responses': Icons.psychology,
+  'anthropic': Icons.smart_toy_outlined,
+};
+
 const _defaultConfigs = {
   'openai-chat': {'baseUrl': 'https://api.deepseek.com/v1', 'model': 'deepseek-chat'},
   'openai-responses': {'baseUrl': 'https://api.openai.com/v1', 'model': 'gpt-4o'},
@@ -191,208 +197,548 @@ class _AIConfigPageState extends ConsumerState<AIConfigPage> {
     );
   }
 
+  // ── UI helpers ──
+
+  InputDecoration _filledDeco({String? hint, Widget? prefix, Widget? suffix}) =>
+      InputDecoration(
+        hintText: hint,
+        hintStyle: TextStyle(
+          fontSize: 14,
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+        ),
+        prefixIcon: prefix,
+        suffixIcon: suffix,
+        filled: true,
+        fillColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.04),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(
+            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.4),
+            width: 1.5,
+          ),
+        ),
+      );
+
+  // ── Build ──
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
+    final statusBarHeight = MediaQuery.of(context).padding.top;
+    final gapColor = theme.scaffoldBackgroundColor;
+    final cardColor = theme.cardColor;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('AI 配置')),
+      backgroundColor: gapColor,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.all(20),
+              padding: EdgeInsets.zero,
               children: [
-                // --- 模型配置 ---
-                _SectionHeader('模型配置'),
-                const SizedBox(height: 12),
-
-                // 接口类型
-                _label('接口类型'),
-                const SizedBox(height: 4),
-                DropdownButtonFormField<String>(
-                  value: _providerType,
-                  isExpanded: true,
-                  decoration: _inputDeco(),
-                  items: _providerLabels.entries
-                      .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value, style: const TextStyle(fontSize: 13))))
-                      .toList(),
-                  onChanged: (v) { if (v != null) _onProviderChanged(v); },
-                ),
-                const SizedBox(height: 16),
-
-                // API 地址
-                _label('API 地址'),
-                const SizedBox(height: 4),
-                TextField(
-                  controller: _baseUrlCtrl,
-                  decoration: _inputDeco(hint: 'https://api.deepseek.com/v1'),
-                  style: const TextStyle(fontSize: 13),
-                  onEditingComplete: () => _fetchModels(),
-                ),
-                const SizedBox(height: 16),
-
-                // API Key
-                _label('API Key'),
-                const SizedBox(height: 4),
-                TextField(
-                  controller: _apiKeyCtrl,
-                  obscureText: true,
-                  decoration: _inputDeco(
-                    hint: _hasSavedKey ? '******** (已有配置)' : 'sk-...',
+                // ── Gradient header ──
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        primary,
+                        primary.withValues(alpha: 0.7),
+                      ],
+                    ),
                   ),
-                  style: const TextStyle(fontSize: 13),
-                  onEditingComplete: () => _fetchModels(),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Row(
+                  padding: EdgeInsets.fromLTRB(4, statusBarHeight, 8, 20),
+                  child: Column(
                     children: [
-                      Icon(Icons.check_circle, size: 12, color: theme.colorScheme.primary),
-                      const SizedBox(width: 4),
-                      Text('API Key 将加密存储在服务器端',
-                          style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
+                      // Nav row
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back, color: Colors.white),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                          const Spacer(),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.smart_toy_rounded,
+                            size: 28, color: Colors.white),
+                      ),
+                      const SizedBox(height: 10),
+                      const Text(
+                        'AI 配置',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '配置 AI 模型和翻译偏好',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.white.withValues(alpha: 0.7),
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
 
-                // 模型选择
-                _label('模型'),
-                const SizedBox(height: 4),
-                _loadingModels
-                    ? const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
-                      )
-                    : _modelOptions.isEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: Text('请先填写 API 地址和 Key',
-                                style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.4))),
-                          )
-                        : DropdownButtonFormField<String>(
-                            value: _modelOptions.any((m) => m['id'] == _model) ? _model : null,
-                            isExpanded: true,
-                            decoration: _inputDeco(),
-                            items: _modelOptions
-                                .map((m) => DropdownMenuItem(
-                                      value: m['id'] as String,
-                                      child: Text(m['name'] as String? ?? m['id'] as String, style: const TextStyle(fontSize: 13)),
-                                    ))
-                                .toList(),
-                            onChanged: (v) { if (v != null) setState(() => _model = v); },
+                const SizedBox(height: 10),
+
+                // ── Section: 接口类型 ──
+                _CardSection(
+                  cardColor: cardColor,
+                  children: [
+                    _SectionHeader(icon: Icons.api_rounded, label: '接口类型'),
+                    const SizedBox(height: 12),
+                    // Provider chips
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _providerLabels.entries.map((e) {
+                        final selected = e.key == _providerType;
+                        return ChoiceChip(
+                          label: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _providerIcons[e.key] ?? Icons.auto_awesome,
+                                size: 15,
+                                color: selected ? primary : theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(e.value, style: const TextStyle(fontSize: 12)),
+                            ],
                           ),
-
-                const SizedBox(height: 24),
-                Divider(color: theme.dividerColor),
-                const SizedBox(height: 16),
-
-                // --- 功能开关 ---
-                _SectionHeader('功能开关'),
-                const SizedBox(height: 12),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('问 AI', style: TextStyle(fontSize: 14)),
-                  subtitle: Text('选中文字后可向 AI 提问',
-                      style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
-                  value: _enabledAskAI,
-                  onChanged: (v) => setState(() => _enabledAskAI = v),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('AI 翻译', style: TextStyle(fontSize: 14)),
-                  subtitle: Text('开启后可在阅读页翻译当前章节',
-                      style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
-                  value: _enabledTranslation,
-                  onChanged: (v) => setState(() => _enabledTranslation = v),
+                          selected: selected,
+                          onSelected: (_) => _onProviderChanged(e.key),
+                          selectedColor: primary.withValues(alpha: 0.12),
+                          backgroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.04),
+                          side: BorderSide(
+                            color: selected
+                                ? primary.withValues(alpha: 0.3)
+                                : theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          showCheckmark: false,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        );
+                      }).toList(),
+                    ),
+                  ],
                 ),
 
-                // --- 翻译偏好 ---
+                const SizedBox(height: 10),
+
+                // ── Section: 连接配置 ──
+                _CardSection(
+                  cardColor: cardColor,
+                  children: [
+                    _SectionHeader(icon: Icons.link_rounded, label: '连接配置'),
+                    const SizedBox(height: 16),
+
+                    // API 地址
+                    _FieldLabel('API 地址'),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _baseUrlCtrl,
+                      decoration: _filledDeco(
+                        hint: 'https://api.deepseek.com/v1',
+                        prefix: Icon(Icons.dns_outlined, size: 18,
+                            color: primary.withValues(alpha: 0.5)),
+                      ),
+                      style: const TextStyle(fontSize: 14),
+                      onEditingComplete: () => _fetchModels(),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // API Key
+                    _FieldLabel('API Key'),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _apiKeyCtrl,
+                      obscureText: true,
+                      decoration: _filledDeco(
+                        hint: _hasSavedKey ? '******** (已保存)' : 'sk-...',
+                        prefix: Icon(Icons.key_rounded, size: 18,
+                            color: primary.withValues(alpha: 0.5)),
+                      ),
+                      style: const TextStyle(fontSize: 14),
+                      onEditingComplete: () => _fetchModels(),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(Icons.shield_outlined, size: 12,
+                            color: primary.withValues(alpha: 0.6)),
+                        const SizedBox(width: 4),
+                        Text('API Key 加密存储在服务器端',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                            )),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 模型
+                    _FieldLabel('模型'),
+                    const SizedBox(height: 6),
+                    _loadingModels
+                        ? Container(
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.04),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Center(
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: primary.withValues(alpha: 0.5),
+                                ),
+                              ),
+                            ),
+                          )
+                        : _modelOptions.isEmpty
+                            ? Container(
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.04),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                alignment: Alignment.centerLeft,
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                child: Text(
+                                  '填写 API 地址和 Key 后自动加载',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
+                                  ),
+                                ),
+                              )
+                            : DropdownButtonFormField<String>(
+                                value: _modelOptions.any((m) => m['id'] == _model) ? _model : null,
+                                isExpanded: true,
+                                decoration: _filledDeco(
+                                  prefix: Icon(Icons.memory_rounded, size: 18,
+                                      color: primary.withValues(alpha: 0.5)),
+                                ),
+                                style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
+                                items: _modelOptions
+                                    .map((m) => DropdownMenuItem(
+                                          value: m['id'] as String,
+                                          child: Text(
+                                            m['name'] as String? ?? m['id'] as String,
+                                            style: const TextStyle(fontSize: 13),
+                                          ),
+                                        ))
+                                    .toList(),
+                                onChanged: (v) { if (v != null) setState(() => _model = v); },
+                              ),
+                  ],
+                ),
+
+                const SizedBox(height: 10),
+
+                // ── Section: 功能开关 ──
+                _CardSection(
+                  cardColor: cardColor,
+                  children: [
+                    _SectionHeader(icon: Icons.toggle_on_outlined, label: '功能开关'),
+                    const SizedBox(height: 8),
+                    _ToggleRow(
+                      icon: Icons.chat_bubble_outline_rounded,
+                      iconColor: primary,
+                      title: '问 AI',
+                      subtitle: '选中文字后可向 AI 提问',
+                      value: _enabledAskAI,
+                      onChanged: (v) => setState(() => _enabledAskAI = v),
+                    ),
+                    Divider(
+                      height: 1,
+                      indent: 44,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+                    ),
+                    _ToggleRow(
+                      icon: Icons.translate_rounded,
+                      iconColor: primary,
+                      title: 'AI 翻译',
+                      subtitle: '开启后可在阅读页翻译当前章节',
+                      value: _enabledTranslation,
+                      onChanged: (v) => setState(() => _enabledTranslation = v),
+                    ),
+                  ],
+                ),
+
+                // ── Section: 翻译偏好 (conditional) ──
                 if (_enabledTranslation) ...[
-                  const SizedBox(height: 16),
-                  Divider(color: theme.dividerColor),
-                  const SizedBox(height: 16),
-                  _SectionHeader('翻译偏好'),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
+                  _CardSection(
+                    cardColor: cardColor,
+                    children: [
+                      _SectionHeader(icon: Icons.language_rounded, label: '翻译偏好'),
+                      const SizedBox(height: 16),
 
-                  _label('源语言'),
-                  const SizedBox(height: 4),
-                  DropdownButtonFormField<String>(
-                    value: _sourceLang,
-                    isExpanded: true,
-                    decoration: _inputDeco(),
-                    items: _languageOptions
-                        .map((e) => DropdownMenuItem(value: e.$1, child: Text(e.$2, style: const TextStyle(fontSize: 13))))
-                        .toList(),
-                    onChanged: (v) { if (v != null) setState(() => _sourceLang = v); },
-                  ),
-                  const SizedBox(height: 16),
+                      // Source / Target language row
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _FieldLabel('源语言'),
+                                const SizedBox(height: 6),
+                                DropdownButtonFormField<String>(
+                                  value: _sourceLang,
+                                  isExpanded: true,
+                                  decoration: _filledDeco(),
+                                  style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
+                                  items: _languageOptions
+                                      .map((e) => DropdownMenuItem(
+                                          value: e.$1,
+                                          child: Text(e.$2, style: const TextStyle(fontSize: 13))))
+                                      .toList(),
+                                  onChanged: (v) { if (v != null) setState(() => _sourceLang = v); },
+                                ),
+                              ],
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 22, left: 8, right: 8),
+                            child: Icon(Icons.arrow_forward_rounded,
+                                size: 18, color: theme.colorScheme.onSurface.withValues(alpha: 0.25)),
+                          ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _FieldLabel('目标语言'),
+                                const SizedBox(height: 6),
+                                DropdownButtonFormField<String>(
+                                  value: _targetLang,
+                                  isExpanded: true,
+                                  decoration: _filledDeco(),
+                                  style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
+                                  items: _languageOptions
+                                      .where((e) => e.$1 != 'Auto')
+                                      .map((e) => DropdownMenuItem(
+                                          value: e.$1,
+                                          child: Text(e.$2, style: const TextStyle(fontSize: 13))))
+                                      .toList(),
+                                  onChanged: (v) { if (v != null) setState(() => _targetLang = v); },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
 
-                  _label('目标语言'),
-                  const SizedBox(height: 4),
-                  DropdownButtonFormField<String>(
-                    value: _targetLang,
-                    isExpanded: true,
-                    decoration: _inputDeco(),
-                    items: _languageOptions
-                        .where((e) => e.$1 != 'Auto')
-                        .map((e) => DropdownMenuItem(value: e.$1, child: Text(e.$2, style: const TextStyle(fontSize: 13))))
-                        .toList(),
-                    onChanged: (v) { if (v != null) setState(() => _targetLang = v); },
-                  ),
-                  const SizedBox(height: 16),
-
-                  _label('翻译 Prompt'),
-                  const SizedBox(height: 4),
-                  TextField(
-                    controller: _translationPromptCtrl,
-                    maxLines: 3,
-                    decoration: _inputDeco(hint: '设置翻译规则，如专业术语保留、语气风格等'),
-                    style: const TextStyle(fontSize: 13),
+                      _FieldLabel('翻译 Prompt（可选）'),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: _translationPromptCtrl,
+                        maxLines: 3,
+                        decoration: _filledDeco(
+                          hint: '如：专业术语保留原文、使用书面语...',
+                        ),
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ],
                   ),
                 ],
 
-                const SizedBox(height: 32),
-                FilledButton.icon(
-                  onPressed: _saving ? null : _save,
-                  icon: _saving
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.save, size: 18),
-                  label: Text(_saving ? '保存中...' : '保存配置'),
-                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(44)),
+                // ── Save button ──
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+                  child: SizedBox(
+                    height: 48,
+                    child: FilledButton(
+                      onPressed: _saving ? null : _save,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: _saving
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.check_rounded, size: 18),
+                                SizedBox(width: 6),
+                                Text('保存配置',
+                                    style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                    ),
+                  ),
                 ),
+
                 const SizedBox(height: 32),
               ],
             ),
     );
   }
+}
 
-  InputDecoration _inputDeco({String? hint}) => InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(fontSize: 13),
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-      );
+// ─────────────────────────────────────────────
+// Reusable building blocks
+// ─────────────────────────────────────────────
 
-  Widget _label(String text) => Text(
-        text,
-        style: TextStyle(
-          fontSize: 12,
-          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-        ),
-      );
+class _CardSection extends StatelessWidget {
+  final Color cardColor;
+  final List<Widget> children;
+
+  const _CardSection({required this.cardColor, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
+    );
+  }
 }
 
 class _SectionHeader extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _SectionHeader({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: theme.colorScheme.primary),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        ),
+      ],
+    );
+  }
+}
+
+class _FieldLabel extends StatelessWidget {
   final String text;
-  const _SectionHeader(this.text);
+  const _FieldLabel(this.text);
 
   @override
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+      ),
+    );
+  }
+}
+
+class _ToggleRow extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _ToggleRow({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 18, color: iconColor),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w500)),
+                const SizedBox(height: 1),
+                Text(subtitle,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                    )),
+              ],
+            ),
+          ),
+          Switch.adaptive(
+            value: value,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
     );
   }
 }

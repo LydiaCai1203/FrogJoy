@@ -62,7 +62,7 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
         24,
         24,
         24,
-        24 + MediaQuery.of(context).viewInsets.bottom,
+        24 + MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/voice_api.dart';
 import 'reader_models.dart';
@@ -136,6 +137,10 @@ class VoiceNotifier extends Notifier<VoiceState> {
   }
 
   void _savePreferences(VoicePreference pref) {
-    _api.savePreferences(pref.toJson()).ignore();
+    _api.savePreferences(pref.toJson()).then((_) {
+      debugPrint('[Voice] Preferences saved: voice=${pref.voice}, rate=${pref.rate}');
+    }).catchError((e) {
+      debugPrint('[Voice] Failed to save preferences: $e');
+    });
   }
 }

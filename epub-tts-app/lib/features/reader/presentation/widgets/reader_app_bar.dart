@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/reader_models.dart';
@@ -28,49 +30,53 @@ class ReaderAppBar extends ConsumerWidget {
       }
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.scaffoldBackgroundColor,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          decoration: BoxDecoration(
+            color: theme.scaffoldBackgroundColor.withValues(alpha: 0.85),
+            border: Border(
+              bottom: BorderSide(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+                width: 0.5,
+              ),
+            ),
           ),
-        ],
-      ),
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Row(
-            children: [
-              // Back button
-              IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                children: [
+                  // Back button
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
 
-              // Title
-              Expanded(
-                child: Text(
-                  title,
-                  style: theme.textTheme.titleSmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
+                  // Title
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: theme.textTheme.titleSmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
 
-              // Translate button
-              _TranslateButton(bookId: bookId, translationState: translationState),
+                  // Translate button
+                  _TranslateButton(bookId: bookId, translationState: translationState),
 
-              // Menu button (TOC + Notes)
-              IconButton(
-                icon: const Icon(Icons.menu_rounded),
-                onPressed: () => _showSideSheet(context, ref),
-                tooltip: '目录/笔记',
+                  // Menu button (TOC + Notes)
+                  IconButton(
+                    icon: const Icon(Icons.menu_rounded),
+                    onPressed: () => _showSideSheet(context, ref),
+                    tooltip: '目录/笔记',
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

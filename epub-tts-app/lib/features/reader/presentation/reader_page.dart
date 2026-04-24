@@ -24,16 +24,43 @@ class ReaderPage extends ConsumerStatefulWidget {
   ConsumerState<ReaderPage> createState() => _ReaderPageState();
 }
 
-class _ReaderPageState extends ConsumerState<ReaderPage> {
+class _ReaderPageState extends ConsumerState<ReaderPage>
+    with SingleTickerProviderStateMixin {
   List<ConceptAnnotation> _concepts = [];
   bool _hasAutoSwitchedToBilingual = false;
   String? _translationLoadedForHref;
   String? _conceptsLoadedForHref;
 
+  late final AnimationController _entryOverlayController;
+  late final Animation<double> _entryOverlayOpacity;
+  bool _overlayDone = false;
+
   @override
   void initState() {
     super.initState();
+    _entryOverlayController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _entryOverlayOpacity = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(parent: _entryOverlayController, curve: Curves.easeOut),
+    );
+    _entryOverlayController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        setState(() => _overlayDone = true);
+      }
+    });
+    // Start fade-out after a brief delay so the page has time to render beneath
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (mounted) _entryOverlayController.forward();
+    });
     _loadConcepts();
+  }
+
+  @override
+  void dispose() {
+    _entryOverlayController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadConcepts() async {
@@ -145,6 +172,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
               bookId: widget.bookId,
               onFontSizeChanged: (_) => setState(() {}),
             ),
+
+            // Entry fade-out overlay for smooth transition from bookshelf
+            if (!_overlayDone)
+              IgnorePointer(
+                ignoring: true,
+                child: FadeTransition(
+                  opacity: _entryOverlayOpacity,
+                  child: Container(color: const Color(0xFF1A1A2E)),
+                ),
+              ),
           ],
         ),
       ),
