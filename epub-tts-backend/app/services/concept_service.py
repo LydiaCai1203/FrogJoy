@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime, timedelta
 
 import httpx
@@ -69,6 +70,7 @@ class ConceptService:
                 headers={"A2A-Version": "1.0"},
                 json={
                     "message": {
+                        "messageId": str(uuid.uuid4()),
                         "role": "ROLE_USER",
                         "parts": [{"text": payload}],
                     },
