@@ -191,6 +191,7 @@ class ConceptService:
             agent_url = settings.agent_server_url
             resp = httpx.get(
                 f"{agent_url}/default/tasks/{task_id}",
+                headers={"A2A-Version": "1.0"},
                 timeout=5,
             )
             if resp.status_code != 200:
