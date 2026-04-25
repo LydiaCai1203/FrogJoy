@@ -30,8 +30,9 @@ from services.concept_extraction import ConceptExtractor
 class ConceptAgentExecutor(AgentExecutor):
     """A2A AgentExecutor for concept extraction."""
 
-    # task_id → cancel flag
-    _cancel_flags: dict[str, bool] = {}
+    def __init__(self):
+        super().__init__()
+        self._cancel_flags: dict[str, bool] = {}
 
     async def execute(
         self, context: RequestContext, event_queue: EventQueue

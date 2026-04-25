@@ -12,6 +12,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 from uuid import uuid4
 
@@ -256,38 +259,61 @@ class ConceptExtractor:
         chapters = get_chapters(self.book_id, self.user_id)
         toc = _build_toc(chapters)
 
-        all_concepts = []
-        for i, chapter in enumerate(chapters):
-            if self._cancelled():
-                logger.info(f"Phase 1 cancelled at ch{i}/{total_chapters}")
-                raise InterruptedError("用户取消了概念提取")
-
+        # 预加载所有章节段落, 避免线程内并发访问 DB session
+        chapter_paragraphs = {}
+        for chapter in chapters:
             paragraphs = get_paragraphs(
                 self.book_id, self.user_id, chapter_idx=chapter["chapter_idx"]
             )
+            if paragraphs:
+                chapter_paragraphs[chapter["chapter_idx"]] = paragraphs
+
+        all_concepts = []
+        done_count = 0
+        done_lock = threading.Lock()
+
+        def _process_chapter(i: int, chapter: dict) -> list[dict]:
+            nonlocal done_count
+            paragraphs = chapter_paragraphs.get(chapter["chapter_idx"])
             if not paragraphs:
-                continue
-
-            if total_chapters > 0:
-                pct = 5 + int(80 * i / total_chapters)
-                self._progress(
-                    pct,
-                    f"Phase 1: {i+1}/{total_chapters} 章 '{chapter['chapter_title']}'"
-                )
-
+                return []
             try:
                 result = _call_phase1_llm(toc, chapter, paragraphs, strategy)
                 for concept in result:
                     concept["source_chapter_idx"] = chapter["chapter_idx"]
                     concept["source_chapter_title"] = chapter["chapter_title"]
-                all_concepts.extend(result)
                 logger.info(
                     f"Phase 1 ch{chapter['chapter_idx']}: "
                     f"{len(result)} concepts from '{chapter['chapter_title']}'"
                 )
+                return result
             except Exception as e:
                 logger.warning(f"Phase 1 failed for ch{chapter['chapter_idx']}: {e}")
-                continue
+                return []
+            finally:
+                with done_lock:
+                    done_count += 1
+                    pct = 5 + int(80 * done_count / max(total_chapters, 1))
+                    self._progress(
+                        pct,
+                        f"Phase 1: {done_count}/{total_chapters} 章完成"
+                    )
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {}
+            for i, chapter in enumerate(chapters):
+                if self._cancelled():
+                    logger.info(f"Phase 1 cancelled before submitting ch{i}")
+                    raise InterruptedError("用户取消了概念提取")
+                future = executor.submit(_process_chapter, i, chapter)
+                futures[future] = chapter
+
+            for future in as_completed(futures):
+                if self._cancelled():
+                    logger.info("Phase 1 cancelled during collection")
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise InterruptedError("用户取消了概念提取")
+                all_concepts.extend(future.result())
 
         return all_concepts
 
@@ -345,8 +371,7 @@ class ConceptExtractor:
         for para in paragraphs:
             text = para.text
             for m in matchers:
-                match = m["pattern"].search(text)
-                if match:
+                for match in m["pattern"].finditer(text):
                     occurrences.append({
                         "concept_id": m["concept_id"],
                         "concept_term": m["concept_term"],
@@ -418,25 +443,53 @@ class ConceptExtractor:
                 logger.warning(f"Skipped {skipped} occurrences (invalid pid)")
             db.commit()
 
-        self._mark_definitions()
+        self._classify_occurrences()
 
-    def _mark_definitions(self):
+    def _classify_occurrences(self):
+        """
+        分类每个 occurrence:
+        - 第一次出现 → definition, core_sentence = initial_definition
+        - 段落包含 initial_definition 片段 → refinement, core_sentence = 包含匹配词的句子
+        - 其余 → mention
+        """
         with get_db() as db:
             concepts = db.query(Concept).filter_by(
                 book_id=self.book_id, user_id=self.user_id
             ).all()
+
+            # 预加载段落文本 {pid: text}
+            para_rows = db.query(IndexedParagraph.id, IndexedParagraph.text).filter_by(
+                book_id=self.book_id, user_id=self.user_id
+            ).all()
+            para_text_map = {row.id: row.text for row in para_rows}
+
             for c in concepts:
-                if not c.initial_definition:
-                    continue
-                first_occ = (
+                occs = (
                     db.query(ConceptOccurrence)
                     .filter_by(concept_id=c.id)
                     .order_by(ConceptOccurrence.chapter_idx)
-                    .first()
+                    .all()
                 )
-                if first_occ:
-                    first_occ.occurrence_type = "definition"
-                    first_occ.core_sentence = c.initial_definition
+                if not occs:
+                    continue
+
+                # 第一次出现 → definition
+                first = occs[0]
+                first.occurrence_type = "definition"
+                first.core_sentence = c.initial_definition or None
+
+                # 用 initial_definition 的前 20 字作为模糊匹配片段
+                defn_snippet = (c.initial_definition or "").strip() if c.initial_definition else ""
+
+                for occ in occs[1:]:
+                    if not defn_snippet:
+                        continue
+                    para_text = para_text_map.get(occ.paragraph_id, "")
+                    if defn_snippet in para_text:
+                        occ.occurrence_type = "refinement"
+                        # 提取包含 matched_text 的句子作为 core_sentence
+                        occ.core_sentence = _extract_sentence(para_text, occ.matched_text or c.term)
+
             db.commit()
 
     def _update_stats(self):
@@ -482,6 +535,15 @@ def _build_toc(chapters):
     )
 
 
+def _extract_sentence(text: str, keyword: str) -> str | None:
+    """从段落中提取包含 keyword 的句子。"""
+    sentences = re.split(r'(?<=[。！？.!?])', text)
+    for s in sentences:
+        if keyword in s and s.strip():
+            return s.strip()
+    return None
+
+
 def _default_strategy() -> dict:
     return {
         "book_type": "非虚构",
@@ -501,23 +563,35 @@ def _default_strategy() -> dict:
     }
 
 
-def _call_llm(system, prompt, max_tokens=4000):
+def _call_llm(system, prompt, max_tokens=4000, max_retries=3):
     client = anthropic.Anthropic(
         api_key=MINIMAX_LLM_API_KEY,
         base_url=MINIMAX_LLM_BASE_URL,
     )
-    message = client.messages.create(
-        model=MINIMAX_LLM_MODEL,
-        max_tokens=max_tokens,
-        system=system,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    text = ""
-    for block in message.content:
-        if hasattr(block, "text"):
-            text = block.text
-            break
-    return _parse_json(text)
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            message = client.messages.create(
+                model=MINIMAX_LLM_MODEL,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            text = ""
+            for block in message.content:
+                if hasattr(block, "text"):
+                    text = block.text
+                    break
+            return _parse_json(text)
+        except (httpx.HTTPError, anthropic.APIConnectionError, anthropic.RateLimitError, json.JSONDecodeError) as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                wait = 2 ** (attempt + 1)  # 2s, 4s
+                logger.warning(f"LLM call failed (attempt {attempt+1}/{max_retries}), retrying in {wait}s: {e}")
+                time.sleep(wait)
+            else:
+                logger.error(f"LLM call failed after {max_retries} attempts: {e}")
+    raise last_error
 
 
 def _parse_json(text: str):
@@ -712,20 +786,20 @@ def _get_embeddings(texts: list[str]) -> list[list[float]] | None:
     if not EMBEDDING_API_KEY:
         return None
     try:
-        results = []
-        for text in texts:
-            resp = httpx.post(
-                EMBEDDING_BASE_URL,
-                headers={
-                    "Authorization": f"Bearer {EMBEDDING_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={"model": EMBEDDING_MODEL, "input": text},
-                timeout=30,
-            )
-            resp.raise_for_status()
-            results.append(resp.json()["data"][0]["embedding"])
-        return results
+        resp = httpx.post(
+            EMBEDDING_BASE_URL,
+            headers={
+                "Authorization": f"Bearer {EMBEDDING_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={"model": EMBEDDING_MODEL, "input": texts},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        data = resp.json()["data"]
+        # API 返回的 data 按 index 排序
+        data.sort(key=lambda x: x["index"])
+        return [item["embedding"] for item in data]
     except Exception as e:
         logger.warning(f"Embedding API error: {e}")
         return None
