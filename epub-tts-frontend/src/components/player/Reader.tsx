@@ -106,6 +106,73 @@ export function Reader({
     }
     return map;
   }, [annotations, sentences]);
+
+  // 把概念角标内联到句子文本中（紧跟在概念词后面）
+  const renderTextWithAnnotations = useCallback((text: string, anns: ConceptAnnotation[]) => {
+    if (!anns.length) return <span>{text}</span>;
+
+    // 找到每个概念在文本中的位置
+    type Match = { start: number; end: number; ann: ConceptAnnotation };
+    const matches: Match[] = [];
+    for (const ann of anns) {
+      const idx = text.toLowerCase().indexOf(ann.term.toLowerCase());
+      if (idx !== -1) {
+        matches.push({ start: idx, end: idx + ann.term.length, ann });
+      }
+    }
+    if (!matches.length) return <span>{text}</span>;
+
+    // 按位置排序，去重（重叠的只保留第一个）
+    matches.sort((a, b) => a.start - b.start);
+    const filtered: Match[] = [];
+    let lastEnd = 0;
+    for (const m of matches) {
+      if (m.start >= lastEnd) {
+        filtered.push(m);
+        lastEnd = m.end;
+      }
+    }
+
+    const nodes: React.ReactNode[] = [];
+    let cursor = 0;
+    for (const m of filtered) {
+      if (m.start > cursor) {
+        nodes.push(<span key={`t-${cursor}`}>{text.slice(cursor, m.start)}</span>);
+      }
+      nodes.push(
+        <span key={`c-${m.ann.concept_id}`}>
+          {text.slice(m.start, m.end)}
+          <Popover>
+            <PopoverTrigger asChild>
+              <span
+                className="inline-flex items-center justify-center w-4 h-4 ml-0.5 text-[10px] font-medium text-white bg-violet-500 rounded-full cursor-pointer hover:bg-violet-600 align-super leading-none"
+                title={m.ann.term}
+              >
+                {m.ann.badge_number}
+              </span>
+            </PopoverTrigger>
+            <PopoverContent className="w-72 p-3" side="top" align="start">
+              <div className="space-y-2">
+                <p className="font-medium text-sm text-foreground">{m.ann.popover.term}</p>
+                {m.ann.popover.initial_definition ? (
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {m.ann.popover.initial_definition}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">暂无定义</p>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </span>
+      );
+      cursor = m.end;
+    }
+    if (cursor < text.length) {
+      nodes.push(<span key="rest">{text.slice(cursor)}</span>);
+    }
+    return <>{nodes}</>;
+  }, []);
   const isTranslatedMode = contentMode === "translated";
   const isBilingualMode = contentMode === "bilingual";
   const canAnnotate = true;
@@ -825,39 +892,22 @@ export function Reader({
                     )}
                   >
                     <p className={cn("reading-text", isSentenceActive ? "font-medium" : "font-normal")}>
-                      {isTranslatedMode
-                        ? sentenceHighlights.length === 0
-                          ? <span>{text}</span>
-                          : renderTextWithHighlightMarks(text, sentenceHighlights, (h) => {
-                              setEditingHighlight(h);
-                              setAnnotationOpen(true);
-                            })
-                        : renderSentence(text, index, isSentenceActive, sentenceHighlights)}
-                      {/* 概念角标 */}
-                      {annotationsBySentence.get(index)?.map((ann) => (
-                        <Popover key={ann.concept_id}>
-                          <PopoverTrigger asChild>
-                            <span
-                              className="inline-flex items-center justify-center w-4 h-4 ml-0.5 text-[10px] font-medium text-white bg-violet-500 rounded-full cursor-pointer hover:bg-violet-600 align-super leading-none"
-                              title={ann.term}
-                            >
-                              {ann.badge_number}
-                            </span>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-72 p-3" side="top" align="start">
-                            <div className="space-y-2">
-                              <p className="font-medium text-sm text-foreground">{ann.popover.term}</p>
-                              {ann.popover.initial_definition ? (
-                                <p className="text-xs text-muted-foreground leading-relaxed">
-                                  {ann.popover.initial_definition}
-                                </p>
-                              ) : (
-                                <p className="text-xs text-muted-foreground italic">暂无定义</p>
-                              )}
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                      ))}
+                      {(() => {
+                        const anns = annotationsBySentence.get(index);
+                        if (isTranslatedMode) {
+                          return sentenceHighlights.length === 0
+                            ? (anns?.length ? renderTextWithAnnotations(text, anns) : <span>{text}</span>)
+                            : renderTextWithHighlightMarks(text, sentenceHighlights, (h) => {
+                                setEditingHighlight(h);
+                                setAnnotationOpen(true);
+                              });
+                        }
+                        // 非 TTS 高亮状态下，插入概念角标
+                        if (anns?.length && (!isSentenceActive || !isPlaying)) {
+                          return renderTextWithAnnotations(text, anns);
+                        }
+                        return renderSentence(text, index, isSentenceActive, sentenceHighlights);
+                      })()}
                     </p>
                     {showTranslatedUnderlay && (
                       <p className={cn(
