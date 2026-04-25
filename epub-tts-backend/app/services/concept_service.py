@@ -45,12 +45,14 @@ class ConceptService:
         if not status or status["status"] != "parsed":
             raise ValueError("Index not ready, build index first")
 
-        if not rebuild:
-            with get_db() as db:
-                record = db.query(IndexedBook).filter_by(
-                    book_id=book_id, user_id=user_id
-                ).first()
-                if record and record.concept_status == "enriched":
+        with get_db() as db:
+            record = db.query(IndexedBook).filter_by(
+                book_id=book_id, user_id=user_id
+            ).first()
+            if record:
+                if record.concept_status == "extracting":
+                    return None  # 已在提取中，不重复提交
+                if not rebuild and record.concept_status == "enriched":
                     return None
 
         # 标记 extracting 状态

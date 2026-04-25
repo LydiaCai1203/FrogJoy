@@ -209,7 +209,10 @@ export default function Home() {
     if (!token) return;
 
     const current = conceptStatuses[bookId];
-    if (current?.concept_status === "extracting") return;
+    if (current?.concept_status === "extracting") {
+      toast.info("概念提取正在进行中，请稍候");
+      return;
+    }
 
     // 索引必须先就绪
     const idx = indexStatuses[bookId];

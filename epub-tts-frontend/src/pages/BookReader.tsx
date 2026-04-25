@@ -1009,6 +1009,7 @@ export default function BookReader() {
                   chapterTitle={metadata?.title}
                   highlights={highlights}
                   scrollToHighlight={scrollTarget}
+                  annotations={conceptAnnotations}
                   askAIEnabled={askAIEnabled}
                   onAskAI={(text) => {
                     setPendingAskAIText(text);
