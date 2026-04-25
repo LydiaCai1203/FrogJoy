@@ -66,6 +66,7 @@ class ConceptService:
             agent_url = settings.agent_server_url
             resp = httpx.post(
                 f"{agent_url}/default/message:send",
+                headers={"A2A-Version": "1.0"},
                 json={
                     "message": {
                         "role": "ROLE_USER",
@@ -114,6 +115,7 @@ class ConceptService:
             agent_url = settings.agent_server_url
             resp = httpx.post(
                 f"{agent_url}/default/tasks/{task_id}:cancel",
+                headers={"A2A-Version": "1.0"},
                 timeout=10,
             )
             resp.raise_for_status()

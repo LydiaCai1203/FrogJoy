@@ -61,7 +61,7 @@ class TTSFacade:
                 logger.debug(f"[TTS] Language mismatch: text is '{detected_lang}', voice is '{voice_lang}'. Using '{suggested_voice}' instead.")
                 voice = suggested_voice
 
-        # 1. 优先检查内存缓存
+        # 1. 优先检查内存缓存（包含 text hash 防止跨章节缓存错误）
         if book_id and chapter_href is not None and paragraph_index is not None:
             memory_cached = await memory_cache.get(book_id, chapter_href, paragraph_index, voice, rate, pitch, is_translated)
             if memory_cached:

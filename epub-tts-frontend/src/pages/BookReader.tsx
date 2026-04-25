@@ -702,12 +702,8 @@ export default function BookReader() {
     setCurrentTime(0);
     setPlayBothPhase("original");
 
-    // 预加载前3个段落
-    if (originalSentences.length > 0) {
-      setTimeout(() => {
-        prefetchAudio(0, Math.min(3, originalSentences.length));
-      }, 100);
-    }
+    // 注意: 不在这里预加载，因为此时 originalSentences 还是旧章节的数据
+    // 预加载在 chapterData 更新后由 TTS loop 的 prefetch 逻辑处理
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentChapterHref]);
 
