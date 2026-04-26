@@ -10,6 +10,7 @@ interface Device {
   device_name: string;
   device_type: string;
   last_active: string;
+  last_ip?: string | null;
   is_current: boolean;
 }
 
@@ -124,6 +125,7 @@ export function DeviceManagement() {
               </div>
               <div className="text-xs text-muted-foreground">
                 活跃于 {formatRelativeTime(device.last_active)}
+                {device.last_ip && ` · ${device.last_ip}`}
               </div>
             </div>
             {!device.is_current && (

@@ -18,12 +18,12 @@ from app.services import session_service
 from app.middleware.auth import get_current_user, get_current_session
 from shared.config import settings
 from app.services.system_settings import get_system_setting, get_system_setting_bool
-from app.middleware.rate_limit import is_guest_user
+from app.middleware.rate_limit import is_guest_user, get_client_ip
 from typing import List
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-MAX_DEVICES = 3
+MAX_DEVICES = 5
 
 FROG_NAMES = [
     "呱呱大王", "蛙蛙勇士", "青蛙王子", "跳跳蛙",
@@ -39,8 +39,18 @@ FROG_NAMES = [
 DEFAULT_AVATARS = ["green_frog.png", "gold_frog.png", "pink_frog.png"]
 
 
-def _parse_device_info(request: Request) -> tuple[str, str]:
-    """Parse User-Agent header into (device_name, device_type)."""
+def _extract_device(request: Request) -> dict:
+    """Pull device fingerprint from the request.
+    Requires X-Device-Id header — raises 400 if missing.
+    Returns {device_id, device_name, device_type, ip}.
+    """
+    device_id = request.headers.get("x-device-id", "").strip()
+    if not device_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing X-Device-Id header",
+        )
+
     ua_string = request.headers.get("user-agent", "")
     try:
         ua = parse_ua(ua_string)
@@ -56,15 +66,23 @@ def _parse_device_info(request: Request) -> tuple[str, str]:
     except Exception:
         device_name = "Unknown"
         device_type = "web"
-    return device_name, device_type
+
+    return {
+        "device_id": device_id,
+        "device_name": device_name,
+        "device_type": device_type,
+        "ip": get_client_ip(request),
+    }
 
 
-def _create_token_pair(user_id: str, device_name: str = "Unknown", device_type: str = "web") -> dict:
+def _create_token_pair(user_id: str, device: dict) -> dict:
     """Create a session and return access + refresh tokens."""
     session_id, refresh_token = session_service.create_session(
         user_id=user_id,
-        device_name=device_name,
-        device_type=device_type,
+        device_name=device["device_name"],
+        device_type=device["device_type"],
+        device_id=device["device_id"],
+        last_ip=device["ip"],
     )
     access_token = AuthService.create_access_token(user_id, session_id)
     return {
@@ -75,12 +93,13 @@ def _create_token_pair(user_id: str, device_name: str = "Unknown", device_type: 
 
 
 @router.post("/register")
-async def register(user_data: UserCreate):
+async def register(user_data: UserCreate, request: Request):
     if not get_system_setting_bool("allow_registration", True):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="系统暂不开放注册",
         )
+    device = _extract_device(request)
     with get_db() as db:
         try:
             smtp_available = bool(settings.smtp_host and settings.smtp_user)
@@ -95,7 +114,7 @@ async def register(user_data: UserCreate):
                     else:
                         existing.is_verified = True
                         db.commit()
-                        return TokenPair(**_create_token_pair(existing.id))
+                        return TokenPair(**_create_token_pair(existing.id, device))
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="该邮箱已注册"
@@ -123,7 +142,7 @@ async def register(user_data: UserCreate):
                 EmailService.send_verification_email(user_data.email, token)
                 return {"message": "验证邮件已发送，请查收邮箱"}
             else:
-                return TokenPair(**_create_token_pair(user_id))
+                return TokenPair(**_create_token_pair(user_id, device))
         except HTTPException:
             raise
         except IntegrityError:
@@ -138,7 +157,7 @@ async def register(user_data: UserCreate):
 
 
 @router.post("/verify")
-async def verify_email(data: VerifyRequest):
+async def verify_email(data: VerifyRequest, request: Request):
     email = AuthService.decode_verification_token(data.token)
     if not email:
         raise HTTPException(
@@ -146,6 +165,7 @@ async def verify_email(data: VerifyRequest):
             detail="验证链接已过期或无效"
         )
 
+    device = _extract_device(request)
     with get_db() as db:
         user = db.query(User).filter(User.email == email).first()
         if not user:
@@ -157,7 +177,7 @@ async def verify_email(data: VerifyRequest):
             user.is_verified = True
             db.commit()
 
-        return TokenPair(**_create_token_pair(user.id))
+        return TokenPair(**_create_token_pair(user.id, device))
 
 
 @router.post("/resend-verification")
@@ -178,6 +198,7 @@ async def resend_verification(data: ResendRequest):
 
 @router.post("/login", response_model=TokenPair)
 async def login(user_data: LoginRequest, request: Request):
+    device = _extract_device(request)
     with get_db() as db:
         user = db.query(User).filter(User.email == user_data.email).first()
 
@@ -197,6 +218,22 @@ async def login(user_data: LoginRequest, request: Request):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="请先验证邮箱"
+            )
+
+        existing = session_service.find_session_by_device(user.id, device["device_id"])
+        if existing:
+            user.last_login_at = datetime.utcnow()
+            db.commit()
+            new_refresh_token = session_service.reuse_session(
+                existing["session_id"],
+                device_name=device["device_name"],
+                device_type=device["device_type"],
+                last_ip=device["ip"],
+            )
+            access_token = AuthService.create_access_token(user.id, existing["session_id"])
+            return TokenPair(
+                access_token=access_token,
+                refresh_token=new_refresh_token,
             )
 
         # Check device limit (skip for guest)
@@ -223,16 +260,11 @@ async def login(user_data: LoginRequest, request: Request):
         user.last_login_at = datetime.utcnow()
         db.commit()
 
-        device_name, device_type = _parse_device_info(request)
-        return TokenPair(**_create_token_pair(
-            user.id,
-            device_name=device_name,
-            device_type=device_type,
-        ))
+        return TokenPair(**_create_token_pair(user.id, device))
 
 
 @router.post("/refresh", response_model=TokenPair)
-async def refresh_token(data: RefreshRequest):
+async def refresh_token(data: RefreshRequest, request: Request):
     """Refresh access token using a valid refresh token."""
     # Refresh token format: "session_id:random_part"
     parts = data.refresh_token.split(":", 1)
@@ -252,7 +284,11 @@ async def refresh_token(data: RefreshRequest):
 
     # Rotate refresh token
     new_refresh_token = session_service.generate_refresh_token(session_id)
-    session_service.rotate_refresh_token(session_id, new_refresh_token)
+    session_service.rotate_refresh_token(
+        session_id,
+        new_refresh_token,
+        last_ip=get_client_ip(request),
+    )
 
     access_token = AuthService.create_access_token(session["user_id"], session_id)
     return TokenPair(
@@ -285,6 +321,7 @@ async def list_devices(session_info: dict = Depends(get_current_session)):
             device_name=s.get("device_name", "Unknown"),
             device_type=s.get("device_type", "web"),
             last_active=s.get("last_active", ""),
+            last_ip=s.get("last_ip"),
             is_current=(s["session_id"] == session_info["session_id"]),
         )
         for s in sessions
@@ -482,13 +519,9 @@ async def save_font_size(font_size_data: FontSizeIn, user_id: str = Depends(get_
 async def get_guest_token(request: Request):
     if not settings.guest_email:
         raise HTTPException(status_code=404, detail="Guest account not configured")
+    device = _extract_device(request)
     with get_db() as db:
         user = db.query(User).filter(User.email == settings.guest_email).first()
         if not user:
             raise HTTPException(status_code=404, detail="Guest account not found")
-        device_name, device_type = _parse_device_info(request)
-        return TokenPair(**_create_token_pair(
-            user.id,
-            device_name=device_name,
-            device_type=device_type,
-        ))
+        return TokenPair(**_create_token_pair(user.id, device))

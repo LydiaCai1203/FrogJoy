@@ -91,4 +91,5 @@ class DeviceInfo(BaseModel):
     device_name: str
     device_type: str
     last_active: str
+    last_ip: Optional[str] = None
     is_current: bool = False

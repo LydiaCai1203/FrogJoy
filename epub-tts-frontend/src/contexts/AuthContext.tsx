@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
 import type { ReactNode } from "react";
 import { API_URL } from "@/config";
+import { getDeviceId } from "@/lib/deviceId";
 
 interface User {
   id: string;
@@ -64,7 +65,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const res = await fetch(`${API_URL}/auth/refresh`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Device-Id": getDeviceId(),
+          },
           body: JSON.stringify({ refresh_token: refresh }),
         });
 
@@ -107,7 +111,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchGuestToken = async () => {
     try {
-      const res = await fetch(`${API_URL}/auth/guest-token`);
+      const res = await fetch(`${API_URL}/auth/guest-token`, {
+        headers: { "X-Device-Id": getDeviceId() },
+      });
       if (res.ok) {
         const data = await res.json();
         setGuestAccessToken(data.access_token);
@@ -160,7 +166,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     const res = await fetch(`${API_URL}/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Device-Id": getDeviceId(),
+      },
       body: JSON.stringify({ email, password }),
     });
 
@@ -193,7 +202,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = async (email: string, password: string): Promise<string> => {
     const res = await fetch(`${API_URL}/auth/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Device-Id": getDeviceId(),
+      },
       body: JSON.stringify({ email, password }),
     });
 
@@ -217,7 +229,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const verifyEmail = async (verifyToken: string) => {
     const res = await fetch(`${API_URL}/auth/verify`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Device-Id": getDeviceId(),
+      },
       body: JSON.stringify({ token: verifyToken }),
     });
 

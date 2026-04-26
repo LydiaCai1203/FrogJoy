@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.services.auth_service import AuthService
+from app.services import session_service
+from app.middleware.rate_limit import get_client_ip
 from shared.redis_client import get_redis
 from typing import Optional
 
@@ -23,7 +25,8 @@ def _track_active(user_id: str) -> None:
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> str:
     token = credentials.credentials
     result = AuthService.decode_token(token)
@@ -36,11 +39,14 @@ async def get_current_user(
         )
 
     _track_active(result["user_id"])
+    if result.get("session_id"):
+        session_service.touch_session(result["session_id"], get_client_ip(request))
     return result["user_id"]
 
 
 async def get_current_session(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
     """Returns {"user_id": ..., "session_id": ...}. Use when session_id is needed."""
     token = credentials.credentials
@@ -54,6 +60,8 @@ async def get_current_session(
         )
 
     _track_active(result["user_id"])
+    if result.get("session_id"):
+        session_service.touch_session(result["session_id"], get_client_ip(request))
     return result
 
 
