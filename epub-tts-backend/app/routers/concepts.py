@@ -19,8 +19,34 @@ from loguru import logger
 
 from app.middleware.auth import get_current_user
 from app.services.concept_service import ConceptService
+from shared.database import get_db
+from shared.models import Book
 
 router = APIRouter(prefix="/books", tags=["concepts"])
+
+
+# concepts 数据按书的所有者写入。读取需要按 owner 查询,
+# 写操作只允许 owner 执行。
+def _resolve_owner_for_read(book_id: str, user_id: str) -> str:
+    with get_db() as db:
+        book = db.query(Book).filter(Book.id == book_id).first()
+        if not book:
+            raise HTTPException(status_code=404, detail="Book not found")
+        if not book.is_public and book.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        return book.user_id
+
+
+def _assert_owner_for_write(book_id: str, user_id: str) -> None:
+    with get_db() as db:
+        book = db.query(Book).filter(Book.id == book_id).first()
+        if not book:
+            raise HTTPException(status_code=404, detail="Book not found")
+        if book.user_id != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Only the book owner can modify concepts",
+            )
 
 
 # ---------- Build ----------
@@ -36,6 +62,8 @@ async def build_concepts(
 
     前端轮询 GET /concepts/status, concept_status 变为 'enriched' 后可查概念。
     """
+    _assert_owner_for_write(book_id, user_id)
+
     status = ConceptService.get_status(book_id, user_id)
 
     if status and status["concept_status"] == "enriched" and not rebuild:
@@ -68,6 +96,7 @@ async def cancel_extraction(
     user_id: str = Depends(get_current_user),
 ):
     """取消正在进行的概念提取。"""
+    _assert_owner_for_write(book_id, user_id)
     cancelled = ConceptService.cancel_extraction(book_id, user_id)
     if not cancelled:
         raise HTTPException(status_code=404, detail="No running extraction found")
@@ -81,7 +110,8 @@ async def get_concept_status(
     book_id: str,
     user_id: str = Depends(get_current_user),
 ):
-    status = ConceptService.get_status(book_id, user_id)
+    owner_id = _resolve_owner_for_read(book_id, user_id)
+    status = ConceptService.get_status(book_id, owner_id)
     if not status:
         return {"concept_status": None}
     return status
@@ -92,9 +122,10 @@ async def list_concepts(
     book_id: str,
     user_id: str = Depends(get_current_user),
 ):
+    owner_id = _resolve_owner_for_read(book_id, user_id)
     return {
         "book_id": book_id,
-        "concepts": ConceptService.get_concepts(book_id, user_id),
+        "concepts": ConceptService.get_concepts(book_id, owner_id),
     }
 
 
@@ -105,8 +136,9 @@ async def get_chapter_annotations(
     user_id: str = Depends(get_current_user),
 ):
     """返回某章的概念角标数据, 前端用于渲染角标和悬浮弹窗。"""
+    owner_id = _resolve_owner_for_read(book_id, user_id)
     annotations = ConceptService.get_chapter_annotations(
-        book_id, user_id, chapter_idx
+        book_id, owner_id, chapter_idx
     )
     return {
         "book_id": book_id,
@@ -121,7 +153,8 @@ async def get_concept_detail(
     concept_id: str,
     user_id: str = Depends(get_current_user),
 ):
-    detail = ConceptService.get_concept_detail(concept_id, user_id)
+    owner_id = _resolve_owner_for_read(book_id, user_id)
+    detail = ConceptService.get_concept_detail(concept_id, owner_id)
     if not detail:
         raise HTTPException(status_code=404, detail="Concept not found")
     return detail
@@ -134,6 +167,7 @@ async def delete_concepts(
     book_id: str,
     user_id: str = Depends(get_current_user),
 ):
+    _assert_owner_for_write(book_id, user_id)
     deleted = ConceptService.delete_concepts(book_id, user_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="No concepts found")
