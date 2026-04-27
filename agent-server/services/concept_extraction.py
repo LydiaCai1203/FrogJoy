@@ -696,12 +696,54 @@ def _call_llm(system, prompt, max_tokens=4000, max_retries=3):
                 if hasattr(block, "text"):
                     text = block.text
                     break
+            if not text or not text.strip():
+                # 空返回: 打出模型给的元数据帮助定位 (是否截断 / token 用尽 /
+                # content 全是非 text block 等)
+                stop_reason = getattr(message, "stop_reason", None)
+                usage = getattr(message, "usage", None)
+                block_types = [type(b).__name__ for b in message.content]
+                logger.warning(
+                    f"LLM returned empty text: model={MINIMAX_LLM_MODEL} "
+                    f"stop_reason={stop_reason} usage={usage} "
+                    f"blocks={block_types} prompt_chars={len(prompt)}"
+                )
             return _parse_json(text)
-        except (httpx.HTTPError, anthropic.APIConnectionError, anthropic.RateLimitError, json.JSONDecodeError) as e:
+        except json.JSONDecodeError as e:
+            # 把模型实际返回的 raw text 打出来 (截 500 字), 看是不是 JSON 头/尾
+            # 加了散文 / 中途截断 / 完全胡扯
+            raw_preview = (text[:500] + "…") if len(text) > 500 else text
+            logger.warning(
+                f"LLM JSON parse failed (attempt {attempt+1}/{max_retries}): {e}\n"
+                f"  raw[{len(text)}chars]={raw_preview!r}"
+            )
             last_error = e
             if attempt < max_retries - 1:
-                wait = 2 ** (attempt + 1)  # 2s, 4s
-                logger.warning(f"LLM call failed (attempt {attempt+1}/{max_retries}), retrying in {wait}s: {e}")
+                wait = 2 ** (attempt + 1)
+                time.sleep(wait)
+            else:
+                logger.error(f"LLM call failed after {max_retries} attempts: {e}")
+        except (anthropic.APIError, anthropic.APIStatusError) as e:
+            # API 层错误 — 打 status_code + 响应 body
+            status = getattr(e, "status_code", None)
+            body = getattr(e, "body", None) or getattr(e, "response", None)
+            logger.warning(
+                f"LLM API error (attempt {attempt+1}/{max_retries}): "
+                f"status={status} body={body!r} err={e}"
+            )
+            last_error = e
+            if attempt < max_retries - 1:
+                wait = 2 ** (attempt + 1)
+                time.sleep(wait)
+            else:
+                logger.error(f"LLM call failed after {max_retries} attempts: {e}")
+        except (httpx.HTTPError, anthropic.APIConnectionError, anthropic.RateLimitError) as e:
+            logger.warning(
+                f"LLM transport error (attempt {attempt+1}/{max_retries}): "
+                f"{type(e).__name__}: {e}"
+            )
+            last_error = e
+            if attempt < max_retries - 1:
+                wait = 2 ** (attempt + 1)
                 time.sleep(wait)
             else:
                 logger.error(f"LLM call failed after {max_retries} attempts: {e}")
