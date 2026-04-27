@@ -355,7 +355,7 @@ class ConceptExtractor:
     # ===================================================================
 
     def _phase2_5_synthesize_definitions(
-        self, concepts: list[dict], strategy: dict, batch_size: int = 8
+        self, concepts: list[dict], strategy: dict, batch_size: int = 5
     ) -> None:
         """为每个概念生成 initial_definition.
 
@@ -709,12 +709,24 @@ def _call_llm(system, prompt, max_tokens=4000, max_retries=3):
 
 
 def _parse_json(text: str):
-    text = text.strip()
+    """容忍 LLM 加散文/空字符串/```代码块的稳健 JSON 解析."""
+    text = (text or "").strip()
+    if not text:
+        raise json.JSONDecodeError("LLM returned empty text", text, 0)
+    # 剥 ``` ``` 围栏
     if text.startswith("```"):
         lines = text.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
-        text = "\n".join(lines)
-    return json.loads(text)
+        lines_no_fence = [l for l in lines if not l.strip().startswith("```")]
+        text = "\n".join(lines_no_fence).strip()
+    # 退一步: 抓第一个 { 到最后一个 } 之间的子串再试 (防散文前缀/后缀)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        first = text.find("{")
+        last = text.rfind("}")
+        if first >= 0 and last > first:
+            return json.loads(text[first:last + 1])
+        raise
 
 
 def _call_phase1_llm(toc, chapter, paragraphs, strategy):
@@ -807,16 +819,28 @@ def _synthesize_definitions_batch(
     if not concepts:
         return {}
 
+    # evidence 取材: 优先 definition 角色, 不够再 refinement; 限制 3 条 / 每条 100 字
+    # 太多句子会让 prompt 飙到 3-4K token, 模型容易返回空字符串.
+    MAX_EV = 3
+    MAX_QUOTE_CHARS = 100
+
+    def _pick_evidence(c: dict) -> list[dict]:
+        evs = c.get("evidence") or []
+        defs = [e for e in evs if e.get("role") == "definition"]
+        refs = [e for e in evs if e.get("role") == "refinement"]
+        return (defs + refs)[:MAX_EV]
+
     blocks = []
     for i, c in enumerate(concepts, 1):
-        evidence = c.get("evidence") or []
-        # 最多取 5 条 evidence (跨章, 句子带章号), 避免 prompt 失控
         ev_lines = []
-        for ev in evidence[:5]:
+        for ev in _pick_evidence(c):
             ch = ev.get("chapter_idx", "?")
             quote = (ev.get("quote") or "").strip()
-            if quote:
-                ev_lines.append(f"  [第{ch}章] {quote}")
+            if not quote:
+                continue
+            if len(quote) > MAX_QUOTE_CHARS:
+                quote = quote[:MAX_QUOTE_CHARS] + "…"
+            ev_lines.append(f"  [第{ch}章] {quote}")
         ev_text = "\n".join(ev_lines) if ev_lines else "  (无)"
 
         parent_line = (
