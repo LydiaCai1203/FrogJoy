@@ -595,8 +595,7 @@ export default function Home() {
                     return (
                       <button
                         onClick={(e) => handleToggleConcepts(book.id, e)}
-                        disabled={cStatus === "extracting"}
-                        className={`absolute bottom-12 right-10 p-1.5 rounded-sm transition-opacity disabled:cursor-not-allowed ${
+                        className={`absolute bottom-12 right-10 p-1.5 rounded-sm transition-opacity ${
                           cStatus === "enriched"
                             ? "bg-violet-600/80 opacity-70 group-hover:opacity-100"
                             : cStatus === "extracting"

@@ -200,6 +200,24 @@ class ConceptService:
             if not record:
                 return None
 
+            # 自愈: IndexedBook 说 extracting 但实际无 running 任务时
+            # (典型场景: zombie cleanup 把 task 标 failed 但 IndexedBook
+            # 没同步; 或 task 在 sync 步骤刚转成终态)
+            # → 按最近一次任务的终态修正 IndexedBook
+            if record.concept_status == "extracting" and not running:
+                latest = tasks.find_latest(user_id, TASK_TYPE, book_id)
+                if latest and latest["status"] == "completed":
+                    record.concept_status = "enriched"
+                    record.concept_error = None
+                elif latest and latest["status"] in ("failed", "cancelled"):
+                    record.concept_status = None
+                    record.concept_error = latest.get("message")
+                else:
+                    # 没任何任务记录, 数据不一致, 重置让用户能重试
+                    record.concept_status = None
+                    record.concept_error = None
+                db.commit()
+
             return {
                 "concept_status": record.concept_status,
                 "concept_error": record.concept_error,
