@@ -373,18 +373,31 @@ class ConceptExtractor:
 
         term_to_concept = {c["term"]: c for c in concepts}
         total = len(concepts)
+        total_batches = (total + batch_size - 1) // batch_size
         done = 0
         ok_count = 0
-        for chunk_start in range(0, total, batch_size):
+        for batch_idx, chunk_start in enumerate(range(0, total, batch_size), 1):
             chunk = concepts[chunk_start:chunk_start + batch_size]
+            t0 = time.monotonic()
             try:
                 results = _synthesize_definitions_batch(chunk, strategy)
+                batch_ok = 0
                 for term, defn in results.items():
                     if term in term_to_concept and defn:
                         term_to_concept[term]["initial_definition"] = defn
                         ok_count += 1
+                        batch_ok += 1
+                elapsed = time.monotonic() - t0
+                logger.info(
+                    f"Phase 2.5 batch {batch_idx}/{total_batches}: "
+                    f"{batch_ok}/{len(chunk)} ok ({elapsed:.1f}s)"
+                )
             except Exception as e:
-                logger.warning(f"Phase 2.5 batch failed (chunk {chunk_start}): {e}")
+                elapsed = time.monotonic() - t0
+                logger.warning(
+                    f"Phase 2.5 batch {batch_idx}/{total_batches} failed "
+                    f"after {elapsed:.1f}s: {e}"
+                )
             done += len(chunk)
             self._progress(
                 86 + int(4 * done / max(total, 1)),  # 86-90 区间
@@ -678,9 +691,11 @@ def _default_strategy() -> dict:
 
 
 def _call_llm(system, prompt, max_tokens=4000, max_retries=3):
+    # 显式 60s 超时, 避免 minimax 那边 hang 时被 SDK 默认 600s 拖死
     client = anthropic.Anthropic(
         api_key=MINIMAX_LLM_API_KEY,
         base_url=MINIMAX_LLM_BASE_URL,
+        timeout=60.0,
     )
     last_error = None
     for attempt in range(max_retries):
