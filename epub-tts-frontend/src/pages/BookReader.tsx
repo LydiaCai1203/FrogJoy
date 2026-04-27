@@ -57,7 +57,11 @@ export default function BookReader() {
 
   // Reader State
   const [currentChapterHref, setCurrentChapterHref] = useState<string | null>(null);
-  const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
+  // playingIndex: TTS 朗读位置, 由 TTS / next / prev / 主动 seek / 恢复 写入
+  // viewingIndex: 用户视野位置, 仅由滚动检测写入
+  // 二者都参与"上次进度"持久化, 暂停时 save viewingIndex, 朗读时 save playingIndex
+  const [playingIndex, setPlayingIndex] = useState(0);
+  const [viewingIndex, setViewingIndex] = useState(0);
   const [originalSentences, setOriginalSentences] = useState<string[]>([]);
   const [translatedSentences, setTranslatedSentences] = useState<string[]>([]);
   const [conceptAnnotations, setConceptAnnotations] = useState<ConceptAnnotation[]>([]);
@@ -276,7 +280,8 @@ export default function BookReader() {
 
       // 如果章节相同，直接设置索引；否则通过 ref 传递
       if (savedProgress.chapter_href === currentChapterHref) {
-        setCurrentSentenceIndex(savedProgress.paragraph_index);
+        setPlayingIndex(savedProgress.paragraph_index);
+        setViewingIndex(savedProgress.paragraph_index);
       } else {
         pendingRestoreIndexRef.current = savedProgress.paragraph_index;
         setCurrentChapterHref(savedProgress.chapter_href);
@@ -289,6 +294,7 @@ export default function BookReader() {
   }, [savedProgress, toc, currentChapterHref]);
 
   // 防抖保存阅读进度（跳过初始章节加载，避免覆盖已有进度）
+  // 朗读时保存 playingIndex; 暂停 / 静默阅读时保存 viewingIndex
   useEffect(() => {
     if (!bookId || !currentChapterHref || !token) return;
     // 第一次 currentChapterHref 从 null 变为初始章节时跳过
@@ -297,24 +303,26 @@ export default function BookReader() {
       return;
     }
     const timer = setTimeout(() => {
+      const saveIndex = isPlayingRef.current ? playingIndex : viewingIndex;
       saveProgressMutation.mutate({
         bookId,
         chapterHref: currentChapterHref,
-        paragraphIndex: currentSentenceIndex,
+        paragraphIndex: saveIndex,
       });
     }, 800);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, currentChapterHref, currentSentenceIndex, token]);
+  }, [bookId, currentChapterHref, playingIndex, viewingIndex, token]);
 
   // 组件卸载时立即保存进度（用户离开页面时）
   useEffect(() => {
     const handleUnmount = () => {
       if (!bookId || !currentChapterHref || !token || skipInitialSaveRef.current) return;
-      readingProgressService.save(bookId, currentChapterHref, currentSentenceIndex);
+      const saveIndex = isPlayingRef.current ? playingIndex : viewingIndex;
+      readingProgressService.save(bookId, currentChapterHref, saveIndex);
     };
     return handleUnmount;
-  }, [bookId, currentChapterHref, currentSentenceIndex, token]);
+  }, [bookId, currentChapterHref, playingIndex, viewingIndex, token]);
 
   // Load AI preferences on mount
   useEffect(() => {
@@ -545,7 +553,7 @@ export default function BookReader() {
       return;
     }
 
-    if (currentSentenceIndex >= originalSentences.length) {
+    if (playingIndex >= originalSentences.length) {
       setIsPlaying(false);
       playingSentenceRef.current = -1;
       return;
@@ -556,21 +564,21 @@ export default function BookReader() {
 
     if (isBilingualMode) {
       if (playBothPhase === "original") {
-        text = originalSentences[currentSentenceIndex];
+        text = originalSentences[playingIndex];
       } else {
-        text = translatedSentences[currentSentenceIndex] || originalSentences[currentSentenceIndex];
-        isTranslatedAudio = !!translatedSentences[currentSentenceIndex];
+        text = translatedSentences[playingIndex] || originalSentences[playingIndex];
+        isTranslatedAudio = !!translatedSentences[playingIndex];
       }
-    } else if (isTranslatedMode && translatedSentences[currentSentenceIndex]) {
-      text = translatedSentences[currentSentenceIndex];
+    } else if (isTranslatedMode && translatedSentences[playingIndex]) {
+      text = translatedSentences[playingIndex];
       isTranslatedAudio = true;
     } else {
-      text = originalSentences[currentSentenceIndex];
+      text = originalSentences[playingIndex];
     }
 
     if (!text) return;
 
-    const thisSentenceIndex = currentSentenceIndex;
+    const thisSentenceIndex = playingIndex;
     const thisPhase = playBothPhase;
     const playKey = isBilingualMode
       ? thisSentenceIndex * 2 + (thisPhase === "translated" ? 1 : 0)
@@ -658,7 +666,9 @@ export default function BookReader() {
         if (isBilingualMode) {
           setPlayBothPhase("original");
         }
-        setCurrentSentenceIndex(prev => prev + 1);
+        const next = thisSentenceIndex + 1;
+        setPlayingIndex(next);
+        setViewingIndex(next);
       }
     }).catch(e => {
       if (playingSentenceRef.current === playKey) {
@@ -673,7 +683,7 @@ export default function BookReader() {
       }
     });
 
-  }, [isPlaying, isPlayMode, isBilingualMode, isTranslatedMode, currentSentenceIndex, originalSentences, translatedSentences, playBothPhase, voice, voiceType, speed, emotion, bookId, currentChapterHref, prefetchAudio]);
+  }, [isPlaying, isPlayMode, isBilingualMode, isTranslatedMode, playingIndex, originalSentences, translatedSentences, playBothPhase, voice, voiceType, speed, emotion, bookId, currentChapterHref, prefetchAudio]);
 
   // 章节切换时重置状态并预加载
   useEffect(() => {
@@ -695,7 +705,8 @@ export default function BookReader() {
     const startIndex = pendingRestoreIndexRef.current ?? 0;
     pendingRestoreIndexRef.current = null;
 
-    setCurrentSentenceIndex(startIndex);
+    setPlayingIndex(startIndex);
+    setViewingIndex(startIndex);
     setIsPlaying(false);
     playingSentenceRef.current = -1;
     setWordTimestamps([]);
@@ -724,7 +735,7 @@ export default function BookReader() {
   }, []);
 
   const handleSentenceChange = useCallback((index: number) => {
-    setCurrentSentenceIndex(index);
+    setViewingIndex(index);
   }, []);
 
   const togglePlay = () => {
@@ -738,24 +749,33 @@ export default function BookReader() {
   };
 
   const handleNext = () => {
-    if (currentSentenceIndex < originalSentences.length - 1) {
+    if (playingIndex < originalSentences.length - 1) {
       ttsService.stop();
       playingSentenceRef.current = -1;
       setWordTimestamps([]);
       setCurrentTime(0);
-      setCurrentSentenceIndex(prev => prev + 1);
+      const next = playingIndex + 1;
+      setPlayingIndex(next);
+      setViewingIndex(next);
     }
   };
 
   const handlePrev = () => {
-    if (currentSentenceIndex > 0) {
+    if (playingIndex > 0) {
       ttsService.stop();
       playingSentenceRef.current = -1;
       setWordTimestamps([]);
       setCurrentTime(0);
-      setCurrentSentenceIndex(prev => prev - 1);
+      const next = playingIndex - 1;
+      setPlayingIndex(next);
+      setViewingIndex(next);
     }
   };
+
+  const handleSeek = useCallback((index: number) => {
+    setPlayingIndex(index);
+    setViewingIndex(index);
+  }, []);
 
   // Loading state
   if (isLoading) {
@@ -927,7 +947,7 @@ export default function BookReader() {
               translatedSentences={translatedSentences}
               unifiedMode={effectiveUnifiedMode}
               playBothPhase={playBothPhase}
-              current={currentSentenceIndex}
+              current={playingIndex}
               wordTimestamps={wordTimestamps}
               currentTime={currentTime}
               isPlaying={isPlaying}
@@ -999,7 +1019,7 @@ export default function BookReader() {
                   translatedSentences={translatedSentences}
                   unifiedMode={effectiveUnifiedMode}
                   playBothPhase={playBothPhase}
-                  current={currentSentenceIndex}
+                  current={playingIndex}
                   wordTimestamps={wordTimestamps}
                   currentTime={currentTime}
                   isPlaying={isPlaying}
@@ -1035,10 +1055,10 @@ export default function BookReader() {
         onPlayPause={togglePlay}
         onNext={handleNext}
         onPrev={handlePrev}
-        onSeek={setCurrentSentenceIndex}
-        current={currentSentenceIndex}
+        onSeek={handleSeek}
+        current={playingIndex}
         total={originalSentences.length}
-        progress={originalSentences.length > 0 ? (currentSentenceIndex / originalSentences.length) * 100 : 0}
+        progress={originalSentences.length > 0 ? (playingIndex / originalSentences.length) * 100 : 0}
 
         selectedVoice={voice}
         onVoiceChange={(name, type) => { setVoice(name); setVoiceType(type); (ttsService as TTSService).clearPreload(); }}

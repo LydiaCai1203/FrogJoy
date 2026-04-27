@@ -316,24 +316,54 @@ export function Reader({
     return -1;
   }, [wordTimestamps, currentTime, isPlaying]);
 
-  // Scroll to top on chapter change
+  // Auto-scroll to the active sentence whenever `current` or chapter changes.
+  // Chapter switch → instant jump + sync guard release (instant scroll does not
+  //   reliably fire `scrollend`, so don't wait for it).
+  // In-chapter advance → smooth scroll, guard released on `scrollend` with a
+  //   1500ms fallback for browsers that miss the event.
+  // In both cases we pre-sync lastCurrentRef so a stray detection that slips
+  // past the guard cannot regress the visible position.
+  const autoScrollPrevChapterRef = useRef(chapterHref);
   useEffect(() => {
-    if (scrollRef.current) {
-      const viewport = scrollRef.current.querySelector('[data-slot="scroll-area-viewport"]');
-      if (viewport) viewport.scrollTop = 0;
-    }
-  }, [sentences]);
+    // Track every chapter we observe, even before sentences land, so the next
+    // sentences-loaded run sees the right "switched / not switched" answer.
+    const isChapterSwitch = autoScrollPrevChapterRef.current !== chapterHref;
+    autoScrollPrevChapterRef.current = chapterHref;
 
-  // ✅ Auto-scroll logic - scrolls to current sentence whenever it changes
-  useEffect(() => {
-    if (sentences.length > 0) {
-      isAutoScrollingRef.current = true;
-      setTimeout(() => {
-        scrollToSentence(current, "smooth");
+    if (sentences.length === 0) return;
+
+    const viewport = scrollRef.current?.querySelector(
+      '[data-slot="scroll-area-viewport"]'
+    ) as HTMLElement | null;
+    if (!viewport) return;
+
+    isAutoScrollingRef.current = true;
+    lastCurrentRef.current = current;
+
+    if (isChapterSwitch) {
+      // Instant scroll completes synchronously inside the 50ms timer; no
+      // animation, no scrollend, so release the guard right after the call.
+      const startTimer = setTimeout(() => {
+        scrollToSentence(current, "instant");
+        isAutoScrollingRef.current = false;
       }, 50);
-      setTimeout(() => { isAutoScrollingRef.current = false; }, 500);
+      return () => clearTimeout(startTimer);
     }
-  }, [current, sentences.length, scrollToSentence]);
+
+    const release = () => { isAutoScrollingRef.current = false; };
+    const fallback = setTimeout(release, 1500);
+    viewport.addEventListener("scrollend", release, { once: true });
+
+    const startTimer = setTimeout(() => {
+      scrollToSentence(current, "smooth");
+    }, 50);
+
+    return () => {
+      clearTimeout(startTimer);
+      clearTimeout(fallback);
+      viewport.removeEventListener("scrollend", release);
+    };
+  }, [current, sentences.length, chapterHref, scrollToSentence]);
 
   // Scroll event listener to detect visible sentence on manual scroll
   useEffect(() => {
