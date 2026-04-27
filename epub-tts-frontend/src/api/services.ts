@@ -782,6 +782,7 @@ export interface ConceptAnnotation {
   popover: {
     term: string;
     initial_definition: string | null;
+    total_occurrences: number;
   };
   occurrences: ConceptOccurrence[];
 }

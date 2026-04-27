@@ -171,7 +171,6 @@ export function Reader({
           !isDefinition && occurrence.core_sentence
             ? occurrence.core_sentence
             : ann.popover.initial_definition;
-        const popoverLabel = isDefinition ? "定义" : "深化";
 
         nodes.push(
           <span key={`c-${ann.concept_id}-${m.start}`}>
@@ -190,16 +189,16 @@ export function Reader({
               </PopoverTrigger>
               <PopoverContent className="w-72 p-3" side="top" align="start">
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium text-sm text-foreground">{ann.popover.term}</p>
-                    <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                      {popoverLabel}
-                    </span>
-                  </div>
+                  <p className="font-medium text-sm text-foreground">{ann.popover.term}</p>
                   {popoverBody ? (
                     <p className="text-xs text-muted-foreground leading-relaxed">{popoverBody}</p>
                   ) : (
                     <p className="text-xs text-muted-foreground italic">暂无内容</p>
+                  )}
+                  {ann.popover.total_occurrences > 0 && (
+                    <p className="text-[10px] text-muted-foreground/70">
+                      全书出现 {ann.popover.total_occurrences} 次
+                    </p>
                   )}
                 </div>
               </PopoverContent>

@@ -389,6 +389,7 @@ class ConceptService:
                     "popover": {
                         "term": c.term,
                         "initial_definition": c.initial_definition,
+                        "total_occurrences": c.total_occurrences,
                     },
                     "occurrences": [
                         {

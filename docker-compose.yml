@@ -6,11 +6,30 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-bookreader}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - effective_cache_size=128MB
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=16MB
+      - -c
+      - max_connections=50
     volumes:
       - ./postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     networks:
       - epub-tts-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "1.0"
+        reservations:
+          memory: 128M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
@@ -21,11 +40,24 @@ services:
   redis:
     image: redis:7-alpine
     container_name: epub-tts-redis
+    command: >
+      redis-server
+      --maxmemory 48mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
     volumes:
       - ./redis_data:/data
     restart: unless-stopped
     networks:
       - epub-tts-network
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.5"
+        reservations:
+          memory: 24M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -57,6 +89,13 @@ services:
     restart: unless-stopped
     networks:
       - epub-tts-network
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+          cpus: "1.5"
+        reservations:
+          memory: 192M
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
       interval: 30s
@@ -80,6 +119,13 @@ services:
     restart: unless-stopped
     networks:
       - epub-tts-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "1.0"
+        reservations:
+          memory: 96M
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health')"]
       interval: 30s
@@ -95,6 +141,13 @@ services:
     restart: unless-stopped
     networks:
       - epub-tts-network
+    deploy:
+      resources:
+        limits:
+          memory: 48M
+          cpus: "0.25"
+        reservations:
+          memory: 16M
     healthcheck:
       test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost/ || exit 1"]
       interval: 30s
@@ -123,6 +176,13 @@ services:
     restart: unless-stopped
     networks:
       - epub-tts-network
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
+        reservations:
+          memory: 32M
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/')"]
       interval: 30s
@@ -141,6 +201,13 @@ services:
     restart: unless-stopped
     networks:
       - epub-tts-network
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+          cpus: "0.1"
+        reservations:
+          memory: 8M
 
   nginx:
     image: nginx:alpine
@@ -163,6 +230,13 @@ services:
     restart: always
     networks:
       - epub-tts-network
+    deploy:
+      resources:
+        limits:
+          memory: 48M
+          cpus: "0.25"
+        reservations:
+          memory: 16M
 
 networks:
   epub-tts-network:
