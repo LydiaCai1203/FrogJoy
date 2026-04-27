@@ -673,7 +673,7 @@ def _parse_json(text: str):
 
 def _call_phase1_llm(toc, chapter, paragraphs, strategy):
     paragraphs_text = "\n\n".join(
-        f'[P{p["para_idx"]:02d}|{p["pid"]}]\n{p["text"]}'
+        f'[P{p["para_idx"]:02d}]\n{p["text"]}'
         for p in paragraphs
     )
 
@@ -709,35 +709,29 @@ def _call_phase1_llm(toc, chapter, paragraphs, strategy):
   "concepts": [
     {{
       "term": "规范名 (作者原文中最常用的形式)",
-      "aliases": ["原文中实际出现的其它写法"],
+      "aliases": ["原文中实际出现的其它写法, 必须真在本章出现过"],
       "category": "分类",
-      "evidence": [
-        {{
-          "pid": "段落标记里 [P##|pid] 的 pid 部分",
-          "quote": "从该段落中原文逐字抄录的片段, 必须包含 term 或某个 alias",
-          "role": "definition 或 refinement"
-        }}
-      ]
+      "definition_para": 7,
+      "refinement_paras": [12, 19]
     }}
   ]
 }}
 
-## 关键约束 (违反会被服务端剔除)
+## 字段说明
 
-1. **quote 必须逐字**: 原文中能 Ctrl+F 搜到, 标点空格一字不差。不可改写, 不可摘要。
-2. **quote 必须包含 term 或某个 alias**: 这是该 evidence 锚定到此概念的依据。
-3. **quote 必须真的在 pid 指向的段落里**: 不要凭印象写 pid。
-4. **role 二选一**:
-   - definition: 作者明确给出该概念的定义、解释、含义
-   - refinement: 作者补充、深化、举例、引申该概念
-   不要写 mention (顺带提及由后续阶段补全)。
-5. **每个概念至少 1 条 evidence, 没有就别返回这个概念**。
-6. **aliases 不能是更上位/下位概念**: 如"向上流动"和"社会流动"是不同概念, 不要互列为别名。aliases 只放真正的同义写法 (如"上向流动" 是 "向上流动" 的别名)。
+- **term / aliases**: 必须真的在原文中出现过 (term 或某个 alias 字面包含在你指定的段落里)
+- **definition_para**: 该段落明确"定义/解释"了此概念。**段落标记 [P07] 写 7**, 不是 pid 字符串。如果本章没有定义只有引用, 设为 null。
+- **refinement_paras**: 该概念被作者补充、深化、举例、引申的段落列表。可空数组。
+- 每个概念必须 definition_para 或 refinement_paras 至少有一项非空, 否则不要返回。
 
-## 数量
+## 关键约束
 
-- 宁少勿多, 每 10 段 ≤ {quantity} 个高质量概念
-- 没把握就跳过, 不要凑数
+1. **段落引用必须诚实**: 你写的 definition_para=7, 服务端会去 [P07] 段落里检查 term 或 alias 是否真出现; 找不到就丢弃这条引用。
+2. **aliases 不能是更上位/下位概念**:
+   - "向上流动"和"社会流动"是**不同**概念, 不要互列为别名 (前者是后者的子类型)
+   - aliases 只放真正的同义不同写, 例如"上向流动" 是 "向上流动" 的别名
+3. **宁少勿多**: 每 10 段 ≤ {quantity} 个高质量概念。没把握就跳过。
+4. **不要返回 mention 类引用** (顺带提及由后续阶段自动补全, 你只管 definition / refinement)。
 
 ## 章节文本
 
@@ -754,66 +748,118 @@ def _call_phase1_llm(toc, chapter, paragraphs, strategy):
     )["concepts"]
 
 
-def _validate_evidence(concepts: list[dict], paragraphs: list[dict]) -> list[dict]:
-    """服务端校验 LLM 返回的 evidence, 剔除虚构内容.
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?\.])")
 
-    规则:
-      - quote 必须逐字出现在 evidence.pid 指向的段落
-      - quote 必须包含 term 或某个 alias (大小写不敏感)
-      - role 必须是 definition 或 refinement
-      - 校验完仍有 ≥1 条 evidence 的概念才保留
+
+def _build_evidence_from_para(
+    para: dict, term: str, aliases: list[str], role: str
+) -> dict | None:
+    """在段落里找 term 或某个 alias 的位置, 取所在句作为 quote.
+
+    返回 evidence dict; 段落里根本没有 term/alias 则 None.
+    优先 term, 其次按长度降序的 alias.
     """
-    para_by_pid = {p["pid"]: p["text"] for p in paragraphs}
+    text = para["text"]
+    text_lower = text.lower()
+    candidates = [term] + sorted([a for a in aliases if a], key=len, reverse=True)
 
+    hit_pos = -1
+    for kw in candidates:
+        if not kw:
+            continue
+        pos = text_lower.find(kw.lower())
+        if pos >= 0:
+            hit_pos = pos
+            break
+    if hit_pos < 0:
+        return None
+
+    sentences = _SENTENCE_SPLIT_RE.split(text)
+    cursor = 0
+    quote, quote_offset = None, 0
+    for s in sentences:
+        s_len = len(s)
+        if cursor <= hit_pos < cursor + s_len:
+            stripped = s.strip()
+            if stripped:
+                quote = stripped
+                quote_offset = cursor + (s_len - len(s.lstrip()))
+            break
+        cursor += s_len
+    if not quote:
+        # 句切失败兜底: hit 周围 ±60 字符
+        start = max(0, hit_pos - 30)
+        end = min(len(text), hit_pos + 80)
+        chunk = text[start:end]
+        quote = chunk.strip()
+        quote_offset = start + (len(chunk) - len(chunk.lstrip()))
+
+    return {
+        "pid": para["pid"],
+        "quote": quote,
+        "role": role,
+        "char_offset": quote_offset,
+        "char_length": len(quote),
+    }
+
+
+def _validate_evidence(concepts: list[dict], paragraphs: list[dict]) -> list[dict]:
+    """把 LLM 给的 (definition_para, refinement_paras) 翻译成 evidence rows.
+
+    LLM 只承诺“哪些段落讨论这个概念”, 服务端从段落里抓含 term/alias 的句子
+    作为 quote. 校验只确认: 段落里真有 term 或 alias 出现, 否则丢这条引用.
+
+    兼容旧字段 evidence: [{para, role}] (quote 字段忽略, 服务端重新抽).
+    """
+    para_by_idx = {p["para_idx"]: p for p in paragraphs}
+
+    def _coerce_para(ref):
+        if isinstance(ref, int):
+            return para_by_idx.get(ref)
+        if isinstance(ref, str) and ref.strip().lstrip("Pp").isdigit():
+            return para_by_idx.get(int(ref.strip().lstrip("Pp")))
+        return None
+
+    dropped_para_refs = 0
     cleaned = []
     for c in concepts:
         term = (c.get("term") or "").strip()
         if not term:
             continue
         aliases = [a.strip() for a in (c.get("aliases") or []) if a and a.strip()]
-        keywords_lower = {term.lower(), *(a.lower() for a in aliases)}
 
-        valid_evidence = []
-        for ev in c.get("evidence") or []:
-            pid = ev.get("pid")
-            quote = (ev.get("quote") or "").strip()
-            role = ev.get("role")
+        valid_evidence: list[dict] = []
+        seen_keys: set[tuple[str, int]] = set()
 
-            if role not in ("definition", "refinement"):
+        def _try_add(para_ref, role):
+            nonlocal dropped_para_refs
+            para = _coerce_para(para_ref)
+            if para is None:
+                return
+            ev = _build_evidence_from_para(para, term, aliases, role)
+            if ev is None:
+                dropped_para_refs += 1
+                return
+            key = (ev["pid"], ev["char_offset"])
+            if key in seen_keys:
+                return
+            seen_keys.add(key)
+            valid_evidence.append(ev)
+
+        # 新格式
+        _try_add(c.get("definition_para"), "definition")
+        for r in c.get("refinement_paras") or []:
+            _try_add(r, "refinement")
+        # 旧格式兼容
+        for ev_in in c.get("evidence") or []:
+            role_in = ev_in.get("role")
+            if role_in not in ("definition", "refinement"):
                 continue
-            if not pid or not quote:
-                continue
-            para_text = para_by_pid.get(pid)
-            if para_text is None:
-                logger.debug(f"Evidence pid={pid} not in current chapter, drop")
-                continue
-            char_offset = para_text.find(quote)
-            if char_offset < 0:
-                logger.debug(
-                    f"Evidence quote not literally in paragraph "
-                    f"(term='{term}', pid={pid}, quote={quote[:30]!r}...)"
-                )
-                continue
-            quote_lower = quote.lower()
-            if not any(kw in quote_lower for kw in keywords_lower):
-                logger.debug(
-                    f"Evidence quote does not contain term/alias "
-                    f"(term='{term}', quote={quote[:30]!r}...)"
-                )
-                continue
-            valid_evidence.append({
-                "pid": pid,
-                "quote": quote,
-                "role": role,
-                "char_offset": char_offset,
-                "char_length": len(quote),
-            })
+            _try_add(ev_in.get("para") or ev_in.get("pid"), role_in)
 
         if not valid_evidence:
-            logger.debug(f"Concept '{term}' dropped: no valid evidence")
             continue
 
-        # initial_definition: 取首条 definition 类 evidence; 没有则用首条 refinement
         first_def = next(
             (e for e in valid_evidence if e["role"] == "definition"),
             None,
@@ -828,6 +874,11 @@ def _validate_evidence(concepts: list[dict], paragraphs: list[dict]) -> list[dic
             "evidence": valid_evidence,
         })
 
+    if dropped_para_refs:
+        logger.info(
+            f"[validate] dropped {dropped_para_refs} para refs "
+            f"(指定段落里没有 term/alias)"
+        )
     return cleaned
 
 
@@ -966,27 +1017,32 @@ def _llm_concept_linker(
             # 索引小的当 root, 保证稳定
             parent_uf[max(ra, rb)] = min(ra, rb)
 
-    parent_child: dict[int, int] = {}  # child_idx -> parent_idx (unmerged)
+    parent_child: dict[int, int] = {}
+    same_count = 0
+    pc_count = 0
     for (i, j), v in verdicts.items():
         verdict = v.get("verdict")
         if verdict == "SAME":
             union(i, j)
-            logger.info(
+            same_count += 1
+            logger.debug(
                 f"LLM linker SAME: '{concepts[i]['term']}' <-> '{concepts[j]['term']}'"
             )
         elif verdict == "PARENT_CHILD":
-            # parent / child 字段是 "A" 或 "B" 字面
             parent_label = v.get("parent")
             if parent_label not in ("A", "B"):
                 continue
             parent_idx = i if parent_label == "A" else j
             child_idx = j if parent_label == "A" else i
             parent_child[child_idx] = parent_idx
-            logger.info(
+            pc_count += 1
+            logger.debug(
                 f"LLM linker PARENT_CHILD: "
                 f"parent='{concepts[parent_idx]['term']}' "
                 f"child='{concepts[child_idx]['term']}'"
             )
+    if same_count or pc_count:
+        logger.info(f"LLM linker: SAME={same_count}, PARENT_CHILD={pc_count}, others=UNRELATED")
 
     # 4. 应用 SAME 合并: 每个组挑一个代表 (root)
     groups: dict[int, list[int]] = {}
