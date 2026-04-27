@@ -156,10 +156,14 @@ class ConceptExtractor:
             logger.info(f"Phase 1 done: {len(raw_concepts)} raw concepts")
 
             # Phase 2: 去重合并
-            self._progress(85, f"Phase 2: 去重合并 {len(raw_concepts)} 个概念...")
+            self._progress(83, f"Phase 2: 去重合并 {len(raw_concepts)} 个概念...")
             concepts = self._phase2_deduplicate(raw_concepts, strategy)
             logger.info(f"Phase 2 done: {len(concepts)} merged concepts")
-            self._progress(90, f"Phase 2 完成: {len(concepts)} 个概念")
+
+            # Phase 2.5: 释义合成 (基于 evidence 句子 + 书籍背景)
+            self._progress(86, f"Phase 2.5: 释义合成 {len(concepts)} 个概念...")
+            self._phase2_5_synthesize_definitions(concepts, strategy)
+            self._progress(90, f"Phase 2.5 完成")
 
             self._save_concepts(concepts)
 
@@ -345,6 +349,48 @@ class ConceptExtractor:
             merged = non_person + persons
 
         return merged
+
+    # ===================================================================
+    # Phase 2.5: 释义合成
+    # ===================================================================
+
+    def _phase2_5_synthesize_definitions(
+        self, concepts: list[dict], strategy: dict, batch_size: int = 8
+    ) -> None:
+        """为每个概念生成 initial_definition.
+
+        给 LLM 的内容:
+          - 书籍背景 (book_type, book_summary)
+          - 概念 term + aliases + category + parent (如有)
+          - 跨章 evidence 中的句子 (带章号)
+        LLM 任务:
+          - 普通术语/理论: 综合句子提炼"它是什么"
+          - 专有名词 (人名/地名/作品名): 结合书籍背景 + 常识告诉读者
+            "这是谁/在哪/什么作品, 在书中扮演什么角色"
+        """
+        if not concepts:
+            return
+
+        term_to_concept = {c["term"]: c for c in concepts}
+        total = len(concepts)
+        done = 0
+        ok_count = 0
+        for chunk_start in range(0, total, batch_size):
+            chunk = concepts[chunk_start:chunk_start + batch_size]
+            try:
+                results = _synthesize_definitions_batch(chunk, strategy)
+                for term, defn in results.items():
+                    if term in term_to_concept and defn:
+                        term_to_concept[term]["initial_definition"] = defn
+                        ok_count += 1
+            except Exception as e:
+                logger.warning(f"Phase 2.5 batch failed (chunk {chunk_start}): {e}")
+            done += len(chunk)
+            self._progress(
+                86 + int(4 * done / max(total, 1)),  # 86-90 区间
+                f"Phase 2.5: {done}/{total}",
+            )
+        logger.info(f"Phase 2.5 done: synthesized {ok_count}/{total} definitions")
 
     # ===================================================================
     # Phase 3: 关键词匹配
@@ -720,7 +766,7 @@ def _call_phase1_llm(toc, chapter, paragraphs, strategy):
 ## 字段说明
 
 - **term / aliases**: 必须真的在原文中出现过 (term 或某个 alias 字面包含在你指定的段落里)
-- **definition_para**: 该段落明确"定义/解释"了此概念。**段落标记 [P07] 写 7**, 不是 pid 字符串。如果本章没有定义只有引用, 设为 null。
+- **definition_para**: 该段落明确"定义/解释"了此概念。**段落标记 [P07] 写 7**, 不是 pid 字符串。本章无明确定义只有引用就设为 null。
 - **refinement_paras**: 该概念被作者补充、深化、举例、引申的段落列表。可空数组。
 - 每个概念必须 definition_para 或 refinement_paras 至少有一项非空, 否则不要返回。
 
@@ -730,8 +776,10 @@ def _call_phase1_llm(toc, chapter, paragraphs, strategy):
 2. **aliases 不能是更上位/下位概念**:
    - "向上流动"和"社会流动"是**不同**概念, 不要互列为别名 (前者是后者的子类型)
    - aliases 只放真正的同义不同写, 例如"上向流动" 是 "向上流动" 的别名
-3. **宁少勿多**: 每 10 段 ≤ {quantity} 个高质量概念。没把握就跳过。
-4. **不要返回 mention 类引用** (顺带提及由后续阶段自动补全, 你只管 definition / refinement)。
+3. **抽取范围要广**: 不光抽抽象术语/理论, **人名 / 地名 / 作品名**这类专有名词, 只要在本章被作者反复提到或承担叙事作用, 也要抽出来 (它们对读者理解很重要, 释义会在后续阶段由系统结合背景补全)。
+4. **宁少勿多**: 每 10 段 ≤ {quantity} 个高质量概念。没把握就跳过。
+5. **不要返回 mention 类引用** (顺带提及由后续阶段自动补全, 你只管 definition / refinement)。
+6. **不要写 initial_definition 字段**: 释义会在后续阶段单独生成, 你只管识别和定位。
 
 ## 章节文本
 
@@ -746,6 +794,94 @@ def _call_phase1_llm(toc, chapter, paragraphs, strategy):
         prompt=prompt,
         max_tokens=4000,
     )["concepts"]
+
+
+def _synthesize_definitions_batch(
+    concepts: list[dict], strategy: dict
+) -> dict[str, str]:
+    """批量为概念合成 initial_definition. 返回 {term: definition}.
+
+    每个概念给 LLM 看: term + aliases + category + parent + evidence 句子.
+    LLM 区分 "术语" 和 "专有名词" 两类写法.
+    """
+    if not concepts:
+        return {}
+
+    blocks = []
+    for i, c in enumerate(concepts, 1):
+        evidence = c.get("evidence") or []
+        # 最多取 5 条 evidence (跨章, 句子带章号), 避免 prompt 失控
+        ev_lines = []
+        for ev in evidence[:5]:
+            ch = ev.get("chapter_idx", "?")
+            quote = (ev.get("quote") or "").strip()
+            if quote:
+                ev_lines.append(f"  [第{ch}章] {quote}")
+        ev_text = "\n".join(ev_lines) if ev_lines else "  (无)"
+
+        parent_line = (
+            f"  父概念: {c['_parent_term']}\n" if c.get("_parent_term") else ""
+        )
+        aliases = c.get("aliases") or []
+        aliases_line = f"  别名: {aliases}\n" if aliases else ""
+
+        blocks.append(
+            f"[{i}] term: {c['term']}\n"
+            f"  分类: {c.get('category', 'term')}\n"
+            f"{parent_line}"
+            f"{aliases_line}"
+            f"  原文句子:\n{ev_text}"
+        )
+
+    prompt = f"""你是读书 app 的概念释义生成器, 要为读者写鼠标悬停时看的解释.
+
+## 书籍背景
+
+类型: {strategy.get('book_type', '未知')}
+概述: {strategy.get('book_summary', '')}
+
+## 任务
+
+为下面 {len(concepts)} 个概念各生成 1 句释义 (≤100 字).
+
+## 释义原则
+
+- **抽象术语 / 理论 / 主题**: 综合 evidence 句子提炼"它是什么", 不要照抄原句.
+- **专有名词 (人名 / 地名 / 作品名)**: evidence 句子里通常没有定义, 你要**结合书籍背景 + 你自己的常识**告诉读者:
+  - 人名: 是谁, 与作者/书的关系或在书中扮演的角色
+  - 地名: 在哪, 有何相关背景 (历史/地理/经济)
+  - 作品名: 谁写的, 关于什么
+- 有 **父概念** 时, 释义要点出与父概念的差异 (例如父概念是"社会流动"时, "向上流动"要强调"向上"的方向性).
+- **释义要独立可读**, 不要写"作者用此词指代…"这种依赖上下文的话.
+- 若信息实在不足, 就用 evidence 句子里能看出的最小线索写一句中性描述, 不要乱编.
+
+## 概念列表
+
+{chr(10).join(blocks)}
+
+## 输出 (严格 JSON, terms 顺序与上面一致)
+
+{{
+  "definitions": [
+    {{"term": "概念term原样", "definition": "释义"}}
+  ]
+}}
+
+直接输出 JSON。"""
+
+    result = _call_llm(
+        system="你是一个读书 app 的概念释义生成器, 输出简洁、独立可读的释义。",
+        prompt=prompt,
+        max_tokens=2000,
+    )
+
+    out: dict[str, str] = {}
+    for entry in result.get("definitions") or []:
+        term = (entry.get("term") or "").strip()
+        defn = (entry.get("definition") or "").strip()
+        if term and defn:
+            out[term] = defn
+    return out
 
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?\.])")
@@ -860,17 +996,12 @@ def _validate_evidence(concepts: list[dict], paragraphs: list[dict]) -> list[dic
         if not valid_evidence:
             continue
 
-        first_def = next(
-            (e for e in valid_evidence if e["role"] == "definition"),
-            None,
-        )
-        first_any = first_def or valid_evidence[0]
-
+        # initial_definition 占位空字符串, Phase 2.5 会基于 evidence 句子合成释义.
         cleaned.append({
             "term": term,
             "aliases": aliases,
             "category": c.get("category", "term"),
-            "initial_definition": first_any["quote"],
+            "initial_definition": "",
             "evidence": valid_evidence,
         })
 
