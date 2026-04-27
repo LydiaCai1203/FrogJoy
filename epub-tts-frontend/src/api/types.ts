@@ -11,6 +11,7 @@ export interface NavItem {
   href: string;
   label: string;
   subitems?: NavItem[];
+  chapter_idx?: number;
 }
 
 export interface ChapterContent {

@@ -87,6 +87,134 @@ class EpubIndexParser:
 
     # ----- Public API -----
 
+    def compute_chapter_index_map(self) -> dict[str, int]:
+        """计算 href → chapter_idx 映射, 与 parse() 写库的 chapter_idx 严格一致。
+
+        让前端可直接按 href 拿对应章节的 chapter_idx, 无需自行 DFS toc
+        (前端 toc 来源 BookService.get_toc 与 EpubIndexParser 内部排序/去重
+        算法不一致, 自行推导会错位)。
+
+        返回的 dict 同时包含原始 href 和 anchor 去除后的 path 两种 key。
+        当索引时触发 _try_split_by_heading_pattern (单文件 auto-split,
+        合成章节无源 href) 时返回空 dict, 调用方应据此跳过 by-chapter 请求。
+        """
+        self._book = epub.read_epub(self.epub_path)
+        items = self._spine_items()
+        toc_entries = self._flatten_toc(self._book.toc)
+
+        if toc_entries:
+            entries = self._chapter_starts_with_href(items, toc_entries)
+        else:
+            # 物理文件 fallback: 每个 item 是一章, chapter_idx = items 顺序
+            entries = []
+            for i, item in enumerate(items):
+                html = item.get_body_content()
+                if isinstance(html, bytes):
+                    html = html.decode("utf-8", errors="replace")
+                blocks = self._extract_ordered_blocks(html)
+                entries.append((
+                    self._extract_first_heading(item),
+                    item.get_name(),
+                    i,           # enumeration 序即 chapter_idx 排序键
+                    len(blocks),
+                ))
+
+        # 模拟 parse() 单文件 auto-split 触发判定: ≤2 章 + >50 段 + ≥2 个 heading 边界
+        if len(entries) <= 2:
+            total_paras = sum(e[3] for e in entries)
+            if total_paras > 50:
+                heading_hits = 0
+                for item in items:
+                    html = item.get_body_content()
+                    if isinstance(html, bytes):
+                        html = html.decode("utf-8", errors="replace")
+                    for _, text, _ in self._extract_ordered_blocks(html):
+                        if self._HEADING_RE.match(text):
+                            heading_hits += 1
+                            if heading_hits >= 2:
+                                break
+                    if heading_hits >= 2:
+                        break
+                if heading_hits >= 2:
+                    return {}
+
+        # 按 (title, start) 分组去重, 一组多个 href 都映射到同一 idx
+        # 与 _split_by_ncx 中 sorted(set(chapter_starts), key=lambda x: x[1]) 等价
+        grouped: dict[tuple[str | None, int], list[str | None]] = {}
+        for title, href, start, _ in entries:
+            grouped.setdefault((title, start), []).append(href)
+
+        ordered_keys = sorted(grouped.keys(), key=lambda x: x[1])
+
+        out: dict[str, int] = {}
+        for idx, key in enumerate(ordered_keys):
+            for href in grouped[key]:
+                if not href:
+                    continue
+                out[href] = idx
+                path = href.split("#")[0]
+                if path and path != href:
+                    out.setdefault(path, idx)
+        return out
+
+    def _chapter_starts_with_href(
+        self,
+        items: list[epub.EpubHtml],
+        toc_entries: list[tuple[str, str]],
+    ) -> list[tuple[str, str, int, int]]:
+        """同 _split_by_ncx 但保留 href, 返回 [(title, href, start, para_count), ...]。
+
+        para_count 仅为 auto-split 触发判定用 (单章段落数)。
+        """
+        file_blocks: dict[str, list[tuple[str, str, list[str]]]] = {}
+        for item in items:
+            name = item.get_name()
+            html = item.get_body_content()
+            if isinstance(html, bytes):
+                html = html.decode("utf-8", errors="replace")
+            file_blocks[name] = self._extract_ordered_blocks(html)
+
+        flat_blocks: list[tuple[str, int, str, str, list[str]]] = []
+        for item in items:
+            name = item.get_name()
+            for i, (tag, text, anchors) in enumerate(file_blocks.get(name, [])):
+                flat_blocks.append((name, i, tag, text, anchors))
+
+        anchor_to_flat_idx: dict[tuple[str, str], int] = {}
+        for flat_idx, (name, _, _, _, anchors) in enumerate(flat_blocks):
+            for anchor in anchors:
+                anchor_to_flat_idx[(name, anchor)] = flat_idx
+
+        chapter_starts: list[tuple[str, str, int]] = []
+        for title, href in toc_entries:
+            if "#" in href:
+                path, anchor = href.split("#", 1)
+            else:
+                path, anchor = href, None
+            path_unq = unquote(path)
+            anchor_unq = unquote(anchor) if anchor else None
+
+            if anchor_unq and (path_unq, anchor_unq) in anchor_to_flat_idx:
+                start = anchor_to_flat_idx[(path_unq, anchor_unq)]
+            else:
+                start = next(
+                    (i for i, b in enumerate(flat_blocks) if b[0] == path_unq),
+                    None,
+                )
+            if start is not None:
+                chapter_starts.append((title, href, start))
+
+        # 计算每个去重 group 的 para_count (与 _split_by_ncx 切片一致)
+        unique_starts = sorted({s for _, _, s in chapter_starts})
+        next_start: dict[int, int] = {}
+        for i, s in enumerate(unique_starts):
+            next_start[s] = unique_starts[i + 1] if i + 1 < len(unique_starts) else len(flat_blocks)
+
+        return [
+            (title, href, start, next_start[start] - start)
+            for title, href, start in chapter_starts
+        ]
+
     def parse(self) -> ParsedBook:
         self._book = epub.read_epub(self.epub_path)
 

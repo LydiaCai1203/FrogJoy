@@ -418,6 +418,27 @@ class BookService:
             else:
                 print("WARNING: TOC is empty after all fallback attempts")
 
+            # 注入 chapter_idx: 用 EpubIndexParser 算出的 href→idx 映射,
+            # 让前端按 href 直接拿索引时用的 chapter_idx, 不再自己 DFS toc
+            # (前端 DFS 与 indexer 内部 sort/dedup/auto-split 不一致, 会错位)
+            try:
+                from app.parsers import EpubIndexParser
+                href_to_idx = EpubIndexParser(path).compute_chapter_index_map()
+                if href_to_idx:
+                    def inject_idx(items: List[Dict[str, Any]]):
+                        for item in items:
+                            href = item.get("href", "") or ""
+                            idx = href_to_idx.get(href)
+                            if idx is None:
+                                idx = href_to_idx.get(href.split("#")[0])
+                            if idx is not None:
+                                item["chapter_idx"] = idx
+                            if item.get("subitems"):
+                                inject_idx(item["subitems"])
+                    inject_idx(toc)
+            except Exception as e:
+                logger.warning(f"Failed to compute chapter_idx map: {e}")
+
             return toc
         except Exception as e:
             import traceback

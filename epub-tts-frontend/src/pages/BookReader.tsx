@@ -27,29 +27,28 @@ import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { FontSizeSwitcher } from "@/components/FontSizeSwitcher";
 import type { UnifiedMode, ContentMode, InteractionMode } from "@/lib/ai/types";
 
-// DFS 扁平化目录(包含子目录), 顺序与后端 EpubIndexParser._flatten_toc 保持一致:
-// 父节点先入列, 然后递归子节点。返回的 index 即后端的 chapter_idx。
-function flattenToc(toc: NavItem[]): NavItem[] {
-  const out: NavItem[] = [];
-  const walk = (items: NavItem[]) => {
-    for (const item of items) {
-      out.push(item);
-      if (item.subitems && item.subitems.length) walk(item.subitems);
-    }
-  };
-  walk(toc);
-  return out;
-}
-
+// chapter_idx 直接从后端注入到 toc 节点的 chapter_idx 字段读取
+// (后端用 EpubIndexParser.compute_chapter_index_map 算出, 与 ConceptOccurrence
+// 写库时的 chapter_idx 严格一致)。toc 节点没 chapter_idx 字段表示该项无法对应
+// 到索引时的章节 (auto-split 合成章节 / 封面等), 此时不发 by-chapter 请求。
 function findChapterIdx(toc: NavItem[], href: string): number {
   if (!href) return -1;
   const stripAnchor = (h: string) => h.split("#")[0];
   const target = stripAnchor(href);
-  const flat = flattenToc(toc);
-  // 优先匹配带 anchor 的精确 href, 不命中再回退到只比较 path
-  const exact = flat.findIndex((it) => it.href === href);
-  if (exact >= 0) return exact;
-  return flat.findIndex((it) => stripAnchor(it.href) === target);
+
+  let exactMatch: NavItem | undefined;
+  let pathMatch: NavItem | undefined;
+  const walk = (items: NavItem[]) => {
+    for (const item of items) {
+      if (!exactMatch && item.href === href) exactMatch = item;
+      if (!pathMatch && stripAnchor(item.href) === target) pathMatch = item;
+      if (item.subitems && item.subitems.length) walk(item.subitems);
+    }
+  };
+  walk(toc);
+
+  const hit = exactMatch ?? pathMatch;
+  return hit?.chapter_idx ?? -1;
 }
 
 export default function BookReader() {
