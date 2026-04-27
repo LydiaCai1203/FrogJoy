@@ -69,6 +69,23 @@ def _run_migrations():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _run_migrations()
+    # 清理 agent-server 进程重启留下的僵尸任务 (Task.status='running' 但
+    # InMemoryTaskStore 已经丢失). 默认 1 小时阈值, 跨过后视为死任务标 failed.
+    # is_alive dispatcher 按 task_type 派发健康检查, 避免误杀超长但还活着的任务.
+    try:
+        from app.services import tasks as task_lifecycle
+        from app.services.concept_service import ConceptService
+
+        def _is_alive(task: dict) -> bool:
+            t_type = task.get("task_type")
+            if t_type == "concept_extraction":
+                return ConceptService.is_a2a_task_alive(task.get("external_id"))
+            # 未注册 task_type 视为死 (兜底, 让 cleanup 标 failed)
+            return False
+
+        task_lifecycle.cleanup_zombies(stale_seconds=3600, is_alive=_is_alive)
+    except Exception as e:
+        logger.warning(f"Zombie task cleanup failed at startup: {e}")
     yield
 
 

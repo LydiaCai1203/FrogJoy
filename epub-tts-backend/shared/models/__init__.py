@@ -15,6 +15,7 @@ from shared.models.preferences import UserPreferences
 from shared.models.index import IndexedBook, IndexedParagraph
 from shared.models.concept import Concept, ConceptOccurrence, ConceptEvidence
 from shared.models.system import SystemSetting
+from shared.models.task import Task
 
 __all__ = [
     "Base",
@@ -26,4 +27,5 @@ __all__ = [
     "IndexedBook", "IndexedParagraph",
     "Concept", "ConceptOccurrence", "ConceptEvidence",
     "SystemSetting",
+    "Task",
 ]

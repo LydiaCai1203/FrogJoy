@@ -61,6 +61,8 @@ export default function Home() {
 
   // 索引状态
   const [indexStatuses, setIndexStatuses] = useState<Record<string, IndexStatus>>({});
+  // 等待用户确认 rebuild 的 bookId (重复点击防护交给后端 concept_status 判断)
+  const [pendingRebuildId, setPendingRebuildId] = useState<string | null>(null);
   // 概念提取状态
   const [conceptStatuses, setConceptStatuses] = useState<Record<string, ConceptStatus>>({});
 
@@ -204,6 +206,20 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [extractingKey]);
 
+  const kickoffExtract = async (bookId: string, rebuild: boolean) => {
+    try {
+      const result = await conceptService.buildConcepts(bookId, rebuild);
+      setConceptStatuses((prev) => ({ ...prev, [bookId]: result }));
+      if (result.concept_status === "extracting") {
+        toast.success(rebuild ? "重新提取已启动，请等待几分钟" : "概念提取已启动，请等待几分钟");
+      } else if (result.concept_status === "enriched") {
+        toast.success(`概念已就绪 (${result.total_concepts || 0}个)`);
+      }
+    } catch {
+      toast.error("提交失败，请稍后重试");
+    }
+  };
+
   const handleToggleConcepts = async (bookId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!token) return;
@@ -221,20 +237,13 @@ export default function Home() {
       return;
     }
 
-    // 已完成时 rebuild
-    const rebuild = current?.concept_status === "enriched";
-
-    try {
-      const result = await conceptService.buildConcepts(bookId, rebuild);
-      setConceptStatuses((prev) => ({ ...prev, [bookId]: result }));
-      if (result.concept_status === "extracting") {
-        toast.success(rebuild ? "重新提取概念已启动" : "概念提取已启动");
-      } else if (result.concept_status === "enriched") {
-        toast.success(`概念已就绪 (${result.total_concepts || 0}个)`);
-      }
-    } catch {
-      toast.error("概念提取失败");
+    // 已完成时 rebuild — 弹确认框, 防误触覆盖
+    if (current?.concept_status === "enriched") {
+      setPendingRebuildId(bookId);
+      return;
     }
+
+    await kickoffExtract(bookId, false);
   };
 
   const handleToggleIndex = async (bookId: string, e: React.MouseEvent) => {
@@ -586,7 +595,8 @@ export default function Home() {
                     return (
                       <button
                         onClick={(e) => handleToggleConcepts(book.id, e)}
-                        className={`absolute bottom-12 right-10 p-1.5 rounded-sm transition-opacity ${
+                        disabled={cStatus === "extracting"}
+                        className={`absolute bottom-12 right-10 p-1.5 rounded-sm transition-opacity disabled:cursor-not-allowed ${
                           cStatus === "enriched"
                             ? "bg-violet-600/80 opacity-70 group-hover:opacity-100"
                             : cStatus === "extracting"
@@ -597,7 +607,7 @@ export default function Home() {
                         }`}
                         title={
                           cStatus === "enriched"
-                            ? `概念已就绪 (${cs?.total_concepts || 0}个)`
+                            ? `概念已就绪 (${cs?.total_concepts || 0}个) — 点击重新提取`
                             : cStatus === "extracting"
                             ? `正在提取概念... ${cs?.progress != null ? `${cs.progress}%` : ""} ${cs?.progress_text || ""}`
                             : cStatus === "failed"
@@ -667,6 +677,30 @@ export default function Home() {
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteBook} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Rebuild Confirmation Dialog */}
+      <AlertDialog open={!!pendingRebuildId} onOpenChange={(open) => !open && setPendingRebuildId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>重新提取概念？</AlertDialogTitle>
+            <AlertDialogDescription>
+              这本书已有的概念数据将被覆盖，重新提取需要数分钟，期间会调用 LLM。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const id = pendingRebuildId;
+                setPendingRebuildId(null);
+                if (id) kickoffExtract(id, true);
+              }}
+            >
+              重新提取
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -4,16 +4,17 @@
 查询方法 (get_concepts, get_chapter_annotations 等) 仍在 backend 本地执行。
 提取任务 (build_concepts, cancel_extraction) 通过 A2A 协议委托给 agent-server。
 
-进度信息存在 _task_progress 内存缓存中, 由轮询/SSE 更新。
+任务状态走 tasks 表 (DB 持久化), 重启不丢; 进度由 get_status 从 A2A
+拉取最新值, 同步到 tasks 表.
 """
 from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timedelta
 
 import httpx
 from loguru import logger
+from sqlalchemy.exc import IntegrityError
 
 from shared.config import settings
 from shared.database import get_db
@@ -21,14 +22,10 @@ from shared.models import (
     IndexedBook, IndexedParagraph, Concept, ConceptOccurrence, ConceptEvidence,
 )
 from app.services.index_service import IndexService
+from app.services import tasks
 
 
-# A2A task 进度缓存: book_key → {task_id, progress, progress_text, state}
-_task_progress: dict[str, dict] = {}
-
-
-def _book_key(book_id: str, user_id: str) -> str:
-    return f"{user_id}:{book_id}"
+TASK_TYPE = "concept_extraction"
 
 
 class ConceptService:
@@ -39,34 +36,51 @@ class ConceptService:
 
     @classmethod
     def build_concepts(cls, book_id: str, user_id: str, rebuild: bool = False) -> str | None:
-        """
-        通过 A2A 协议向 agent-server 发起概念提取。
-        返回 task_id, 前端轮询 get_status 获取进度。
-        """
+        """通过 A2A 协议委托 agent-server 抽概念. 返回 backend task id."""
         status = IndexService.get_status(book_id, user_id)
         if not status or status["status"] != "parsed":
             raise ValueError("Index not ready, build index first")
 
+        # 防重复点击: 查 tasks 表是否已有同书运行中任务
+        running = tasks.find_running(user_id, TASK_TYPE, book_id)
+        if running:
+            return running["id"]
+
+        # 已 enriched 且非 rebuild, 不再抽
         with get_db() as db:
             record = db.query(IndexedBook).filter_by(
                 book_id=book_id, user_id=user_id
             ).first()
-            if record:
-                if record.concept_status == "extracting":
-                    return None  # 已在提取中，不重复提交
-                if not rebuild and record.concept_status == "enriched":
-                    return None
+            if record and not rebuild and record.concept_status == "enriched":
+                return None
 
-        # 标记 extracting 状态
+        # 1. 先建 Task 行 (running 状态), 占位
+        # 部分唯一索引 uq_tasks_running 兜底并发竞争: find_running 漏过的
+        # race 在这里会撞 IntegrityError, 改读已存在的那条
+        try:
+            tid = tasks.create(
+                user_id=user_id,
+                task_type=TASK_TYPE,
+                book_id=book_id,
+                message="任务已提交",
+            )
+        except IntegrityError:
+            logger.info(
+                f"Race detected on concept extraction kickoff "
+                f"(user={user_id} book={book_id}); reusing existing task"
+            )
+            existing = tasks.find_running(user_id, TASK_TYPE, book_id)
+            return existing["id"] if existing else None
+
+        # 2. 同步 IndexedBook.concept_status (UI 现有读路径仍依赖)
         cls._set_status(book_id, user_id, "extracting")
 
-        # 发 A2A message:send
+        # 3. POST agent-server kickoff
         payload = json.dumps({
             "book_id": book_id,
             "user_id": user_id,
             "rebuild": rebuild,
         })
-
         try:
             agent_url = settings.agent_server_url
             resp = httpx.post(
@@ -83,53 +97,71 @@ class ConceptService:
             )
             resp.raise_for_status()
             data = resp.json()
-
-            # A2A REST 返回 SendMessageResponse: {"task": {...}} 或 {"message": {...}}
-            # protobuf JSON 用 camelCase
             task_data = data.get("task", {})
-            task_id = task_data.get("id", "")
-            context_id = task_data.get("contextId", "")
-            logger.info(f"A2A task created: task_id={task_id} context_id={context_id}")
+            a2a_task_id = task_data.get("id", "")
+            logger.info(f"A2A task created: tid={tid} a2a={a2a_task_id}")
+            tasks.set_external_id(tid, a2a_task_id)
+            return tid
 
-            key = _book_key(book_id, user_id)
-            _task_progress[key] = {
-                "task_id": task_id,
-                "context_id": context_id,
-                "progress": 0,
-                "progress_text": "任务已提交",
-                "state": "working",
-            }
-
-            return task_id
-
+        except httpx.ReadTimeout:
+            # kickoff 超时不一定表示 agent 没收到. 保留 task 在 running 状态,
+            # 让 zombie 清理或后续 polling 兜底; 后续点击会被 find_running 挡住.
+            logger.warning(f"A2A kickoff timed out (book={book_id}, tid={tid})")
+            return tid
         except Exception as e:
             logger.exception(f"Failed to send A2A message: {e}")
+            tasks.fail(tid, str(e))
             cls._set_status(book_id, user_id, "failed", str(e))
             raise
 
     @classmethod
-    def cancel_extraction(cls, book_id: str, user_id: str) -> bool:
-        """通过 A2A 协议取消正在进行的概念提取。"""
-        key = _book_key(book_id, user_id)
-        cached = _task_progress.get(key)
-        if not cached or not cached.get("task_id"):
+    def is_a2a_task_alive(cls, external_id: str | None) -> bool:
+        """探 agent-server 上指定 A2A task 是否还在工作.
+
+        给 tasks.cleanup_zombies 当回调用, 避免把跑了很久但仍在干活的大书任务
+        误标 failed. 拿不准就当死 (False), 让上层标 failed 是更安全的默认.
+        """
+        if not external_id:
             return False
-
-        task_id = cached["task_id"]
-
         try:
             agent_url = settings.agent_server_url
-            resp = httpx.post(
-                f"{agent_url}/default/tasks/{task_id}:cancel",
+            resp = httpx.get(
+                f"{agent_url}/default/tasks/{external_id}",
                 headers={"A2A-Version": "1.0"},
-                timeout=10,
+                timeout=3,
             )
-            resp.raise_for_status()
-            logger.info(f"A2A cancel sent: task_id={task_id}")
-            return True
-        except Exception as e:
-            logger.warning(f"Failed to cancel A2A task: {e}")
+            if resp.status_code != 200:
+                return False
+            state = resp.json().get("status", {}).get("state", "")
+            return state in ("TASK_STATE_WORKING", "TASK_STATE_SUBMITTED")
+        except Exception:
             return False
+
+    @classmethod
+    def cancel_extraction(cls, book_id: str, user_id: str) -> bool:
+        """取消该书正在进行的概念提取."""
+        running = tasks.find_running(user_id, TASK_TYPE, book_id)
+        if not running:
+            return False
+
+        a2a_task_id = running.get("external_id")
+        if a2a_task_id:
+            try:
+                agent_url = settings.agent_server_url
+                resp = httpx.post(
+                    f"{agent_url}/default/tasks/{a2a_task_id}:cancel",
+                    headers={"A2A-Version": "1.0"},
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                logger.info(f"A2A cancel sent: a2a={a2a_task_id}")
+            except Exception as e:
+                logger.warning(f"Failed to cancel A2A task: {e}")
+                # 即使 A2A 取消失败也把 DB 标 cancelled, 防僵尸
+
+        tasks.cancel(running["id"])
+        cls._set_status(book_id, user_id, None, "用户取消")
+        return True
 
     # ===================================================================
     # Status (混合: DB + A2A 任务进度)
@@ -137,6 +169,10 @@ class ConceptService:
 
     @classmethod
     def get_status(cls, book_id, user_id) -> dict | None:
+        """组合返回:
+          - concept_status: 来自 IndexedBook (是否已 enriched 等)
+          - progress / progress_text: 来自 tasks 表 + 实时 A2A 拉取
+        """
         with get_db() as db:
             record = db.query(IndexedBook).filter_by(
                 book_id=book_id, user_id=user_id
@@ -144,37 +180,25 @@ class ConceptService:
             if not record:
                 return None
 
-            # 修复中断的 extracting 状态
-            if record.concept_status == "extracting":
-                concept_count = db.query(Concept).filter_by(
-                    book_id=book_id, user_id=user_id
-                ).count()
-                if concept_count > 0:
-                    record.concept_status = "enriched"
-                    record.total_concepts = concept_count
-                    record.concept_error = None
-                    db.commit()
-                elif record.updated_at:
-                    if datetime.utcnow() - record.updated_at > timedelta(hours=2):
-                        record.concept_status = None
-                        record.concept_error = "extraction interrupted"
-                        db.commit()
+        # 找当前活跃任务, 同步进度
+        running = tasks.find_running(user_id, TASK_TYPE, book_id)
+        progress = None
+        progress_text = None
+        if running:
+            cls._sync_task_from_a2a(running)
+            # 重读 (sync 可能转成终态)
+            running = tasks.get(running["id"])
+            if running and running["status"] == "running":
+                progress = running.get("progress")
+                progress_text = running.get("message")
 
-            # 如果正在提取, 查 A2A 任务进度
-            progress = None
-            progress_text = None
-            if record.concept_status == "extracting":
-                key = _book_key(book_id, user_id)
-                cached = _task_progress.get(key)
-                if cached:
-                    # 先从 agent-server 拉最新状态, 更新缓存
-                    cls._refresh_task_progress(book_id, user_id, cached)
-                    # 再读缓存中的最新值
-                    progress = cached.get("progress", 0)
-                    progress_text = cached.get("progress_text", "")
-
-            # _refresh 可能已经更新了 DB 状态, 重新读
-            db.refresh(record)
+        # IndexedBook 状态可能在 sync 时被改, 重读
+        with get_db() as db:
+            record = db.query(IndexedBook).filter_by(
+                book_id=book_id, user_id=user_id
+            ).first()
+            if not record:
+                return None
 
             return {
                 "concept_status": record.concept_status,
@@ -185,27 +209,26 @@ class ConceptService:
             }
 
     @classmethod
-    def _refresh_task_progress(cls, book_id: str, user_id: str, cached: dict):
-        """从 agent-server 拉取任务最新状态, 更新缓存和 DB。"""
-        task_id = cached.get("task_id")
-        if not task_id:
+    def _sync_task_from_a2a(cls, task: dict) -> None:
+        """从 agent-server 拉 A2A task 最新状态, 同步到 tasks 表和 IndexedBook."""
+        a2a_task_id = task.get("external_id")
+        if not a2a_task_id:
             return
 
         try:
             agent_url = settings.agent_server_url
             resp = httpx.get(
-                f"{agent_url}/default/tasks/{task_id}",
+                f"{agent_url}/default/tasks/{a2a_task_id}",
                 headers={"A2A-Version": "1.0"},
                 timeout=5,
             )
             if resp.status_code != 200:
                 return
 
-            task_data = resp.json()
-            status = task_data.get("status", {})
+            data = resp.json()
+            status = data.get("status", {})
             state = status.get("state", "")
 
-            # 解析进度信息
             msg = status.get("message", {})
             parts = msg.get("parts", [])
             text = ""
@@ -213,46 +236,42 @@ class ConceptService:
             for p in parts:
                 if p.get("text"):
                     text = p["text"]
-            # 进度数字在 message.metadata.progress
             msg_meta = msg.get("metadata", {})
             if isinstance(msg_meta, dict) and "progress" in msg_meta:
                 progress_val = msg_meta["progress"]
 
-            key = _book_key(book_id, user_id)
+            tid = task["id"]
+            book_id = task["book_id"]
+            user_id = task["user_id"]
 
             if state == "TASK_STATE_COMPLETED":
-                _task_progress.pop(key, None)
+                # text 是 agent 返回的 result JSON
+                summary = text or "完成"
+                tasks.complete(tid, summary)
                 cls._set_status(book_id, user_id, "enriched")
-                # 解析结果更新 total_concepts
                 try:
                     result = json.loads(text)
                     with get_db() as db:
-                        record = db.query(IndexedBook).filter_by(
+                        rec = db.query(IndexedBook).filter_by(
                             book_id=book_id, user_id=user_id
                         ).first()
-                        if record:
-                            record.total_concepts = result.get("concepts", 0)
+                        if rec:
+                            rec.total_concepts = result.get("concepts", 0)
                             db.commit()
                 except (json.JSONDecodeError, TypeError):
                     pass
-
             elif state == "TASK_STATE_FAILED":
-                _task_progress.pop(key, None)
+                tasks.fail(tid, text or "提取失败")
                 cls._set_status(book_id, user_id, "failed", text)
-
             elif state == "TASK_STATE_CANCELED":
-                _task_progress.pop(key, None)
+                tasks.cancel(tid, text or "用户取消")
                 cls._set_status(book_id, user_id, None, "用户取消")
-
             else:
-                # working — 更新进度缓存
-                if progress_val is not None:
-                    cached["progress"] = progress_val
-                if text:
-                    cached["progress_text"] = text
+                if progress_val is not None or text:
+                    tasks.update_progress(tid, progress_val or 0, text or None)
 
         except Exception as e:
-            logger.debug(f"Failed to refresh task progress: {e}")
+            logger.debug(f"Failed to sync A2A task {a2a_task_id}: {e}")
 
     # ===================================================================
     # 查询 (本地 DB, 不变)
