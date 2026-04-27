@@ -783,6 +783,7 @@ export interface ConceptAnnotation {
     term: string;
     initial_definition: string | null;
     total_occurrences: number;
+    parent_term: string | null;
   };
   occurrences: ConceptOccurrence[];
 }

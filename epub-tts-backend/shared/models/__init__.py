@@ -13,7 +13,7 @@ from shared.models.ai import AIProviderConfig, BookTranslation
 from shared.models.tts import TTSProviderConfig, ClonedVoice
 from shared.models.preferences import UserPreferences
 from shared.models.index import IndexedBook, IndexedParagraph
-from shared.models.concept import Concept, ConceptOccurrence
+from shared.models.concept import Concept, ConceptOccurrence, ConceptEvidence
 from shared.models.system import SystemSetting
 
 __all__ = [
@@ -24,6 +24,6 @@ __all__ = [
     "TTSProviderConfig", "ClonedVoice",
     "UserPreferences",
     "IndexedBook", "IndexedParagraph",
-    "Concept", "ConceptOccurrence",
+    "Concept", "ConceptOccurrence", "ConceptEvidence",
     "SystemSetting",
 ]

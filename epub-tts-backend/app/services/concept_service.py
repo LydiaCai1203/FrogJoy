@@ -17,7 +17,9 @@ from loguru import logger
 
 from shared.config import settings
 from shared.database import get_db
-from shared.models import IndexedBook, IndexedParagraph, Concept, ConceptOccurrence
+from shared.models import (
+    IndexedBook, IndexedParagraph, Concept, ConceptOccurrence, ConceptEvidence,
+)
 from app.services.index_service import IndexService
 
 
@@ -315,14 +317,20 @@ class ConceptService:
     def get_chapter_annotations(cls, book_id, user_id, chapter_idx) -> list[dict]:
         """返回某章的概念角标数据 (前端渲染用)。
 
-        每个概念返回所在章的所有 occurrence (含精确匹配片段 matched_text 和
-        类型 occurrence_type), 让前端能按 occurrence 粒度而非 term 子串去渲染,
-        避免 "China" 子串命中 "Chinatown" 这类误标。
-
-        排序: 概念按本章首次出现的 para_idx_in_chapter 升序,
-        每个概念内部 occurrences 也按 para_idx_in_chapter 升序。
+        合并两表: ConceptEvidence (definition/refinement, LLM grounded)
+                + ConceptOccurrence (mention, Phase 3 regex 补全)。
+        前者带 quote 作 core_sentence; 二者都给 matched_text 让前端定位。
+        evidence 的 matched_text 是 quote 中真实出现的 term 或 alias 字串
+        (优先 term, 其次最长 alias), 避免引文整段不好命中句子的问题。
         """
         with get_db() as db:
+            chapter_evs = (
+                db.query(ConceptEvidence)
+                .filter_by(
+                    book_id=book_id, user_id=user_id, chapter_idx=chapter_idx
+                )
+                .all()
+            )
             chapter_occs = (
                 db.query(ConceptOccurrence)
                 .filter_by(
@@ -330,11 +338,14 @@ class ConceptService:
                 )
                 .all()
             )
-            if not chapter_occs:
+            if not chapter_evs and not chapter_occs:
                 return []
 
-            # 一次性批量取本章相关 paragraph 的 para_idx_in_chapter
-            paragraph_ids = {o.paragraph_id for o in chapter_occs}
+            # 批量取段落 idx
+            paragraph_ids = (
+                {ev.paragraph_id for ev in chapter_evs}
+                | {o.paragraph_id for o in chapter_occs}
+            )
             para_idx_by_id: dict[str, int] = {}
             if paragraph_ids:
                 paras = (
@@ -344,43 +355,91 @@ class ConceptService:
                 )
                 para_idx_by_id = {p.id: p.para_idx_in_chapter for p in paras}
 
-            # 一次性批量取本章涉及的概念 (过滤掉无 initial_definition 的)
-            concept_ids = {o.concept_id for o in chapter_occs}
-            concepts_by_id: dict[str, Concept] = {}
-            if concept_ids:
-                concepts = (
-                    db.query(Concept)
-                    .filter(Concept.id.in_(concept_ids))
-                    .all()
-                )
-                concepts_by_id = {
-                    c.id: c for c in concepts if c.initial_definition
-                }
+            # 批量取相关概念 + 它们的 parent (parent 可能不在本章 occs 里)
+            concept_ids = (
+                {ev.concept_id for ev in chapter_evs}
+                | {o.concept_id for o in chapter_occs}
+            )
+            if not concept_ids:
+                return []
+            concepts = (
+                db.query(Concept)
+                .filter(Concept.id.in_(concept_ids))
+                .all()
+            )
+            concepts_by_id = {c.id: c for c in concepts}
 
-            if not concepts_by_id:
+            parent_ids = {
+                c.parent_concept_id for c in concepts
+                if c.parent_concept_id and c.parent_concept_id not in concepts_by_id
+            }
+            parent_terms_by_id: dict[str, str] = {}
+            if parent_ids:
+                parent_rows = db.query(Concept).filter(Concept.id.in_(parent_ids)).all()
+                parent_terms_by_id = {p.id: p.term for p in parent_rows}
+            for c in concepts:
+                if c.id not in parent_terms_by_id and c.id in concepts_by_id:
+                    parent_terms_by_id[c.id] = c.term
+
+            def _resolve_parent_term(c: Concept) -> str | None:
+                if not c.parent_concept_id:
+                    return None
+                if c.parent_concept_id in parent_terms_by_id:
+                    return parent_terms_by_id[c.parent_concept_id]
+                # parent 也在 concepts_by_id 里
+                pc = concepts_by_id.get(c.parent_concept_id)
+                return pc.term if pc else None
+
+            def _pick_matched_text(quote: str, c: Concept) -> str:
+                aliases = c.aliases if isinstance(c.aliases, list) else (
+                    json.loads(c.aliases) if c.aliases else []
+                )
+                # 优先 term, 其次按长度降序的 alias
+                if c.term and c.term in quote:
+                    return c.term
+                for kw in sorted([a for a in aliases if a], key=len, reverse=True):
+                    if kw in quote:
+                        return kw
+                return c.term or ""
+
+            # 把 evidence 和 occurrence 都规范成同一个结构, 按概念聚合
+            occ_records: dict[str, list[dict]] = {}
+
+            for ev in chapter_evs:
+                c = concepts_by_id.get(ev.concept_id)
+                if not c:
+                    continue
+                occ_records.setdefault(ev.concept_id, []).append({
+                    "para_idx_in_chapter": para_idx_by_id.get(ev.paragraph_id, -1),
+                    "occurrence_type": ev.role,            # definition / refinement
+                    "matched_text": _pick_matched_text(ev.quote, c),
+                    "core_sentence": ev.quote,
+                })
+
+            for o in chapter_occs:
+                c = concepts_by_id.get(o.concept_id)
+                if not c:
+                    continue
+                occ_records.setdefault(o.concept_id, []).append({
+                    "para_idx_in_chapter": para_idx_by_id.get(o.paragraph_id, -1),
+                    "occurrence_type": "mention",
+                    "matched_text": o.matched_text,
+                    "core_sentence": None,
+                })
+
+            if not occ_records:
                 return []
 
-            # 按 concept 聚合 occurrences (跳过那些无定义的 concept)
-            occs_by_concept: dict[str, list[ConceptOccurrence]] = {}
-            for o in chapter_occs:
-                if o.concept_id not in concepts_by_id:
-                    continue
-                occs_by_concept.setdefault(o.concept_id, []).append(o)
-
             def first_para_idx(cid: str) -> int:
-                return min(
-                    para_idx_by_id.get(o.paragraph_id, 10**9)
-                    for o in occs_by_concept[cid]
-                )
+                return min(r["para_idx_in_chapter"] for r in occ_records[cid])
 
-            sorted_cids = sorted(occs_by_concept.keys(), key=first_para_idx)
+            sorted_cids = sorted(occ_records.keys(), key=first_para_idx)
 
             annotations: list[dict] = []
             for badge_num, cid in enumerate(sorted_cids, 1):
                 c = concepts_by_id[cid]
-                occs_sorted = sorted(
-                    occs_by_concept[cid],
-                    key=lambda o: para_idx_by_id.get(o.paragraph_id, 10**9),
+                records_sorted = sorted(
+                    occ_records[cid], key=lambda r: r["para_idx_in_chapter"]
                 )
                 annotations.append({
                     "concept_id": c.id,
@@ -390,18 +449,9 @@ class ConceptService:
                         "term": c.term,
                         "initial_definition": c.initial_definition,
                         "total_occurrences": c.total_occurrences,
+                        "parent_term": _resolve_parent_term(c),
                     },
-                    "occurrences": [
-                        {
-                            "para_idx_in_chapter": para_idx_by_id.get(
-                                o.paragraph_id, -1
-                            ),
-                            "occurrence_type": o.occurrence_type,
-                            "matched_text": o.matched_text,
-                            "core_sentence": o.core_sentence,
-                        }
-                        for o in occs_sorted
-                    ],
+                    "occurrences": records_sorted,
                 })
 
             return annotations
@@ -409,6 +459,9 @@ class ConceptService:
     @classmethod
     def delete_concepts(cls, book_id, user_id) -> bool:
         with get_db() as db:
+            db.query(ConceptEvidence).filter_by(
+                book_id=book_id, user_id=user_id
+            ).delete()
             db.query(ConceptOccurrence).filter_by(
                 book_id=book_id, user_id=user_id
             ).delete()

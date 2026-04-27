@@ -189,7 +189,14 @@ export function Reader({
               </PopoverTrigger>
               <PopoverContent className="w-72 p-3" side="top" align="start">
                 <div className="space-y-2">
-                  <p className="font-medium text-sm text-foreground">{ann.popover.term}</p>
+                  <div className="flex items-baseline gap-1.5 flex-wrap">
+                    <p className="font-medium text-sm text-foreground">{ann.popover.term}</p>
+                    {ann.popover.parent_term && (
+                      <span className="text-[10px] text-muted-foreground/70">
+                        属于 {ann.popover.parent_term}
+                      </span>
+                    )}
+                  </div>
                   {popoverBody ? (
                     <p className="text-xs text-muted-foreground leading-relaxed">{popoverBody}</p>
                   ) : (

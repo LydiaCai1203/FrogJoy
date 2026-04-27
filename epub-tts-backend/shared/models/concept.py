@@ -8,6 +8,8 @@ class Concept(Base):
 
     由 ConceptService Phase 1+2 提取并去重后写入。
     频次统计字段在 Phase 3 完成后回填。
+    parent_concept_id 指向更上位的概念 (如"向上流动" -> "社会流动"),
+    Phase 2 LLM linker 设置, 用于 Phase 3 span 仲裁和前端展示。
     """
     __tablename__ = "concepts"
 
@@ -19,6 +21,7 @@ class Concept(Base):
     aliases     = Column(JSON, nullable=False, server_default="[]")         # 别名列表
     category    = Column(String, nullable=False)                            # term/term_custom/person/work/theory
     initial_definition = Column(Text, nullable=True)                        # 作者原文解释 (弹窗展示)
+    parent_concept_id  = Column(String, ForeignKey("concepts.id"), nullable=True)
 
     # 频次统计 (Phase 3 后回填)
     total_occurrences = Column(Integer, nullable=False, server_default="0")
@@ -29,6 +32,7 @@ class Concept(Base):
 
     __table_args__ = (
         Index("idx_concepts_user_book", "user_id", "book_id"),
+        Index("idx_concepts_parent", "parent_concept_id"),
     )
 
 
@@ -65,4 +69,42 @@ class ConceptOccurrence(Base):
         Index("idx_occ_concept", "concept_id"),
         Index("idx_occ_paragraph", "paragraph_id"),
         Index("idx_occ_user_book_chapter", "user_id", "book_id", "chapter_idx"),
+    )
+
+
+class ConceptEvidence(Base):
+    """
+    概念的强证据 (verbatim quote).
+
+    由 Phase 1 LLM 直接给出, 经服务端校验 (quote 逐字 in paragraph,
+    term/alias in quote) 才落库. 用于:
+      - definition / refinement 类型的角标位置 (matched_text == quote)
+      - 弹窗展示作者原话核心句
+
+    与 ConceptOccurrence 的分工:
+      ConceptEvidence: 强证据 (definition/refinement), LLM grounded
+      ConceptOccurrence: 弱出现 (mention), Phase 3 regex 补全
+    前端 get_chapter_annotations 把两表 UNION 后输出 occurrences.
+    """
+    __tablename__ = "concept_evidence"
+
+    id           = Column(String, primary_key=True)                          # ev:{uuid4}
+    concept_id   = Column(String, ForeignKey("concepts.id"), nullable=False)
+    paragraph_id = Column(String, ForeignKey("indexed_paragraphs.id"), nullable=False)
+    user_id      = Column(String, nullable=False)
+    book_id      = Column(String, nullable=False)
+    chapter_idx  = Column(Integer, nullable=False)
+
+    quote        = Column(Text, nullable=False)            # 原文逐字片段
+    role         = Column(String, nullable=False)          # definition / refinement
+    char_offset  = Column(Integer, nullable=False)         # quote 在段落中的起始位置
+    char_length  = Column(Integer, nullable=False)
+
+    created_at   = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_ev_user_book", "user_id", "book_id"),
+        Index("idx_ev_user_book_chapter", "user_id", "book_id", "chapter_idx"),
+        Index("idx_ev_concept", "concept_id"),
+        Index("idx_ev_paragraph", "paragraph_id"),
     )
