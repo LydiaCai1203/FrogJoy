@@ -1145,7 +1145,7 @@ def _llm_concept_linker(
     concepts: list[dict],
     sim_threshold: float = 0.75,
     top_k: int = 3,
-    batch_size: int = 30,
+    batch_size: int = 10,
 ) -> list[dict]:
     """Embedding 产候选 + LLM 拍板.
 
