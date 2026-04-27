@@ -766,15 +766,24 @@ export interface ConceptItem {
   scope: "book" | "chapter";
 }
 
+export type OccurrenceType = "definition" | "refinement" | "mention";
+
+export interface ConceptOccurrence {
+  para_idx_in_chapter: number;
+  occurrence_type: OccurrenceType;
+  matched_text: string | null;
+  core_sentence: string | null;
+}
+
 export interface ConceptAnnotation {
   concept_id: string;
   term: string;
   badge_number: number;
-  first_pid_in_chapter: string;
   popover: {
     term: string;
     initial_definition: string | null;
   };
+  occurrences: ConceptOccurrence[];
 }
 
 export class ConceptService {

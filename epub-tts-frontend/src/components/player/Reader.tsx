@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { BookOpen, Headphones } from "lucide-react";
 import type { WordTimestamp, Highlight, HighlightColor } from "@/api/types";
-import type { ConceptAnnotation } from "@/api/services";
+import type { ConceptAnnotation, ConceptOccurrence } from "@/api/services";
 import type { UnifiedMode, InteractionMode, ContentMode } from "@/lib/ai/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { API_BASE } from "@/config";
@@ -87,92 +87,134 @@ export function Reader({
   const isPlayMode = interactionMode === "play";
   const isReadMode = interactionMode === "read";
 
-  // 概念角标: 找每个 annotation 首次出现在哪个 sentence index
+  // 概念角标: 把每个 occurrence 映射到包含其 matched_text 的 sentence
+  // - 跳过 mention 类型 (减少视觉打扰)
+  // - 缺失 matched_text 的跳过
+  // - 按 para_idx_in_chapter 升序处理, 用游标在 sentences 上前进, 避免同一关键词
+  //   早期段落的句子吃掉后续段落的命中 (如 "transformer" 在第 1、5、20 段都出现时)
+  type BadgeItem = { ann: ConceptAnnotation; occurrence: ConceptOccurrence };
   const annotationsBySentence = useMemo(() => {
-    if (!annotations.length || !sentences.length) return new Map<number, ConceptAnnotation[]>();
-    const map = new Map<number, ConceptAnnotation[]>();
-    const assigned = new Set<string>(); // 每个概念只标一次
+    const map = new Map<number, BadgeItem[]>();
+    if (!annotations.length || !sentences.length) return map;
+
+    const items: BadgeItem[] = [];
     for (const ann of annotations) {
-      if (assigned.has(ann.concept_id)) continue;
-      const termLower = ann.term.toLowerCase();
-      for (let i = 0; i < sentences.length; i++) {
-        if (sentences[i].toLowerCase().includes(termLower)) {
-          if (!map.has(i)) map.set(i, []);
-          map.get(i)!.push(ann);
-          assigned.add(ann.concept_id);
+      for (const occ of ann.occurrences) {
+        if (occ.occurrence_type === "mention") continue;
+        if (!occ.matched_text) continue;
+        items.push({ ann, occurrence: occ });
+      }
+    }
+    items.sort(
+      (a, b) =>
+        a.occurrence.para_idx_in_chapter - b.occurrence.para_idx_in_chapter
+    );
+
+    let cursor = 0;
+    for (const item of items) {
+      const needle = item.occurrence.matched_text!.toLowerCase();
+      let foundSentence = -1;
+      for (let i = cursor; i < sentences.length; i++) {
+        if (sentences[i].toLowerCase().includes(needle)) {
+          foundSentence = i;
           break;
         }
       }
+      if (foundSentence < 0) continue;
+      if (!map.has(foundSentence)) map.set(foundSentence, []);
+      map.get(foundSentence)!.push(item);
+      cursor = foundSentence; // 允许同一句多个角标; 下一项至少从这句开始
     }
     return map;
   }, [annotations, sentences]);
 
-  // 把概念角标内联到句子文本中（紧跟在概念词后面）
-  const renderTextWithAnnotations = useCallback((text: string, anns: ConceptAnnotation[]) => {
-    if (!anns.length) return <span>{text}</span>;
+  // 把概念角标内联到句子文本中(紧跟在 matched_text 后面)
+  // definition 走深紫色徽章 + 弹窗显示 initial_definition
+  // refinement 走浅紫色徽章 + 弹窗显示 core_sentence (回退到 initial_definition)
+  const renderTextWithAnnotations = useCallback(
+    (text: string, items: BadgeItem[]) => {
+      if (!items.length) return <span>{text}</span>;
 
-    // 找到每个概念在文本中的位置
-    type Match = { start: number; end: number; ann: ConceptAnnotation };
-    const matches: Match[] = [];
-    for (const ann of anns) {
-      const idx = text.toLowerCase().indexOf(ann.term.toLowerCase());
-      if (idx !== -1) {
-        matches.push({ start: idx, end: idx + ann.term.length, ann });
+      type Match = { start: number; end: number; item: BadgeItem };
+      const lower = text.toLowerCase();
+      const matches: Match[] = [];
+      for (const item of items) {
+        const needle = item.occurrence.matched_text!.toLowerCase();
+        const idx = lower.indexOf(needle);
+        if (idx === -1) continue;
+        matches.push({ start: idx, end: idx + needle.length, item });
       }
-    }
-    if (!matches.length) return <span>{text}</span>;
+      if (!matches.length) return <span>{text}</span>;
 
-    // 按位置排序，去重（重叠的只保留第一个）
-    matches.sort((a, b) => a.start - b.start);
-    const filtered: Match[] = [];
-    let lastEnd = 0;
-    for (const m of matches) {
-      if (m.start >= lastEnd) {
-        filtered.push(m);
-        lastEnd = m.end;
+      matches.sort((a, b) => a.start - b.start);
+      const filtered: Match[] = [];
+      let lastEnd = 0;
+      for (const m of matches) {
+        if (m.start >= lastEnd) {
+          filtered.push(m);
+          lastEnd = m.end;
+        }
       }
-    }
 
-    const nodes: React.ReactNode[] = [];
-    let cursor = 0;
-    for (const m of filtered) {
-      if (m.start > cursor) {
-        nodes.push(<span key={`t-${cursor}`}>{text.slice(cursor, m.start)}</span>);
+      const nodes: React.ReactNode[] = [];
+      let cursor = 0;
+      for (const m of filtered) {
+        if (m.start > cursor) {
+          nodes.push(<span key={`t-${cursor}`}>{text.slice(cursor, m.start)}</span>);
+        }
+        const { ann, occurrence } = m.item;
+        const isDefinition = occurrence.occurrence_type === "definition";
+        const badgeClass = isDefinition
+          ? "bg-violet-500 hover:bg-violet-600"
+          : "bg-violet-300 hover:bg-violet-400";
+        const popoverBody =
+          !isDefinition && occurrence.core_sentence
+            ? occurrence.core_sentence
+            : ann.popover.initial_definition;
+        const popoverLabel = isDefinition ? "定义" : "深化";
+
+        nodes.push(
+          <span key={`c-${ann.concept_id}-${m.start}`}>
+            {text.slice(m.start, m.end)}
+            <Popover>
+              <PopoverTrigger asChild>
+                <span
+                  className={cn(
+                    "inline-flex items-center justify-center w-4 h-4 ml-0.5 text-[10px] font-medium text-white rounded-full cursor-pointer align-super leading-none transition-colors",
+                    badgeClass
+                  )}
+                  title={ann.term}
+                >
+                  {ann.badge_number}
+                </span>
+              </PopoverTrigger>
+              <PopoverContent className="w-72 p-3" side="top" align="start">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-sm text-foreground">{ann.popover.term}</p>
+                    <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                      {popoverLabel}
+                    </span>
+                  </div>
+                  {popoverBody ? (
+                    <p className="text-xs text-muted-foreground leading-relaxed">{popoverBody}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">暂无内容</p>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </span>
+        );
+        cursor = m.end;
       }
-      nodes.push(
-        <span key={`c-${m.ann.concept_id}`}>
-          {text.slice(m.start, m.end)}
-          <Popover>
-            <PopoverTrigger asChild>
-              <span
-                className="inline-flex items-center justify-center w-4 h-4 ml-0.5 text-[10px] font-medium text-white bg-violet-500 rounded-full cursor-pointer hover:bg-violet-600 align-super leading-none"
-                title={m.ann.term}
-              >
-                {m.ann.badge_number}
-              </span>
-            </PopoverTrigger>
-            <PopoverContent className="w-72 p-3" side="top" align="start">
-              <div className="space-y-2">
-                <p className="font-medium text-sm text-foreground">{m.ann.popover.term}</p>
-                {m.ann.popover.initial_definition ? (
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    {m.ann.popover.initial_definition}
-                  </p>
-                ) : (
-                  <p className="text-xs text-muted-foreground italic">暂无定义</p>
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
-        </span>
-      );
-      cursor = m.end;
-    }
-    if (cursor < text.length) {
-      nodes.push(<span key="rest">{text.slice(cursor)}</span>);
-    }
-    return <>{nodes}</>;
-  }, []);
+      if (cursor < text.length) {
+        nodes.push(<span key="rest">{text.slice(cursor)}</span>);
+      }
+      return <>{nodes}</>;
+    },
+    []
+  );
   const isTranslatedMode = contentMode === "translated";
   const isBilingualMode = contentMode === "bilingual";
   const canAnnotate = true;

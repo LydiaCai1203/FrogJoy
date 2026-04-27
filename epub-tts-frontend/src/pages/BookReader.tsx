@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/player/Sidebar";
@@ -26,6 +26,31 @@ import { AskAIDialog } from "@/components/highlight/AskAIDialog";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { FontSizeSwitcher } from "@/components/FontSizeSwitcher";
 import type { UnifiedMode, ContentMode, InteractionMode } from "@/lib/ai/types";
+
+// DFS 扁平化目录(包含子目录), 顺序与后端 EpubIndexParser._flatten_toc 保持一致:
+// 父节点先入列, 然后递归子节点。返回的 index 即后端的 chapter_idx。
+function flattenToc(toc: NavItem[]): NavItem[] {
+  const out: NavItem[] = [];
+  const walk = (items: NavItem[]) => {
+    for (const item of items) {
+      out.push(item);
+      if (item.subitems && item.subitems.length) walk(item.subitems);
+    }
+  };
+  walk(toc);
+  return out;
+}
+
+function findChapterIdx(toc: NavItem[], href: string): number {
+  if (!href) return -1;
+  const stripAnchor = (h: string) => h.split("#")[0];
+  const target = stripAnchor(href);
+  const flat = flattenToc(toc);
+  // 优先匹配带 anchor 的精确 href, 不命中再回退到只比较 path
+  const exact = flat.findIndex((it) => it.href === href);
+  if (exact >= 0) return exact;
+  return flat.findIndex((it) => stripAnchor(it.href) === target);
+}
 
 export default function BookReader() {
   const { bookId } = useParams<{ bookId: string }>();
@@ -65,30 +90,45 @@ export default function BookReader() {
   const [originalSentences, setOriginalSentences] = useState<string[]>([]);
   const [translatedSentences, setTranslatedSentences] = useState<string[]>([]);
   const [conceptAnnotations, setConceptAnnotations] = useState<ConceptAnnotation[]>([]);
+  const [conceptStatus, setConceptStatus] = useState<"unknown" | "enriched" | "other">("unknown");
 
-  // 加载概念列表 (一次性加载全书概念, 前端自己用 term 做文本匹配)
+  // 概念抽取状态: 每本书检查一次, 决定是否需要按章拉 annotations
   useEffect(() => {
-    if (!bookId || !token) return;
+    if (!bookId || !token) {
+      setConceptStatus("unknown");
+      return;
+    }
+    let cancelled = false;
     conceptService.getStatus(bookId).then((status) => {
-      if (status.concept_status !== "enriched") return;
-      return conceptService.getConcepts(bookId);
-    }).then((data) => {
-      if (!data) return;
-      const anns: ConceptAnnotation[] = data.concepts
-        .filter((c) => c.total_occurrences > 0 && c.initial_definition)
-        .map((c, idx) => ({
-          concept_id: c.concept_id,
-          term: c.term,
-          badge_number: idx + 1,
-          first_pid_in_chapter: "",
-          popover: {
-            term: c.term,
-            initial_definition: c.initial_definition,
-          },
-        }));
-      setConceptAnnotations(anns);
-    }).catch(() => {});
+      if (cancelled) return;
+      setConceptStatus(status.concept_status === "enriched" ? "enriched" : "other");
+    }).catch(() => {
+      if (!cancelled) setConceptStatus("other");
+    });
+    return () => { cancelled = true; };
   }, [bookId, token]);
+
+  // 章节级概念角标: 仅当书已 enriched + 当前章节 idx 已知 时拉取
+  const chapterIdx = useMemo(
+    () => (currentChapterHref ? findChapterIdx(toc, currentChapterHref) : -1),
+    [toc, currentChapterHref]
+  );
+
+  useEffect(() => {
+    if (conceptStatus !== "enriched" || !bookId || chapterIdx < 0) {
+      setConceptAnnotations([]);
+      return;
+    }
+    let cancelled = false;
+    conceptService.getChapterAnnotations(bookId, chapterIdx)
+      .then((data) => {
+        if (!cancelled) setConceptAnnotations(data.annotations);
+      })
+      .catch(() => {
+        if (!cancelled) setConceptAnnotations([]);
+      });
+    return () => { cancelled = true; };
+  }, [bookId, chapterIdx, conceptStatus]);
 
   // Player State
   const [isPlaying, setIsPlaying] = useState(false);

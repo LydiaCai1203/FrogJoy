@@ -313,7 +313,15 @@ class ConceptService:
 
     @classmethod
     def get_chapter_annotations(cls, book_id, user_id, chapter_idx) -> list[dict]:
-        """返回某章的概念角标数据 (前端渲染用)。"""
+        """返回某章的概念角标数据 (前端渲染用)。
+
+        每个概念返回所在章的所有 occurrence (含精确匹配片段 matched_text 和
+        类型 occurrence_type), 让前端能按 occurrence 粒度而非 term 子串去渲染,
+        避免 "China" 子串命中 "Chinatown" 这类误标。
+
+        排序: 概念按本章首次出现的 para_idx_in_chapter 升序,
+        每个概念内部 occurrences 也按 para_idx_in_chapter 升序。
+        """
         with get_db() as db:
             chapter_occs = (
                 db.query(ConceptOccurrence)
@@ -325,50 +333,74 @@ class ConceptService:
             if not chapter_occs:
                 return []
 
-            concept_first_para = {}
-            for occ in chapter_occs:
-                if occ.concept_id not in concept_first_para:
-                    para = db.query(IndexedParagraph).filter_by(
-                        id=occ.paragraph_id
-                    ).first()
-                    concept_first_para[occ.concept_id] = (
-                        para.para_idx_in_chapter if para else 999
-                    )
+            # 一次性批量取本章相关 paragraph 的 para_idx_in_chapter
+            paragraph_ids = {o.paragraph_id for o in chapter_occs}
+            para_idx_by_id: dict[str, int] = {}
+            if paragraph_ids:
+                paras = (
+                    db.query(IndexedParagraph)
+                    .filter(IndexedParagraph.id.in_(paragraph_ids))
+                    .all()
+                )
+                para_idx_by_id = {p.id: p.para_idx_in_chapter for p in paras}
 
-            concepts_with_def = set()
-            for cid in concept_first_para:
-                c = db.query(Concept).filter_by(id=cid).first()
-                if c and c.initial_definition:
-                    concepts_with_def.add(cid)
+            # 一次性批量取本章涉及的概念 (过滤掉无 initial_definition 的)
+            concept_ids = {o.concept_id for o in chapter_occs}
+            concepts_by_id: dict[str, Concept] = {}
+            if concept_ids:
+                concepts = (
+                    db.query(Concept)
+                    .filter(Concept.id.in_(concept_ids))
+                    .all()
+                )
+                concepts_by_id = {
+                    c.id: c for c in concepts if c.initial_definition
+                }
 
-            if not concepts_with_def:
+            if not concepts_by_id:
                 return []
 
-            sorted_concepts = sorted(
-                concepts_with_def,
-                key=lambda cid: concept_first_para[cid]
-            )
-
-            annotations = []
-            for badge_num, concept_id in enumerate(sorted_concepts, 1):
-                c = db.query(Concept).filter_by(id=concept_id).first()
-                if not c:
+            # 按 concept 聚合 occurrences (跳过那些无定义的 concept)
+            occs_by_concept: dict[str, list[ConceptOccurrence]] = {}
+            for o in chapter_occs:
+                if o.concept_id not in concepts_by_id:
                     continue
+                occs_by_concept.setdefault(o.concept_id, []).append(o)
 
-                first_occ = min(
-                    (o for o in chapter_occs if o.concept_id == concept_id),
-                    key=lambda o: concept_first_para.get(o.concept_id, 0),
+            def first_para_idx(cid: str) -> int:
+                return min(
+                    para_idx_by_id.get(o.paragraph_id, 10**9)
+                    for o in occs_by_concept[cid]
                 )
 
+            sorted_cids = sorted(occs_by_concept.keys(), key=first_para_idx)
+
+            annotations: list[dict] = []
+            for badge_num, cid in enumerate(sorted_cids, 1):
+                c = concepts_by_id[cid]
+                occs_sorted = sorted(
+                    occs_by_concept[cid],
+                    key=lambda o: para_idx_by_id.get(o.paragraph_id, 10**9),
+                )
                 annotations.append({
                     "concept_id": c.id,
                     "term": c.term,
                     "badge_number": badge_num,
-                    "first_pid_in_chapter": first_occ.paragraph_id,
                     "popover": {
                         "term": c.term,
                         "initial_definition": c.initial_definition,
                     },
+                    "occurrences": [
+                        {
+                            "para_idx_in_chapter": para_idx_by_id.get(
+                                o.paragraph_id, -1
+                            ),
+                            "occurrence_type": o.occurrence_type,
+                            "matched_text": o.matched_text,
+                            "core_sentence": o.core_sentence,
+                        }
+                        for o in occs_sorted
+                    ],
                 })
 
             return annotations
