@@ -842,7 +842,7 @@ def _call_phase1_llm(toc, chapter, paragraphs, strategy):
 
 - **term / aliases**: 必须真的在原文中出现过 (term 或某个 alias 字面包含在你指定的段落里)
 - **definition_para**: 该段落明确"定义/解释"了此概念。**段落标记 [P07] 写 7**, 不是 pid 字符串。本章无明确定义只有引用就设为 null。
-- **refinement_paras**: 该概念被作者补充、深化、举例、引申的段落列表。可空数组。
+- **refinement_paras**: 作者用**解释性语言**对该概念进行补充说明的段落 (如给出新的定义、对比、因果分析等)。**纯叙事性的重复出现不算 refinement** (如角色再次登场、事件中再次提到)。可空数组。
 - 每个概念必须 definition_para 或 refinement_paras 至少有一项非空, 否则不要返回。
 
 ## 关键约束
