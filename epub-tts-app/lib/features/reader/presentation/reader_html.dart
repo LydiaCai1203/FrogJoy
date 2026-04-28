@@ -36,7 +36,8 @@ String _buildOriginalHtml(String html, List<ConceptAnnotation> concepts) {
     // Sort by badge number descending to avoid offset issues
     final sorted = [...concepts]..sort((a, b) => b.badgeNumber.compareTo(a.badgeNumber));
     for (final c in sorted) {
-      final badge = '<sup class="concept-badge" onclick="onConceptTap(\'${_escapeJs(c.conceptId)}\', \'${_escapeJs(c.term)}\', \'${_escapeJs(c.definition ?? '暂无定义')}\')">${_circledNumber(c.badgeNumber)}</sup>';
+      final badgeClass = c.category == 'cultural_context' ? 'concept-badge-cultural' : 'concept-badge';
+      final badge = '<sup class="$badgeClass" onclick="onConceptTap(\'${_escapeJs(c.conceptId)}\', \'${_escapeJs(c.term)}\', \'${_escapeJs(c.definition ?? '暂无定义')}\')">${_circledNumber(c.badgeNumber)}</sup>';
       // Insert badge after first occurrence of the term
       final termIdx = result.indexOf(c.term);
       if (termIdx >= 0) {
@@ -117,6 +118,21 @@ String _wrapHtml(String content, {
     font-size: 10px;
     font-weight: 600;
     background: #7c3aed;
+    color: white;
+    border-radius: 50%;
+    margin-left: 2px;
+    cursor: pointer;
+    vertical-align: super;
+    line-height: 1;
+  }
+  .concept-badge-cultural {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px; height: 18px;
+    font-size: 10px;
+    font-weight: 600;
+    background: #f59e0b;
     color: white;
     border-radius: 50%;
     margin-left: 2px;

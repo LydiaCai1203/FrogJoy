@@ -163,10 +163,11 @@ export function Reader({
           nodes.push(<span key={`t-${cursor}`}>{text.slice(cursor, m.start)}</span>);
         }
         const { ann, occurrence } = m.item;
+        const isCultural = ann.category === "cultural_context";
         const isDefinition = occurrence.occurrence_type === "definition";
-        const badgeClass = isDefinition
-          ? "bg-violet-500 hover:bg-violet-600"
-          : "bg-violet-300 hover:bg-violet-400";
+        const badgeClass = isCultural
+          ? (isDefinition ? "bg-amber-500 hover:bg-amber-600" : "bg-amber-300 hover:bg-amber-400")
+          : (isDefinition ? "bg-violet-500 hover:bg-violet-600" : "bg-violet-300 hover:bg-violet-400");
         const popoverBody =
           !isDefinition && occurrence.core_sentence
             ? occurrence.core_sentence
@@ -1243,9 +1244,10 @@ function applyDomConceptBadges(
       badge.dataset.conceptBadge = ann.concept_id;
       badge.textContent = String(ann.badge_number);
       badge.title = `${ann.term}: ${ann.popover.initial_definition}`;
+      const bgColor = ann.category === "cultural_context" ? "#f59e0b" : "#8b5cf6";
       badge.setAttribute(
         "style",
-        "display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:2px;font-size:10px;font-weight:500;color:white;background:#8b5cf6;border-radius:9999px;cursor:pointer;vertical-align:super;line-height:1;"
+        `display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:2px;font-size:10px;font-weight:500;color:white;background:${bgColor};border-radius:9999px;cursor:pointer;vertical-align:super;line-height:1;`
       );
 
       // Insert badge right after the matched term

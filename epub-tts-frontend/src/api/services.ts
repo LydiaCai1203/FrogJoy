@@ -778,6 +778,7 @@ export interface ConceptOccurrence {
 export interface ConceptAnnotation {
   concept_id: string;
   term: string;
+  category?: string;
   badge_number: number;
   popover: {
     term: string;

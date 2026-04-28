@@ -549,8 +549,10 @@ class _ReadModeViewState extends ConsumerState<ReadModeView> {
             width: 18,
             height: 18,
             margin: const EdgeInsets.only(left: 2),
-            decoration: const BoxDecoration(
-              color: Color(0xFF7c3aed),
+            decoration: BoxDecoration(
+              color: concept.category == 'cultural_context'
+                  ? const Color(0xFFF59E0B)
+                  : const Color(0xFF7c3aed),
               shape: BoxShape.circle,
             ),
             alignment: Alignment.center,

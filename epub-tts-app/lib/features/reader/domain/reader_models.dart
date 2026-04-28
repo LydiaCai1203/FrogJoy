@@ -283,12 +283,14 @@ class Highlight {
 class ConceptAnnotation {
   final String conceptId;
   final String term;
+  final String? category;
   final int badgeNumber;
   final String? definition;
 
   const ConceptAnnotation({
     required this.conceptId,
     required this.term,
+    this.category,
     required this.badgeNumber,
     this.definition,
   });
@@ -299,6 +301,7 @@ class ConceptAnnotation {
       conceptId:
           (json['conceptId'] ?? json['concept_id'])?.toString() ?? '',
       term: json['term'] as String? ?? popover?['term'] as String? ?? '',
+      category: json['category'] as String?,
       badgeNumber:
           (json['badgeNumber'] ?? json['badge_number']) as int? ?? 0,
       definition: popover?['initial_definition'] as String? ??

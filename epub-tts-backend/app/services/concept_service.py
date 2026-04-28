@@ -481,6 +481,7 @@ class ConceptService:
                 annotations.append({
                     "concept_id": c.id,
                     "term": c.term,
+                    "category": c.category,
                     "badge_number": badge_num,
                     "popover": {
                         "term": c.term,
