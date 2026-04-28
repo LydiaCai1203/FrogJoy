@@ -562,6 +562,12 @@ export function Reader({
     });
   }, [canAnnotate, highlights, processedHtml, displayedSentences, highlightContainerRef]);
 
+  // Apply concept badges in HTML read mode
+  useEffect(() => {
+    if (!shouldRenderHtmlReadMode || !readModeRef.current || !annotations.length) return;
+    applyDomConceptBadges(readModeRef.current, annotations);
+  }, [shouldRenderHtmlReadMode, annotations, processedHtml]);
+
   // Handle pointer up for text selection
   const handlePointerUp = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1200,5 +1206,61 @@ function wrapTextInDom(
     if (after) parent.insertBefore(document.createTextNode(after), node);
     parent.removeChild(node);
     break; // Only highlight first occurrence per highlight record
+  }
+}
+
+/** Inject concept badge elements into HTML read mode DOM */
+function applyDomConceptBadges(
+  container: HTMLElement,
+  annotations: ConceptAnnotation[]
+): void {
+  // Remove previously applied badges and normalize text nodes
+  container.querySelectorAll("span[data-concept-badge]").forEach((el) => {
+    const parent = el.parentNode;
+    el.remove();
+    if (parent) parent.normalize();
+  });
+
+  const assigned = new Set<string>();
+  for (const ann of annotations) {
+    if (assigned.has(ann.concept_id)) continue;
+    if (!ann.term || !ann.popover?.initial_definition) continue;
+
+    const termLower = ann.term.toLowerCase();
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let node: Text | null;
+
+    while ((node = walker.nextNode() as Text | null)) {
+      const textContent = node.textContent || "";
+      const idx = textContent.toLowerCase().indexOf(termLower);
+      if (idx === -1) continue;
+
+      // Don't insert into already-badged or highlight nodes
+      if ((node.parentElement as HTMLElement)?.dataset?.conceptBadge) continue;
+      if ((node.parentElement as HTMLElement)?.dataset?.highlightId) continue;
+
+      const badge = document.createElement("span");
+      badge.dataset.conceptBadge = ann.concept_id;
+      badge.textContent = String(ann.badge_number);
+      badge.title = `${ann.term}: ${ann.popover.initial_definition}`;
+      badge.setAttribute(
+        "style",
+        "display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:2px;font-size:10px;font-weight:500;color:white;background:#8b5cf6;border-radius:9999px;cursor:pointer;vertical-align:super;line-height:1;"
+      );
+
+      // Insert badge right after the matched term
+      const afterIdx = idx + ann.term.length;
+      const before = textContent.slice(0, afterIdx);
+      const after = textContent.slice(afterIdx);
+
+      const parent = node.parentNode!;
+      if (before) parent.insertBefore(document.createTextNode(before), node);
+      parent.insertBefore(badge, node);
+      if (after) parent.insertBefore(document.createTextNode(after), node);
+      parent.removeChild(node);
+
+      assigned.add(ann.concept_id);
+      break;
+    }
   }
 }
