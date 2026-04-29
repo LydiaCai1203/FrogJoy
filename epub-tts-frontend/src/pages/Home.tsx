@@ -512,9 +512,9 @@ export default function Home() {
                   
                   {/* 阅读进度条 */}
                   {book.readingProgress && (
-                    <div className="h-1.5 bg-black/10">
+                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                       <div 
-                        className="h-full bg-black/40 transition-all"
+                        className="h-full bg-primary transition-all duration-300"
                         style={{ width: `${book.readingProgress.percentage}%` }}
                       />
                     </div>
