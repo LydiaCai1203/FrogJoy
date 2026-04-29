@@ -30,14 +30,43 @@ from shared.models import (
 )
 
 
-# ---------- Configuration ----------
+# ---------- Configuration (env var fallback) ----------
 
-MINIMAX_LLM_API_KEY = os.environ.get("MINIMAX_LLM_API_KEY", "")
-MINIMAX_LLM_BASE_URL = os.environ.get("MINIMAX_LLM_BASE_URL", "https://api.minimaxi.com/anthropic")
-MINIMAX_LLM_MODEL = os.environ.get("MINIMAX_LLM_MODEL", "MiniMax-M2.7")
-EMBEDDING_API_KEY = os.environ.get("EMBEDDING_API_KEY", "")
-EMBEDDING_BASE_URL = os.environ.get("EMBEDDING_BASE_URL", "https://model-square.app.baizhi.cloud/v1/embeddings")
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "bge-m3")
+CONCEPT_LLM_API_KEY = os.environ.get("CONCEPT_LLM_API_KEY", "")
+CONCEPT_LLM_BASE_URL = os.environ.get("CONCEPT_LLM_BASE_URL", "https://api.minimaxi.com/anthropic")
+CONCEPT_LLM_MODEL = os.environ.get("CONCEPT_LLM_MODEL", "MiniMax-M2.7")
+CONCEPT_EMBED_API_KEY = os.environ.get("CONCEPT_EMBED_API_KEY", "")
+CONCEPT_EMBED_BASE_URL = os.environ.get("CONCEPT_EMBED_BASE_URL", "https://model-square.app.baizhi.cloud/v1/embeddings")
+CONCEPT_EMBED_MODEL = os.environ.get("CONCEPT_EMBED_MODEL", "bge-m3")
+
+
+# ---------- LLM Config (from backend via A2A) ----------
+
+from dataclasses import dataclass
+
+
+@dataclass
+class LLMConfig:
+    provider_type: str   # "anthropic" | "openai-chat"
+    base_url: str
+    api_key: str
+    model: str
+
+
+def _get_llm_config(ai_config: dict | None, embedding_config: dict | None) -> tuple[LLMConfig, dict]:
+    """从 A2A payload 解析 LLM 和 Embedding 配置，无配置时用 env var 兜底."""
+    llm = LLMConfig(
+        provider_type=(ai_config or {}).get("provider_type", "anthropic"),
+        base_url=(ai_config or {}).get("base_url") or CONCEPT_LLM_BASE_URL,
+        api_key=(ai_config or {}).get("api_key") or CONCEPT_LLM_API_KEY,
+        model=(ai_config or {}).get("model") or CONCEPT_LLM_MODEL,
+    )
+    emb = {
+        "base_url": (embedding_config or {}).get("base_url") or CONCEPT_EMBED_BASE_URL,
+        "api_key": (embedding_config or {}).get("api_key") or CONCEPT_EMBED_API_KEY,
+        "model": (embedding_config or {}).get("model") or CONCEPT_EMBED_MODEL,
+    }
+    return llm, emb
 
 
 # ---------- DB helpers (替代 IndexService) ----------
@@ -115,12 +144,15 @@ class ConceptExtractor:
         rebuild: bool = False,
         progress_callback: Callable[[int, str], None] | None = None,
         cancel_check: Callable[[], bool] | None = None,
+        ai_config: dict | None = None,
+        embedding_config: dict | None = None,
     ):
         self.book_id = book_id
         self.user_id = user_id
         self.rebuild = rebuild
         self._progress = progress_callback or (lambda pct, txt: None)
         self._cancelled = cancel_check or (lambda: False)
+        self._llm_config, self._emb_config = _get_llm_config(ai_config, embedding_config)
 
     def run(self) -> dict:
         """
@@ -251,6 +283,7 @@ class ConceptExtractor:
                 system="你是一个书籍分析专家。",
                 prompt=prompt,
                 max_tokens=2000,
+                config=self._llm_config,
             )
             logger.info(f"Phase 0 strategy: {json.dumps(result, ensure_ascii=False)[:200]}")
             return result
@@ -285,7 +318,7 @@ class ConceptExtractor:
             if not paragraphs:
                 return []
             try:
-                raw = _call_phase1_llm(toc, chapter, paragraphs, strategy)
+                raw = _call_phase1_llm(toc, chapter, paragraphs, strategy, self._llm_config)
                 # 服务端硬校验: quote 必须 verbatim, term/alias 必须在 quote 里
                 validated = _validate_evidence(raw, paragraphs)
                 # 给每条 evidence 打上 chapter_idx (Phase 2 合并/Phase 3 补全要用)
@@ -342,11 +375,11 @@ class ConceptExtractor:
         # 旧版 embedding 直接 ≥0.85 自动 merge, 会把"社会流动"<->"向上流动"
         # 这种相关但不同的概念错误压成 alias. 现在 embedding 只筛候选,
         # LLM 判定 SAME / PARENT_CHILD / UNRELATED.
-        if EMBEDDING_API_KEY:
+        if CONCEPT_EMBED_API_KEY:
             person_categories = {"person", "character"}
             non_person = [c for c in merged if c.get("category") not in person_categories]
             persons = [c for c in merged if c.get("category") in person_categories]
-            non_person = _llm_concept_linker(non_person, sim_threshold=0.75, top_k=3)
+            non_person = _llm_concept_linker(non_person, sim_threshold=0.75, top_k=3, config=self._llm_config)
             merged = non_person + persons
 
         return merged
@@ -381,7 +414,7 @@ class ConceptExtractor:
             chunk = concepts[chunk_start:chunk_start + batch_size]
             t0 = time.monotonic()
             try:
-                results = _synthesize_definitions_batch(chunk, strategy)
+                results = _synthesize_definitions_batch(chunk, strategy, self._llm_config)
                 batch_ok = 0
                 for term, defn in results.items():
                     if term in term_to_concept and defn:
@@ -692,18 +725,18 @@ def _default_strategy() -> dict:
     }
 
 
-def _call_llm(system, prompt, max_tokens=4000, max_retries=3):
-    # 显式 60s 超时, 避免 minimax 那边 hang 时被 SDK 默认 600s 拖死
+def _call_llm(system, prompt, max_tokens=4000, max_retries=3, config: LLMConfig | None = None):
+    cfg = config or _get_llm_config(None, None)[0]
     client = anthropic.Anthropic(
-        api_key=MINIMAX_LLM_API_KEY,
-        base_url=MINIMAX_LLM_BASE_URL,
+        api_key=cfg.api_key,
+        base_url=cfg.base_url,
         timeout=60.0,
     )
     last_error = None
     for attempt in range(max_retries):
         try:
             message = client.messages.create(
-                model=MINIMAX_LLM_MODEL,
+                model=cfg.model,
                 max_tokens=max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": prompt}],
@@ -714,13 +747,11 @@ def _call_llm(system, prompt, max_tokens=4000, max_retries=3):
                     text = block.text
                     break
             if not text or not text.strip():
-                # 空返回: 打出模型给的元数据帮助定位 (是否截断 / token 用尽 /
-                # content 全是非 text block 等)
                 stop_reason = getattr(message, "stop_reason", None)
                 usage = getattr(message, "usage", None)
                 block_types = [type(b).__name__ for b in message.content]
                 logger.warning(
-                    f"LLM returned empty text: model={MINIMAX_LLM_MODEL} "
+                    f"LLM returned empty text: model={cfg.model} "
                     f"stop_reason={stop_reason} usage={usage} "
                     f"blocks={block_types} prompt_chars={len(prompt)}"
                 )
@@ -788,7 +819,7 @@ def _parse_json(text: str):
         raise
 
 
-def _call_phase1_llm(toc, chapter, paragraphs, strategy):
+def _call_phase1_llm(toc, chapter, paragraphs, strategy, config: LLMConfig | None = None):
     paragraphs_text = "\n\n".join(
         f'[P{p["para_idx"]:02d}]\n{p["text"]}'
         for p in paragraphs
@@ -869,11 +900,12 @@ def _call_phase1_llm(toc, chapter, paragraphs, strategy):
         system="你是一个精确的书籍概念抽取助手。",
         prompt=prompt,
         max_tokens=4000,
+        config=config,
     )["concepts"]
 
 
 def _synthesize_definitions_batch(
-    concepts: list[dict], strategy: dict
+    concepts: list[dict], strategy: dict, config: LLMConfig | None = None
 ) -> dict[str, str]:
     """批量为概念合成 initial_definition. 返回 {term: definition}.
 
@@ -962,6 +994,7 @@ def _synthesize_definitions_batch(
         system="你是一个读书 app 的概念释义生成器, 输出简洁、独立可读的释义。",
         prompt=prompt,
         max_tokens=2000,
+        config=config,
     )
 
     out: dict[str, str] = {}
@@ -1169,6 +1202,7 @@ def _llm_concept_linker(
     sim_threshold: float = 0.75,
     top_k: int = 3,
     batch_size: int = 10,
+    config: LLMConfig | None = None,
 ) -> list[dict]:
     """Embedding 产候选 + LLM 拍板.
 
@@ -1188,7 +1222,7 @@ def _llm_concept_linker(
         return concepts
 
     terms = [c["term"] for c in concepts]
-    embeddings = _get_embeddings(terms)
+    embeddings = _get_embeddings(terms, config)
     if not embeddings or len(embeddings) != n:
         logger.warning("Embedding API failed, skip LLM linker (no merge / no parent)")
         return concepts
@@ -1219,7 +1253,7 @@ def _llm_concept_linker(
     verdicts: dict[tuple[int, int], dict] = {}
     for chunk_start in range(0, len(candidate_pairs), batch_size):
         chunk = candidate_pairs[chunk_start:chunk_start + batch_size]
-        batch_verdicts = _judge_concept_pairs(concepts, chunk)
+        batch_verdicts = _judge_concept_pairs(concepts, chunk, self._llm_config)
         verdicts.update(batch_verdicts)
 
     # 3. 处理 SAME (合并) — 用 union-find 处理传递
@@ -1330,6 +1364,7 @@ def _llm_concept_linker(
 def _judge_concept_pairs(
     concepts: list[dict],
     pairs: list[tuple[int, int, float]],
+    config: LLMConfig | None = None,
 ) -> dict[tuple[int, int], dict]:
     """送 LLM 判定一批候选对的关系."""
     if not pairs:
@@ -1378,6 +1413,7 @@ def _judge_concept_pairs(
             system="你是一个严谨的概念关系判定器。",
             prompt=prompt,
             max_tokens=2000,
+            config=config,
         )
         out: dict[tuple[int, int], dict] = {}
         for j in result.get("judgments", []):
@@ -1392,17 +1428,20 @@ def _judge_concept_pairs(
         return {}
 
 
-def _get_embeddings(texts: list[str]) -> list[list[float]] | None:
-    if not EMBEDDING_API_KEY:
+def _get_embeddings(texts: list[str], emb_config: dict | None = None) -> list[list[float]] | None:
+    api_key = (emb_config or {}).get("api_key") or CONCEPT_EMBED_API_KEY
+    base_url = (emb_config or {}).get("base_url") or CONCEPT_EMBED_BASE_URL
+    model = (emb_config or {}).get("model") or CONCEPT_EMBED_MODEL
+    if not api_key:
         return None
     try:
         resp = httpx.post(
-            EMBEDDING_BASE_URL,
+            base_url,
             headers={
-                "Authorization": f"Bearer {EMBEDDING_API_KEY}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
-            json={"model": EMBEDDING_MODEL, "input": texts},
+            json={"model": model, "input": texts},
             timeout=60,
         )
         resp.raise_for_status()

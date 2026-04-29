@@ -80,6 +80,17 @@ class ConceptService:
             "book_id": book_id,
             "user_id": user_id,
             "rebuild": rebuild,
+            "ai_config": {
+                "provider_type": "anthropic",
+                "base_url": settings.concept_llm_base_url,
+                "api_key": settings.concept_llm_api_key,
+                "model": settings.concept_llm_model,
+            },
+            "embedding_config": {
+                "base_url": settings.concept_embed_base_url,
+                "api_key": settings.concept_embed_api_key,
+                "model": settings.concept_embed_model,
+            },
         })
         try:
             agent_url = settings.agent_server_url

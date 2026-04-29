@@ -51,6 +51,8 @@ class ConceptAgentExecutor(AgentExecutor):
         book_id = params.get("book_id")
         user_id = params.get("user_id")
         rebuild = params.get("rebuild", False)
+        ai_config = params.get("ai_config")
+        embedding_config = params.get("embedding_config")
 
         if not book_id or not user_id:
             await self._fail(event_queue, task_id, context_id, "Missing book_id or user_id")
@@ -110,6 +112,8 @@ class ConceptAgentExecutor(AgentExecutor):
             rebuild=rebuild,
             progress_callback=sync_progress,
             cancel_check=cancel_check,
+            ai_config=ai_config,
+            embedding_config=embedding_config,
         )
 
         try:

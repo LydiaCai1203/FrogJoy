@@ -219,8 +219,12 @@ class Settings(BaseSettings):
 ### 3.2 `.env` 新增
 
 ```
-MINIMAX_LLM_API_KEY=sk-cp-...
-MINIMAX_LLM_BASE_URL=https://api.minimaxi.com/anthropic
+CONCEPT_LLM_API_KEY=sk-xxx
+CONCEPT_LLM_BASE_URL=https://api.minimaxi.com/anthropic
+CONCEPT_LLM_MODEL=MiniMax-M2.7
+CONCEPT_EMBED_API_KEY=
+CONCEPT_EMBED_BASE_URL=https://model-square.app.baizhi.cloud/v1/embeddings
+CONCEPT_EMBED_MODEL=bge-m3
 ```
 
 ---
@@ -972,7 +976,7 @@ epub-tts-backend/
 │   ├── routers/
 │   │   └── concepts.py                     # NEW: REST API
 │   └── main.py                             # MODIFY: +concepts_router
-└── .env                                    # MODIFY: +MINIMAX_LLM_API_KEY
+└── .env                                    # MODIFY: +CONCEPT_LLM_* / CONCEPT_EMBED_*
 ```
 
 ---
