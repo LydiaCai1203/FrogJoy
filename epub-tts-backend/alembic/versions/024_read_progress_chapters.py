@@ -3,7 +3,7 @@
 Avoid expensive EPUB parsing on every /api/books call by caching
 the chapter position when saving reading progress.
 
-Revision ID: 024_add_reading_progress_chapter_info
+Revision ID: 024_read_progress_chapters
 Revises: 023_unique_running_task
 Create Date: 2026-04-28
 
@@ -12,7 +12,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "024_add_reading_progress_chapter_info"
+revision = "024_read_progress_chapters"
 down_revision = "023_unique_running_task"
 branch_labels = None
 depends_on = None
