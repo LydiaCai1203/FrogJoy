@@ -115,17 +115,20 @@ async def list_books(user_id: Optional[str] = Depends(get_optional_user)):
             rps = db.query(ReadingProgress).filter(
                 ReadingProgress.user_id == user_id,
                 ReadingProgress.book_id.in_(book_ids),
-                ReadingProgress.chapter_index.isnot(None),
-                ReadingProgress.total_chapters.isnot(None),
             ).all()
-            progress_map = {
-                rp.book_id: {
-                    "chapterIndex": rp.chapter_index,
-                    "totalChapters": rp.total_chapters,
-                    "percentage": round((rp.chapter_index / rp.total_chapters) * 100, 1),
+            for rp in rps:
+                chapter_index = rp.chapter_index
+                total_chapters = rp.total_chapters
+                if chapter_index is not None and total_chapters:
+                    percentage = round((chapter_index / total_chapters) * 100, 1)
+                else:
+                    # 旧数据兼容：没有章节索引时显示 0%
+                    percentage = 0.0
+                progress_map[rp.book_id] = {
+                    "chapterIndex": chapter_index,
+                    "totalChapters": total_chapters,
+                    "percentage": percentage,
                 }
-                for rp in rps
-            }
 
         # 批量读索引+概念状态 (只查登录用户的书)
         index_map: dict = {}
