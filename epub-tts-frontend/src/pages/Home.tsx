@@ -30,12 +30,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-interface ReadingProgress {
-  chapterIndex: number;
-  totalChapters: number;
-  percentage: number;
-}
-
 interface BookInfo {
   id: string;
   title: string;
@@ -44,7 +38,22 @@ interface BookInfo {
   lastOpened?: string;
   isPublic?: boolean;
   userId?: string;
-  readingProgress?: ReadingProgress;
+  readingProgress?: {
+    chapterIndex: number;
+    totalChapters: number;
+    percentage: number;
+  };
+  indexStatus?: {
+    status: string;
+    total_chapters?: number;
+    total_paragraphs?: number;
+    error_message?: string | null;
+  };
+  conceptStatus?: {
+    concept_status?: string | null;
+    progress?: number | null;
+    progress_text?: string | null;
+  };
 }
 
 export default function Home() {
@@ -86,13 +95,15 @@ export default function Home() {
         id: book.id,
         title: book.title || "Unknown",
         author: book.creator || book.author,
-        coverUrl: book.coverUrl 
+        coverUrl: book.coverUrl
           ? (book.coverUrl.startsWith('http') ? book.coverUrl : `${API_BASE}${book.coverUrl}`)
           : undefined,
         lastOpened: book.lastOpenedAt,
         isPublic: book.isPublic,
         userId: book.userId,
         readingProgress: book.readingProgress,
+        indexStatus: book.indexStatus,
+        conceptStatus: book.conceptStatus,
       })));
     } catch (error) {
       console.error("Failed to load books:", error);
@@ -101,45 +112,18 @@ export default function Home() {
     }
   };
 
-  // 加载所有书的索引状态
-  const loadIndexStatuses = useCallback(async (bookIds: string[]) => {
-    if (!token || bookIds.length === 0) return;
-    const results: Record<string, IndexStatus> = {};
-    await Promise.allSettled(
-      bookIds.map(async (id) => {
-        try {
-          results[id] = await indexService.getStatus(id);
-        } catch {
-          // ignore
-        }
-      })
-    );
-    setIndexStatuses(results);
-  }, [token]);
-
-  // 加载所有书的概念状态
-  const loadConceptStatuses = useCallback(async (bookIds: string[]) => {
-    if (!token || bookIds.length === 0) return;
-    const results: Record<string, ConceptStatus> = {};
-    await Promise.allSettled(
-      bookIds.map(async (id) => {
-        try {
-          results[id] = await conceptService.getStatus(id);
-        } catch {
-          // ignore
-        }
-      })
-    );
-    setConceptStatuses(results);
-  }, [token]);
-
-  // 书架加载完成后拉索引状态 + 概念状态
+  // 用 /api/books 返回的初始状态初始化 (不再首屏发额外请求)
   useEffect(() => {
-    if (books.length > 0 && token) {
-      loadIndexStatuses(books.map((b) => b.id));
-      loadConceptStatuses(books.map((b) => b.id));
+    if (!books.length || !token) return;
+    const idxMap: Record<string, IndexStatus> = {};
+    const conMap: Record<string, ConceptStatus> = {};
+    for (const b of books) {
+      if (b.indexStatus) idxMap[b.id] = b.indexStatus as IndexStatus;
+      if (b.conceptStatus) conMap[b.id] = b.conceptStatus as ConceptStatus;
     }
-  }, [books, token, loadIndexStatuses, loadConceptStatuses]);
+    if (Object.keys(idxMap).length) setIndexStatuses(idxMap);
+    if (Object.keys(conMap).length) setConceptStatuses(conMap);
+  }, [books, token]);
 
   // 轮询正在解析中的书籍
   const indexStatusesRef = useRef(indexStatuses);
@@ -513,9 +497,10 @@ export default function Home() {
                   {/* 封面 */}
                   <div className="aspect-[3/4] bg-secondary overflow-hidden relative">
                     {book.coverUrl ? (
-                      <img 
-                        src={book.coverUrl} 
+                      <img
+                        src={book.coverUrl}
                         alt={book.title}
+                        loading="lazy"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
                     ) : (

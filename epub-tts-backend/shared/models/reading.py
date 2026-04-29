@@ -31,6 +31,8 @@ class ReadingProgress(Base):
     book_id = Column(String, ForeignKey("books.id"), primary_key=True)
     chapter_href = Column(String, nullable=False)
     paragraph_index = Column(Integer, nullable=False, default=0)
+    chapter_index = Column(Integer, nullable=True)
+    total_chapters = Column(Integer, nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     user = relationship("User", back_populates="reading_progress")

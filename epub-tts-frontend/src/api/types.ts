@@ -112,9 +112,48 @@ export interface ReadingSummary {
   books_count: number;
 }
 
-// 阅读进度
+// 阅读进度 (来自 /reading/progress/{bookId} 接口)
 export interface ReadingProgress {
   chapter_href: string;
   paragraph_index: number;
+  chapter_index?: number | null;
+  total_chapters?: number | null;
   updated_at: string;
+}
+
+// 书架进度百分比 (来自 /api/books 响应)
+export interface BookReadingProgress {
+  chapterIndex: number;
+  totalChapters: number;
+  percentage: number;
+}
+
+// 书架书籍返回的索引状态
+export interface BookIndexStatus {
+  status: "not_indexed" | "pending" | "parsing" | "parsed" | "failed";
+  total_chapters?: number;
+  total_paragraphs?: number;
+  error_message?: string | null;
+}
+
+// 书架书籍返回的概念状态
+export interface BookConceptStatus {
+  concept_status?: string | null;
+  progress?: number | null;
+  progress_text?: string | null;
+}
+
+// 书架书籍信息
+export interface BookInfo {
+  id: string;
+  title: string;
+  creator?: string;
+  coverUrl?: string;
+  isPublic?: boolean;
+  userId?: string;
+  createdAt?: string;
+  lastOpenedAt?: string;
+  readingProgress?: BookReadingProgress;
+  indexStatus?: BookIndexStatus;
+  conceptStatus?: BookConceptStatus;
 }

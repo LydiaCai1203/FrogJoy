@@ -6,9 +6,8 @@ from sqlalchemy import func, case
 from loguru import logger
 from app.middleware.auth import get_current_user, get_optional_user, get_admin_user
 from shared.database import get_db
-from shared.models import Book
+from shared.models import Book, ReadingProgress, IndexedBook
 from app.services.book_service import BookService
-from app.services.reading_progress_service import ReadingProgressService
 from shared.config import settings
 from app.middleware.rate_limit import is_guest_user
 from typing import Optional
@@ -104,35 +103,78 @@ async def list_books(user_id: Optional[str] = Depends(get_optional_user)):
             query = query.filter(Book.is_public == True)
             query = query.order_by(Book.created_at.desc())
 
-        books = []
-        for row in query.all():
-            cover_url = row.cover_url
-            if not cover_url:
-                try:
-                    meta_info = BookService.parse_metadata(row.id, row.user_id)
-                    cover_url = meta_info.get("coverUrl")
-                except Exception:
-                    pass
+        book_rows = query.all()
+        if not book_rows:
+            return []
 
-            reading_progress = None
-            if user_id:
-                try:
-                    reading_progress = ReadingProgressService.get_progress_with_percentage(
-                        user_id, row.id, row.user_id
-                    )
-                except Exception:
-                    pass
+        book_ids = [row.id for row in book_rows]
+
+        # 批量读阅读进度 (只查登录用户自己的)
+        progress_map: dict = {}
+        if user_id:
+            rps = db.query(ReadingProgress).filter(
+                ReadingProgress.user_id == user_id,
+                ReadingProgress.book_id.in_(book_ids),
+                ReadingProgress.chapter_index.isnot(None),
+                ReadingProgress.total_chapters.isnot(None),
+            ).all()
+            progress_map = {
+                rp.book_id: {
+                    "chapterIndex": rp.chapter_index,
+                    "totalChapters": rp.total_chapters,
+                    "percentage": round((rp.chapter_index / rp.total_chapters) * 100, 1),
+                }
+                for rp in rps
+            }
+
+        # 批量读索引+概念状态 (只查登录用户的书)
+        index_map: dict = {}
+        if user_id:
+            index_map = {
+                ib.book_id: ib
+                for ib in db.query(IndexedBook).filter(
+                    IndexedBook.user_id == user_id,
+                    IndexedBook.book_id.in_(book_ids),
+                ).all()
+            }
+
+        # 组装响应
+        books = []
+        for row in book_rows:
+            bid = row.id
+            reading_progress = progress_map.get(bid)
+
+            # 索引状态: 只在用户拥有此书时展示按钮
+            index_status = None
+            if user_id and row.user_id == user_id:
+                ib = index_map.get(bid)
+                if ib:
+                    index_status = {
+                        "status": ib.status,
+                        "total_chapters": ib.total_chapters,
+                        "total_paragraphs": ib.total_paragraphs,
+                        "error_message": ib.error_message,
+                    }
+
+            # 概念状态
+            concept_status = None
+            if user_id and row.user_id == user_id:
+                ib = index_map.get(bid)
+                if ib and ib.concept_status:
+                    concept_status = {"concept_status": ib.concept_status}
 
             books.append({
-                "id": row.id,
+                "id": bid,
                 "title": row.title,
                 "creator": row.creator,
-                "coverUrl": cover_url,
+                "coverUrl": row.cover_url,
                 "isPublic": bool(row.is_public),
                 "userId": row.user_id,
                 "createdAt": row.created_at.isoformat() if row.created_at else None,
                 "lastOpenedAt": row.last_opened_at.isoformat() if row.last_opened_at else None,
                 "readingProgress": reading_progress,
+                "indexStatus": index_status,
+                "conceptStatus": concept_status,
             })
 
         return books

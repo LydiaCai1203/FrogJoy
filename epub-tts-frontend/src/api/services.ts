@@ -477,11 +477,16 @@ export class ReadingProgressService {
     return response.json();
   }
 
-  async save(bookId: string, chapterHref: string, paragraphIndex: number): Promise<void> {
+  async save(bookId: string, chapterHref: string, paragraphIndex: number, chapterIndex?: number, totalChapters?: number): Promise<void> {
     const response = await fetchWithAuth(`${API_URL}/reading/progress/${bookId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chapter_href: chapterHref, paragraph_index: paragraphIndex }),
+      body: JSON.stringify({
+        chapter_href: chapterHref,
+        paragraph_index: paragraphIndex,
+        chapter_index: chapterIndex,
+        total_chapters: totalChapters,
+      }),
     });
     if (!response.ok) throw new Error("Failed to save progress");
   }

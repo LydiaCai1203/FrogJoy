@@ -51,6 +51,20 @@ function findChapterIdx(toc: NavItem[], href: string): number {
   return hit?.chapter_idx ?? -1;
 }
 
+function countTotalChapters(toc: NavItem[]): number {
+  let maxIdx = -1;
+  const walk = (items: NavItem[]) => {
+    for (const item of items) {
+      if (item.chapter_idx != null && item.chapter_idx > maxIdx) {
+        maxIdx = item.chapter_idx;
+      }
+      if (item.subitems?.length) walk(item.subitems);
+    }
+  };
+  walk(toc);
+  return maxIdx < 0 ? 0 : maxIdx + 1;
+}
+
 export default function BookReader() {
   const { bookId } = useParams<{ bookId: string }>();
   const [, navigate] = useLocation();
@@ -343,25 +357,35 @@ export default function BookReader() {
     }
     const timer = setTimeout(() => {
       const saveIndex = isPlayingRef.current ? playingIndex : viewingIndex;
+      const totalChapters = countTotalChapters(toc);
       saveProgressMutation.mutate({
         bookId,
         chapterHref: currentChapterHref,
         paragraphIndex: saveIndex,
+        chapterIndex: chapterIdx >= 0 ? chapterIdx : undefined,
+        totalChapters: totalChapters > 0 ? totalChapters : undefined,
       });
     }, 800);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, currentChapterHref, playingIndex, viewingIndex, token]);
+  }, [bookId, currentChapterHref, playingIndex, viewingIndex, token, toc, chapterIdx]);
 
   // 组件卸载时立即保存进度（用户离开页面时）
   useEffect(() => {
     const handleUnmount = () => {
       if (!bookId || !currentChapterHref || !token || skipInitialSaveRef.current) return;
       const saveIndex = isPlayingRef.current ? playingIndex : viewingIndex;
-      readingProgressService.save(bookId, currentChapterHref, saveIndex);
+      const totalChapters = countTotalChapters(toc);
+      readingProgressService.save(
+        bookId,
+        currentChapterHref,
+        saveIndex,
+        chapterIdx >= 0 ? chapterIdx : undefined,
+        totalChapters > 0 ? totalChapters : undefined,
+      );
     };
     return handleUnmount;
-  }, [bookId, currentChapterHref, playingIndex, viewingIndex, token]);
+  }, [bookId, currentChapterHref, playingIndex, viewingIndex, token, toc, chapterIdx]);
 
   // Load AI preferences on mount
   useEffect(() => {

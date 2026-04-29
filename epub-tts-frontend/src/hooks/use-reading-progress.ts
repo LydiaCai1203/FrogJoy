@@ -16,10 +16,14 @@ export function useSaveReadingProgress() {
       bookId,
       chapterHref,
       paragraphIndex,
+      chapterIndex,
+      totalChapters,
     }: {
       bookId: string;
       chapterHref: string;
       paragraphIndex: number;
-    }) => readingProgressService.save(bookId, chapterHref, paragraphIndex),
+      chapterIndex?: number;
+      totalChapters?: number;
+    }) => readingProgressService.save(bookId, chapterHref, paragraphIndex, chapterIndex, totalChapters),
   });
 }

@@ -16,6 +16,8 @@ router = APIRouter(prefix="/reading", tags=["reading"])
 class SaveProgressRequest(BaseModel):
     chapter_href: str
     paragraph_index: int = Field(ge=0)
+    chapter_index: int | None = Field(default=None, ge=0)
+    total_chapters: int | None = Field(default=None, ge=1)
 
 
 class HeartbeatRequest(BaseModel):
@@ -39,7 +41,14 @@ async def save_progress(
     req: SaveProgressRequest,
     user_id: str = Depends(get_current_user),
 ):
-    ReadingProgressService.save(user_id, book_id, req.chapter_href, req.paragraph_index)
+    ReadingProgressService.save(
+        user_id,
+        book_id,
+        req.chapter_href,
+        req.paragraph_index,
+        req.chapter_index,
+        req.total_chapters,
+    )
     return {"ok": True}
 
 
