@@ -46,14 +46,17 @@ CONCEPT_EMBED_MODEL = os.environ.get("CONCEPT_EMBED_MODEL", "bge-m3")
 from services.llm_provider import LLMConfig
 
 
-def _get_llm_config(ai_config: dict | None, embedding_config: dict | None) -> tuple[LLMConfig, dict]:
+def _get_llm_config(ai_config: dict | LLMConfig | None, embedding_config: dict | None) -> tuple[LLMConfig, dict]:
     """从 A2A payload 解析 LLM 和 Embedding 配置，无配置时用 env var 兜底."""
-    llm = LLMConfig(
-        provider_type=(ai_config or {}).get("provider_type", "anthropic"),
-        base_url=(ai_config or {}).get("base_url") or CONCEPT_LLM_BASE_URL,
-        api_key=(ai_config or {}).get("api_key") or CONCEPT_LLM_API_KEY,
-        model=(ai_config or {}).get("model") or CONCEPT_LLM_MODEL,
-    )
+    if isinstance(ai_config, LLMConfig):
+        llm = ai_config
+    else:
+        llm = LLMConfig(
+            provider_type=(ai_config or {}).get("provider_type", "anthropic"),
+            base_url=(ai_config or {}).get("base_url") or CONCEPT_LLM_BASE_URL,
+            api_key=(ai_config or {}).get("api_key") or CONCEPT_LLM_API_KEY,
+            model=(ai_config or {}).get("model") or CONCEPT_LLM_MODEL,
+        )
     emb = {
         "base_url": (embedding_config or {}).get("base_url") or CONCEPT_EMBED_BASE_URL,
         "api_key": (embedding_config or {}).get("api_key") or CONCEPT_EMBED_API_KEY,
