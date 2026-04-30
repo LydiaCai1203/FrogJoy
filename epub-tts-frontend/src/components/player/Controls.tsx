@@ -167,8 +167,8 @@ export function Controls({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...((localStorage.getItem("auth_token") || localStorage.getItem("guest_token"))
-            ? { Authorization: `Bearer ${(localStorage.getItem("auth_token") || localStorage.getItem("guest_token"))}` }
+          ...((localStorage.getItem("auth_access_token") || localStorage.getItem("guest_access_token"))
+            ? { Authorization: `Bearer ${(localStorage.getItem("auth_access_token") || localStorage.getItem("guest_access_token"))}` }
             : {}),
         },
         body: JSON.stringify({

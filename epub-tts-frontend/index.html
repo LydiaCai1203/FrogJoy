@@ -9,7 +9,7 @@
       (function() {
         var valid = ['day', 'night', 'eye-care'];
         var theme = 'eye-care';
-        if (localStorage.getItem('auth_token')) {
+        if (localStorage.getItem('auth_access_token')) {
           var loggedInTheme = localStorage.getItem('bookreader-theme-logged-in');
           if (loggedInTheme && valid.indexOf(loggedInTheme) !== -1) {
             theme = loggedInTheme;

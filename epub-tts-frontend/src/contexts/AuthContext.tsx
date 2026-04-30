@@ -100,6 +100,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Clean up old token keys from previous versions
+    localStorage.removeItem("auth_token");
+    localStorage.removeItem("guest_token");
+
     const { access: savedToken } = getTokens("auth");
     if (savedToken) {
       setAccessToken(savedToken);

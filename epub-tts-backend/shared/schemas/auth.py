@@ -63,14 +63,6 @@ class FontSizeOut(BaseModel):
     font_size: int
 
 
-class VerifyRequest(BaseModel):
-    token: str
-
-
-class ResendRequest(BaseModel):
-    email: EmailStr
-
-
 class TokenPair(BaseModel):
     access_token: str
     refresh_token: str

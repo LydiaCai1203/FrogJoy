@@ -31,7 +31,5 @@ async def delete_task(task_id: str, user_id: str = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Task not found")
     if task.get("user_id") != user_id:
         raise HTTPException(status_code=403, detail="Access denied")
-    deleted = task_manager.delete_task(task_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task_manager.delete_task(task_id)
     return {"message": "任务已删除", "taskId": task_id}
