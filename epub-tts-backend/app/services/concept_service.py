@@ -103,8 +103,11 @@ class ConceptService:
                         "role": "ROLE_USER",
                         "parts": [{"text": payload}],
                     },
+                    "configuration": {
+                        "returnImmediately": True,
+                    },
                 },
-                timeout=30,
+                timeout=120,
             )
             resp.raise_for_status()
             data = resp.json()
