@@ -5,10 +5,26 @@ Agent Server — A2A 协议独立服务
 backend 作为 A2A client 调用。
 """
 import os
+import sys
 import uvicorn
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.responses import JSONResponse
+from loguru import logger
+
+# Configure loguru before anything else
+logger.remove()
+logger.add(
+    sys.stderr,
+    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    level="INFO",
+)
+logger.add(
+    sys.stdout,
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+    level="INFO",
+    filter=lambda record: record["level"].no >= 20,
+)
 
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore

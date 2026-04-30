@@ -39,6 +39,8 @@ class ConceptAgentExecutor(AgentExecutor):
     ) -> None:
         task_id = context.task_id
         context_id = context.context_id
+        logger.info(f"ConceptAgent[{task_id}]: ====== TASK RECEIVED ======")
+        logger.info(f"ConceptAgent[{task_id}]: context_id={context_id}")
 
         # 解析用户消息: 期望 JSON {"book_id": "...", "user_id": "...", "rebuild": false}
         user_input = context.get_user_input()
@@ -115,9 +117,11 @@ class ConceptAgentExecutor(AgentExecutor):
             ai_config=ai_config,
             embedding_config=embedding_config,
         )
+        logger.info(f"ConceptAgent[{task_id}]: Starting extraction book={book_id} user={user_id} rebuild={rebuild}")
 
         try:
             result = await asyncio.to_thread(extractor.run)
+            logger.info(f"ConceptAgent[{task_id}]: ====== EXTRACTION DONE ====== result={result}")
 
             # 完成
             result_text = json.dumps(result, ensure_ascii=False)
@@ -137,6 +141,7 @@ class ConceptAgentExecutor(AgentExecutor):
             logger.info(f"ConceptAgent done: task={task_id} result={result_text}")
 
         except InterruptedError:
+            logger.info(f"ConceptAgent[{task_id}]: ====== CANCELLED ======")
             await event_queue.enqueue_event(
                 TaskStatusUpdateEvent(
                     task_id=task_id,
