@@ -1225,7 +1225,7 @@ def _llm_concept_linker(
     verdicts: dict[tuple[int, int], dict] = {}
     for chunk_start in range(0, len(candidate_pairs), batch_size):
         chunk = candidate_pairs[chunk_start:chunk_start + batch_size]
-        batch_verdicts = _judge_concept_pairs(concepts, chunk, self._llm_config)
+        batch_verdicts = _judge_concept_pairs(concepts, chunk, config)
         verdicts.update(batch_verdicts)
 
     # 3. 处理 SAME (合并) — 用 union-find 处理传递
