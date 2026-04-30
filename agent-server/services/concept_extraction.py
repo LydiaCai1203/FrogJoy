@@ -1193,7 +1193,7 @@ def _llm_concept_linker(
         return concepts
 
     terms = [c["term"] for c in concepts]
-    embeddings = _get_embeddings(terms, config)
+    embeddings = _get_embeddings(terms, self._emb_config)
     if not embeddings or len(embeddings) != n:
         logger.warning("Embedding API failed, skip LLM linker (no merge / no parent)")
         return concepts
