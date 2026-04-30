@@ -65,22 +65,6 @@ class AuthService:
             return None
 
     @staticmethod
-    def create_verification_token(email: str) -> str:
-        expire = datetime.utcnow() + timedelta(hours=24)
-        to_encode = {"sub": email, "type": "verify", "exp": expire}
-        return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-    @staticmethod
-    def decode_verification_token(token: str) -> Optional[str]:
-        try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            if payload.get("type") != "verify":
-                return None
-            return payload.get("sub")
-        except JWTError:
-            return None
-
-    @staticmethod
     def generate_user_id() -> str:
         return str(uuid.uuid4())
 

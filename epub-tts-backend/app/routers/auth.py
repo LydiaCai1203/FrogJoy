@@ -7,13 +7,12 @@ from user_agents import parse as parse_ua
 from shared.schemas.auth import (
     UserCreate, UserResponse, TokenPair,
     ThemeIn, ThemeOut, FontSizeIn, FontSizeOut,
-    VerifyRequest, ResendRequest, RefreshRequest, LoginRequest, DeviceInfo,
+    RefreshRequest, LoginRequest, DeviceInfo,
     ProfileUpdate, ChangePasswordRequest,
 )
 from shared.models import User, UserPreferences
 from shared.database import get_db
 from app.services.auth_service import AuthService
-from app.services.email_service import EmailService
 from app.services import session_service
 from app.middleware.auth import get_current_user, get_current_session
 from shared.config import settings
@@ -92,7 +91,7 @@ def _create_token_pair(user_id: str, device: dict) -> dict:
     }
 
 
-@router.post("/register")
+@router.post("/register", response_model=TokenPair)
 async def register(user_data: UserCreate, request: Request):
     if not get_system_setting_bool("allow_registration", True):
         raise HTTPException(
@@ -102,19 +101,8 @@ async def register(user_data: UserCreate, request: Request):
     device = _extract_device(request)
     with get_db() as db:
         try:
-            smtp_available = bool(settings.smtp_host and settings.smtp_user)
-
             existing = db.query(User).filter(User.email == user_data.email).first()
             if existing:
-                if not existing.is_verified:
-                    if smtp_available:
-                        token = AuthService.create_verification_token(user_data.email)
-                        EmailService.send_verification_email(user_data.email, token)
-                        return {"message": "验证邮件已重新发送，请查收邮箱"}
-                    else:
-                        existing.is_verified = True
-                        db.commit()
-                        return TokenPair(**_create_token_pair(existing.id, device))
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="该邮箱已注册"
@@ -130,19 +118,14 @@ async def register(user_data: UserCreate, request: Request):
                 id=user_id,
                 email=user_data.email,
                 password_hash=password_hash,
-                is_verified=not smtp_available,
+                is_verified=True,
                 name=frog_name,
                 avatar_url=f"/api/files/default-avatar/{frog_avatar}",
             )
             db.add(user)
             db.commit()
 
-            if smtp_available:
-                token = AuthService.create_verification_token(user_data.email)
-                EmailService.send_verification_email(user_data.email, token)
-                return {"message": "验证邮件已发送，请查收邮箱"}
-            else:
-                return TokenPair(**_create_token_pair(user_id, device))
+            return TokenPair(**_create_token_pair(user_id, device))
         except HTTPException:
             raise
         except IntegrityError:
@@ -154,46 +137,6 @@ async def register(user_data: UserCreate, request: Request):
         except Exception:
             db.rollback()
             raise
-
-
-@router.post("/verify")
-async def verify_email(data: VerifyRequest, request: Request):
-    email = AuthService.decode_verification_token(data.token)
-    if not email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="验证链接已过期或无效"
-        )
-
-    device = _extract_device(request)
-    with get_db() as db:
-        user = db.query(User).filter(User.email == email).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="用户不存在"
-            )
-        if not user.is_verified:
-            user.is_verified = True
-            db.commit()
-
-        return TokenPair(**_create_token_pair(user.id, device))
-
-
-@router.post("/resend-verification")
-async def resend_verification(data: ResendRequest):
-    with get_db() as db:
-        user = db.query(User).filter(User.email == data.email).first()
-        if not user:
-            return {"message": "如果该邮箱已注册，验证邮件将会发送"}
-        if user.is_verified:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="该邮箱已验证"
-            )
-        token = AuthService.create_verification_token(data.email)
-        EmailService.send_verification_email(data.email, token)
-        return {"message": "验证邮件已发送，请查收邮箱"}
 
 
 @router.post("/login", response_model=TokenPair)
@@ -212,12 +155,6 @@ async def login(user_data: LoginRequest, request: Request):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="账户已被禁用",
-            )
-
-        if not user.is_verified:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="请先验证邮箱"
             )
 
         existing = session_service.find_session_by_device(user.id, device["device_id"])
