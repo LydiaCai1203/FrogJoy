@@ -81,7 +81,7 @@ class ConceptService:
             "user_id": user_id,
             "rebuild": rebuild,
             "ai_config": {
-                "provider_type": "anthropic",
+                "provider_type": settings.concept_llm_provider_type,
                 "base_url": settings.concept_llm_base_url,
                 "api_key": settings.concept_llm_api_key,
                 "model": settings.concept_llm_model,

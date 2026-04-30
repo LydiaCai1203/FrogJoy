@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     minimax_base_url: str = "https://api.minimaxi.com"
 
     # Concept Extraction LLM
+    concept_llm_provider_type: str = "anthropic"
     concept_llm_api_key: str = ""
     concept_llm_base_url: str = "https://api.minimaxi.com/anthropic"
     concept_llm_model: str = "MiniMax-M2.7"

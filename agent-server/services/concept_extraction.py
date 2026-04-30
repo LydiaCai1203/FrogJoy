@@ -18,9 +18,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 from uuid import uuid4
 
-import anthropic
 import httpx
 from loguru import logger
+
+from services.llm_provider import LLMConfig, LLMService
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -42,15 +43,7 @@ CONCEPT_EMBED_MODEL = os.environ.get("CONCEPT_EMBED_MODEL", "bge-m3")
 
 # ---------- LLM Config (from backend via A2A) ----------
 
-from dataclasses import dataclass
-
-
-@dataclass
-class LLMConfig:
-    provider_type: str   # "anthropic" | "openai-chat"
-    base_url: str
-    api_key: str
-    model: str
+from services.llm_provider import LLMConfig
 
 
 def _get_llm_config(ai_config: dict | None, embedding_config: dict | None) -> tuple[LLMConfig, dict]:
@@ -727,38 +720,19 @@ def _default_strategy() -> dict:
 
 def _call_llm(system, prompt, max_tokens=4000, max_retries=3, config: LLMConfig | None = None):
     cfg = config or _get_llm_config(None, None)[0]
-    client = anthropic.Anthropic(
-        api_key=cfg.api_key,
-        base_url=cfg.base_url,
-        timeout=60.0,
-    )
+    service = LLMService(cfg)
     last_error = None
+    text = ""
     for attempt in range(max_retries):
         try:
-            message = client.messages.create(
-                model=cfg.model,
-                max_tokens=max_tokens,
-                system=system,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            text = ""
-            for block in message.content:
-                if hasattr(block, "text"):
-                    text = block.text
-                    break
+            text = service.chat_once(system, prompt, max_tokens)
             if not text or not text.strip():
-                stop_reason = getattr(message, "stop_reason", None)
-                usage = getattr(message, "usage", None)
-                block_types = [type(b).__name__ for b in message.content]
                 logger.warning(
                     f"LLM returned empty text: model={cfg.model} "
-                    f"stop_reason={stop_reason} usage={usage} "
-                    f"blocks={block_types} prompt_chars={len(prompt)}"
+                    f"provider={cfg.provider_type} prompt_chars={len(prompt)}"
                 )
             return _parse_json(text)
         except json.JSONDecodeError as e:
-            # 把模型实际返回的 raw text 打出来 (截 500 字), 看是不是 JSON 头/尾
-            # 加了散文 / 中途截断 / 完全胡扯
             raw_preview = (text[:500] + "…") if len(text) > 500 else text
             logger.warning(
                 f"LLM JSON parse failed (attempt {attempt+1}/{max_retries}): {e}\n"
@@ -766,33 +740,27 @@ def _call_llm(system, prompt, max_tokens=4000, max_retries=3, config: LLMConfig 
             )
             last_error = e
             if attempt < max_retries - 1:
-                wait = 2 ** (attempt + 1)
-                time.sleep(wait)
+                time.sleep(2 ** (attempt + 1))
             else:
                 logger.error(f"LLM call failed after {max_retries} attempts: {e}")
-        except (anthropic.APIError, anthropic.APIStatusError) as e:
-            # API 层错误 — 打 status_code + 响应 body
-            status = getattr(e, "status_code", None)
-            body = getattr(e, "body", None) or getattr(e, "response", None)
+        except httpx.HTTPStatusError as e:
             logger.warning(
                 f"LLM API error (attempt {attempt+1}/{max_retries}): "
-                f"status={status} body={body!r} err={e}"
+                f"status={e.response.status_code} body={e.response.text!r} err={e}"
             )
             last_error = e
             if attempt < max_retries - 1:
-                wait = 2 ** (attempt + 1)
-                time.sleep(wait)
+                time.sleep(2 ** (attempt + 1))
             else:
                 logger.error(f"LLM call failed after {max_retries} attempts: {e}")
-        except (httpx.HTTPError, anthropic.APIConnectionError, anthropic.RateLimitError) as e:
+        except httpx.HTTPError as e:
             logger.warning(
                 f"LLM transport error (attempt {attempt+1}/{max_retries}): "
                 f"{type(e).__name__}: {e}"
             )
             last_error = e
             if attempt < max_retries - 1:
-                wait = 2 ** (attempt + 1)
-                time.sleep(wait)
+                time.sleep(2 ** (attempt + 1))
             else:
                 logger.error(f"LLM call failed after {max_retries} attempts: {e}")
     raise last_error

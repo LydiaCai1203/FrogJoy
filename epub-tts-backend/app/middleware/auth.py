@@ -24,6 +24,21 @@ def _track_active(user_id: str) -> None:
         pass  # Redis down should not break the app
 
 
+def _check_session(result: dict, request: Request) -> None:
+    """Validate that the Redis session still exists; raise 401 if revoked."""
+    session_id = result.get("session_id")
+    if not session_id:
+        return
+    session = session_service.get_session(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired or revoked",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    session_service.touch_session(session_id, get_client_ip(request))
+
+
 async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -39,15 +54,7 @@ async def get_current_user(
         )
 
     _track_active(result["user_id"])
-    if result.get("session_id"):
-        session = session_service.get_session(result["session_id"])
-        if not session:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Session expired or revoked",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        session_service.touch_session(result["session_id"], get_client_ip(request))
+    _check_session(result, request)
     return result["user_id"]
 
 
@@ -67,15 +74,7 @@ async def get_current_session(
         )
 
     _track_active(result["user_id"])
-    if result.get("session_id"):
-        session = session_service.get_session(result["session_id"])
-        if not session:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Session expired or revoked",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        session_service.touch_session(result["session_id"], get_client_ip(request))
+    _check_session(result, request)
     return result
 
 
