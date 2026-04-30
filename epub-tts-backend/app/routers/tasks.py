@@ -15,15 +15,22 @@ async def list_tasks(user_id: str = Depends(get_current_user)):
 
 
 @router.get("/{task_id}")
-async def get_task(task_id: str):
+async def get_task(task_id: str, user_id: str = Depends(get_current_user)):
     task = task_manager.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    if task.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return task
 
 
 @router.delete("/{task_id}")
-async def delete_task(task_id: str):
+async def delete_task(task_id: str, user_id: str = Depends(get_current_user)):
+    task = task_manager.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     deleted = task_manager.delete_task(task_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Task not found")

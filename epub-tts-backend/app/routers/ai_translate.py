@@ -38,6 +38,8 @@ def _get_translation_prompt(user_id: str, target_lang: str) -> str:
 async def translate_chapter(request: TranslateChapterRequest, user_id: str = Depends(get_current_user)):
     """Translate a single chapter as SSE stream, sentence by sentence."""
     check_guest_rate_limit(user_id, "translate")
+    # Verify book access
+    get_book_owner(request.book_id, user_id)
     ai_config = _build_ai_config(user_id, config_type="translation")
     service = AIService(ai_config)
 

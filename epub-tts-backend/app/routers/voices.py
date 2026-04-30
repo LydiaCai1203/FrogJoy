@@ -267,12 +267,9 @@ async def get_voice_preferences(user_id: str = Depends(get_current_user)):
         ).first()
 
         if not prefs:
-            from app.services.system_settings import get_system_setting
-            default_provider = get_system_setting("default_tts_provider", "edge-tts")
-            # Map provider name to voice_type: "edge-tts" -> "edge", "minimax-tts" -> "minimax"
-            default_voice_type = default_provider.replace("-tts", "") if default_provider else "edge"
+            # Hardcoded defaults — admin SystemSetting does NOT affect regular users
             return VoicePreferenceOut(
-                active_voice_type=default_voice_type,
+                active_voice_type="edge",
                 active_edge_voice="zh-CN-XiaoxiaoNeural",
                 speed=100,
                 pitch=0,

@@ -93,8 +93,8 @@ async def list_books(user_id: Optional[str] = Depends(get_optional_user)):
     with get_db() as db:
         query = db.query(Book)
 
-        if user_id:
-            query = query.filter((Book.user_id == user_id) | (Book.is_public == True))
+        if user_id and not is_guest_user(user_id):
+            query = query.filter(Book.user_id == user_id)
             query = query.order_by(
                 case((Book.last_opened_at.is_(None), 1), else_=0),
                 Book.last_opened_at.desc(),
@@ -172,7 +172,7 @@ async def list_books(user_id: Optional[str] = Depends(get_optional_user)):
                 "creator": row.creator,
                 "coverUrl": row.cover_url,
                 "isPublic": bool(row.is_public),
-                "userId": row.user_id,
+                "userId": row.user_id if (user_id and row.user_id == user_id) else None,
                 "createdAt": row.created_at.isoformat() if row.created_at else None,
                 "lastOpenedAt": row.last_opened_at.isoformat() if row.last_opened_at else None,
                 "readingProgress": reading_progress,

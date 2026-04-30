@@ -63,7 +63,7 @@ async def heartbeat(
         book = db.query(Book).filter(Book.id == req.book_id).first()
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
-    if not book.is_public and book.user_id != user_id:
+    if book.user_id != user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
     ReadingStatsService.heartbeat(user_id, req.book_id, req.seconds)

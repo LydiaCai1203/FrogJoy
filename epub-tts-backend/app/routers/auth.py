@@ -406,7 +406,8 @@ async def get_theme(user_id: str = Depends(get_current_user)):
     with get_db() as db:
         row = db.query(UserPreferences).filter(UserPreferences.user_id == user_id).first()
     if not row:
-        return ThemeOut(theme=get_system_setting("default_theme", "eye-care"))
+        # Hardcoded default — admin SystemSetting does NOT affect regular users
+        return ThemeOut(theme="eye-care")
     return ThemeOut(theme=row.theme)
 
 
@@ -431,8 +432,8 @@ async def get_font_size(user_id: str = Depends(get_current_user)):
     with get_db() as db:
         row = db.query(UserPreferences).filter(UserPreferences.user_id == user_id).first()
     if not row or row.font_size is None:
-        from app.services.system_settings import get_system_setting_int
-        return FontSizeOut(font_size=get_system_setting_int("default_font_size", 18))
+        # Hardcoded default — admin SystemSetting does NOT affect regular users
+        return FontSizeOut(font_size=18)
     return FontSizeOut(font_size=row.font_size)
 
 
