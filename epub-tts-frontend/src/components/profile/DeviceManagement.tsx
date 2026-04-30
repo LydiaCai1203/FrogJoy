@@ -62,6 +62,20 @@ export function DeviceManagement() {
 
   useEffect(() => {
     fetchDevices();
+
+    // Poll every 10s for real-time updates
+    const interval = setInterval(fetchDevices, 10000);
+
+    // Refresh when tab becomes visible
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchDevices();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [fetchDevices]);
 
   const removeDevice = async (sessionId: string) => {
