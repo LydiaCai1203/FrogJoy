@@ -20,7 +20,7 @@ class AnthropicProvider:
     """Anthropic /v1/messages (Claude) — 同步调用."""
 
     def chat_once(self, config: LLMConfig, system: str, prompt: str, max_tokens: int = 4000) -> str:
-        url = f"{config.base_url.rstrip('/')}/messages"
+        url = f"{config.base_url.rstrip('/')}/v1/messages"
         headers = {
             "x-api-key": config.api_key,
             "Content-Type": "application/json",
