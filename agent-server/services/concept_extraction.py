@@ -375,7 +375,7 @@ class ConceptExtractor:
             person_categories = {"person", "character"}
             non_person = [c for c in merged if c.get("category") not in person_categories]
             persons = [c for c in merged if c.get("category") in person_categories]
-            non_person = _llm_concept_linker(non_person, sim_threshold=0.75, top_k=3, config=self._llm_config)
+            non_person = _llm_concept_linker(non_person, sim_threshold=0.75, top_k=3, config=self._llm_config, emb_config=self._emb_config)
             merged = non_person + persons
 
         return merged
@@ -1174,6 +1174,7 @@ def _llm_concept_linker(
     top_k: int = 3,
     batch_size: int = 10,
     config: LLMConfig | None = None,
+    emb_config: dict | None = None,
 ) -> list[dict]:
     """Embedding 产候选 + LLM 拍板.
 
@@ -1193,7 +1194,7 @@ def _llm_concept_linker(
         return concepts
 
     terms = [c["term"] for c in concepts]
-    embeddings = _get_embeddings(terms, self._emb_config)
+    embeddings = _get_embeddings(terms, emb_config)
     if not embeddings or len(embeddings) != n:
         logger.warning("Embedding API failed, skip LLM linker (no merge / no parent)")
         return concepts

@@ -15,15 +15,9 @@ from loguru import logger
 # Configure loguru before anything else
 logger.remove()
 logger.add(
-    sys.stderr,
-    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-    level="INFO",
-)
-logger.add(
     sys.stdout,
     format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
     level="INFO",
-    filter=lambda record: record["level"].no >= 20,
 )
 
 from a2a.server.request_handlers import DefaultRequestHandler
