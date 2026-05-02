@@ -98,6 +98,7 @@ class ConceptService:
                 "base_url": settings.concept_llm_base_url,
                 "api_key": settings.concept_llm_api_key,
                 "model": settings.concept_llm_model,
+                "concurrency": settings.concept_llm_concurrency,
             },
             "embedding_config": {
                 "base_url": settings.concept_embed_base_url,

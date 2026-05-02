@@ -37,6 +37,7 @@ CONCEPT_LLM_PROVIDER_TYPE = os.environ.get("CONCEPT_LLM_PROVIDER_TYPE", "")
 CONCEPT_LLM_API_KEY = os.environ.get("CONCEPT_LLM_API_KEY", "")
 CONCEPT_LLM_BASE_URL = os.environ.get("CONCEPT_LLM_BASE_URL", "")
 CONCEPT_LLM_MODEL = os.environ.get("CONCEPT_LLM_MODEL", "")
+CONCEPT_LLM_CONCURRENCY = int(os.environ.get("CONCEPT_LLM_CONCURRENCY", "2"))
 CONCEPT_EMBED_API_KEY = os.environ.get("CONCEPT_EMBED_API_KEY", "")
 CONCEPT_EMBED_BASE_URL = os.environ.get("CONCEPT_EMBED_BASE_URL", "")
 CONCEPT_EMBED_MODEL = os.environ.get("CONCEPT_EMBED_MODEL", "")
@@ -47,10 +48,11 @@ CONCEPT_EMBED_MODEL = os.environ.get("CONCEPT_EMBED_MODEL", "")
 from services.llm_provider import LLMConfig
 
 
-def _get_llm_config(ai_config: dict | LLMConfig | None, embedding_config: dict | None) -> tuple[LLMConfig, dict]:
+def _get_llm_config(ai_config: dict | LLMConfig | None, embedding_config: dict | None) -> tuple[LLMConfig, dict, int]:
     """从 A2A payload 解析 LLM 和 Embedding 配置，无配置时用 env var 兜底."""
     if isinstance(ai_config, LLMConfig):
         llm = ai_config
+        concurrency = CONCEPT_LLM_CONCURRENCY
     else:
         llm = LLMConfig(
             provider_type=(ai_config or {}).get("provider_type") or CONCEPT_LLM_PROVIDER_TYPE,
@@ -58,6 +60,7 @@ def _get_llm_config(ai_config: dict | LLMConfig | None, embedding_config: dict |
             api_key=(ai_config or {}).get("api_key") or CONCEPT_LLM_API_KEY,
             model=(ai_config or {}).get("model") or CONCEPT_LLM_MODEL,
         )
+        concurrency = (ai_config or {}).get("concurrency") or CONCEPT_LLM_CONCURRENCY
 
     # 校验必填字段
     missing = []
@@ -87,7 +90,7 @@ def _get_llm_config(ai_config: dict | LLMConfig | None, embedding_config: dict |
             f"请在 .env 中配置 CONCEPT_EMBED_* 相关环境变量。"
         )
 
-    return llm, emb
+    return llm, emb, concurrency
 
 
 # ---------- DB helpers (替代 IndexService) ----------
@@ -173,7 +176,7 @@ class ConceptExtractor:
         self.rebuild = rebuild
         self._progress = progress_callback or (lambda pct, txt: None)
         self._cancelled = cancel_check or (lambda: False)
-        self._llm_config, self._emb_config = _get_llm_config(ai_config, embedding_config)
+        self._llm_config, self._emb_config, self._concurrency = _get_llm_config(ai_config, embedding_config)
 
     def run(self) -> dict:
         """
@@ -366,7 +369,7 @@ class ConceptExtractor:
                         f"Phase 1: {done_count}/{total_chapters} 章完成"
                     )
 
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=self._concurrency) as executor:
             futures = {}
             for i, chapter in enumerate(chapters):
                 if self._cancelled():
@@ -746,7 +749,7 @@ def _default_strategy() -> dict:
     }
 
 
-def _call_llm(system, prompt, max_tokens=4000, max_retries=3, config: LLMConfig | None = None):
+def _call_llm(system, prompt, max_tokens=4000, max_retries=5, config: LLMConfig | None = None):
     cfg = config or _get_llm_config(None, None)[0]
     service = LLMService(cfg)
     last_error = None
@@ -772,13 +775,18 @@ def _call_llm(system, prompt, max_tokens=4000, max_retries=3, config: LLMConfig 
             else:
                 logger.error(f"LLM call failed after {max_retries} attempts: {e}")
         except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code
             logger.warning(
                 f"LLM API error (attempt {attempt+1}/{max_retries}): "
-                f"status={e.response.status_code} body={e.response.text!r} err={e}"
+                f"status={status_code} body={e.response.text!r} err={e}"
             )
             last_error = e
             if attempt < max_retries - 1:
-                time.sleep(2 ** (attempt + 1))
+                if status_code == 429:
+                    # 限流：短暂等待后重试
+                    time.sleep(2 + attempt)
+                else:
+                    time.sleep(2 ** (attempt + 1))
             else:
                 logger.error(f"LLM call failed after {max_retries} attempts: {e}")
         except httpx.HTTPError as e:

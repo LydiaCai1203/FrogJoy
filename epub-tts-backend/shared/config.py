@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     concept_llm_api_key: str = ""
     concept_llm_base_url: str = ""
     concept_llm_model: str = ""
+    concept_llm_concurrency: int = 2
 
     # Concept Extraction Embedding
     concept_embed_api_key: str = ""
