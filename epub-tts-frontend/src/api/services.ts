@@ -821,6 +821,13 @@ export class ConceptService {
     return res.json();
   }
 
+  async cancelExtraction(bookId: string): Promise<void> {
+    const res = await fetchWithAuth(`${API_URL}/books/${bookId}/concepts/cancel`, {
+      method: "POST",
+    });
+    if (!res.ok) throw new Error("Failed to cancel extraction");
+  }
+
   async deleteConcepts(bookId: string): Promise<void> {
     const res = await fetchWithAuth(`${API_URL}/books/${bookId}/concepts`, {
       method: "DELETE",

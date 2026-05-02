@@ -334,10 +334,13 @@ class ConceptExtractor:
 
         all_concepts = []
         done_count = 0
+        fail_count = 0
+        max_failures = 3
+        abort = False
         done_lock = threading.Lock()
 
         def _process_chapter(i: int, chapter: dict) -> list[dict]:
-            nonlocal done_count
+            nonlocal done_count, fail_count, abort
             paragraphs = chapter_paragraphs.get(chapter["chapter_idx"])
             if not paragraphs:
                 return []
@@ -359,6 +362,10 @@ class ConceptExtractor:
                 return validated
             except Exception as e:
                 logger.warning(f"Phase 1 failed for ch{chapter['chapter_idx']}: {e}")
+                with done_lock:
+                    fail_count += 1
+                    if fail_count >= max_failures:
+                        abort = True
                 return []
             finally:
                 with done_lock:
@@ -379,9 +386,10 @@ class ConceptExtractor:
                 futures[future] = chapter
 
             for future in as_completed(futures):
-                if self._cancelled():
-                    logger.info("Phase 1 cancelled during collection")
+                if self._cancelled() or abort:
                     executor.shutdown(wait=False, cancel_futures=True)
+                    if abort:
+                        raise RuntimeError(f"Phase 1: {fail_count} 章提取失败，任务终止")
                     raise InterruptedError("用户取消了概念提取")
                 all_concepts.extend(future.result())
 

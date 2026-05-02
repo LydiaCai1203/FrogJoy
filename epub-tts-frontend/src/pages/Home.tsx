@@ -74,6 +74,8 @@ export default function Home() {
   const [pendingRebuildId, setPendingRebuildId] = useState<string | null>(null);
   // 概念提取状态
   const [conceptStatuses, setConceptStatuses] = useState<Record<string, ConceptStatus>>({});
+  // 等待用户确认取消提取的 bookId
+  const [pendingCancelId, setPendingCancelId] = useState<string | null>(null);
 
   // 加载书架
   useEffect(() => {
@@ -210,7 +212,7 @@ export default function Home() {
 
     const current = conceptStatuses[bookId];
     if (current?.concept_status === "extracting") {
-      toast.info("概念提取正在进行中，请稍候");
+      setPendingCancelId(bookId);
       return;
     }
 
@@ -593,7 +595,7 @@ export default function Home() {
                           cStatus === "enriched"
                             ? `概念已就绪 (${cs?.total_concepts || 0}个) — 点击重新提取`
                             : cStatus === "extracting"
-                            ? `正在提取概念... ${cs?.progress != null ? `${cs.progress}%` : ""} ${cs?.progress_text || ""}`
+                            ? `正在提取概念... ${cs?.progress != null ? `${cs.progress}%` : ""} ${cs?.progress_text || ""} — 点击取消`
                             : cStatus === "failed"
                             ? `概念提取失败: ${cs?.concept_error || "未知错误"}`
                             : "点击提取概念"
@@ -685,6 +687,37 @@ export default function Home() {
               }}
             >
               重新提取
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Cancel Extraction Confirmation Dialog */}
+      <AlertDialog open={!!pendingCancelId} onOpenChange={(open) => !open && setPendingCancelId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>取消概念提取？</AlertDialogTitle>
+            <AlertDialogDescription>
+              概念提取正在进行中，确定要取消吗？已完成的部分不会保留。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>继续等待</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                const id = pendingCancelId;
+                setPendingCancelId(null);
+                if (!id) return;
+                try {
+                  await conceptService.cancelExtraction(id);
+                  toast.info("正在取消...");
+                } catch {
+                  toast.error("取消失败，请稍后重试");
+                }
+              }}
+            >
+              取消提取
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
