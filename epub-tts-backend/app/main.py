@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
             # 未注册 task_type 视为死 (兜底, 让 cleanup 标 failed)
             return False
 
-        task_lifecycle.cleanup_zombies(stale_seconds=3600, is_alive=_is_alive)
+        task_lifecycle.cleanup_zombies(stale_seconds=300, is_alive=_is_alive)
     except Exception as e:
         logger.warning(f"Zombie task cleanup failed at startup: {e}")
     yield

@@ -268,6 +268,15 @@ class ConceptService:
                 headers={"A2A-Version": "1.0"},
                 timeout=5,
             )
+            if resp.status_code == 404:
+                # A2A task 不存在 (agent-server 重启丢失), 标记失败
+                tid = task["id"]
+                book_id = task["book_id"]
+                user_id = task["user_id"]
+                logger.warning(f"A2A task {a2a_task_id} not found (agent-server 可能已重启), 标记任务失败")
+                tasks.fail(tid, "agent-server 重启, 任务丢失, 请重试")
+                cls._set_status(book_id, user_id, None, "agent-server 重启, 任务丢失, 请重试")
+                return
             if resp.status_code != 200:
                 return
 
