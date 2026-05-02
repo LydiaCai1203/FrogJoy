@@ -33,12 +33,13 @@ from shared.models import (
 
 # ---------- Configuration (env var fallback) ----------
 
+CONCEPT_LLM_PROVIDER_TYPE = os.environ.get("CONCEPT_LLM_PROVIDER_TYPE", "")
 CONCEPT_LLM_API_KEY = os.environ.get("CONCEPT_LLM_API_KEY", "")
-CONCEPT_LLM_BASE_URL = os.environ.get("CONCEPT_LLM_BASE_URL", "https://api.minimaxi.com/anthropic")
-CONCEPT_LLM_MODEL = os.environ.get("CONCEPT_LLM_MODEL", "MiniMax-M2.7")
+CONCEPT_LLM_BASE_URL = os.environ.get("CONCEPT_LLM_BASE_URL", "")
+CONCEPT_LLM_MODEL = os.environ.get("CONCEPT_LLM_MODEL", "")
 CONCEPT_EMBED_API_KEY = os.environ.get("CONCEPT_EMBED_API_KEY", "")
-CONCEPT_EMBED_BASE_URL = os.environ.get("CONCEPT_EMBED_BASE_URL", "https://model-square.app.baizhi.cloud/v1/embeddings")
-CONCEPT_EMBED_MODEL = os.environ.get("CONCEPT_EMBED_MODEL", "bge-m3")
+CONCEPT_EMBED_BASE_URL = os.environ.get("CONCEPT_EMBED_BASE_URL", "")
+CONCEPT_EMBED_MODEL = os.environ.get("CONCEPT_EMBED_MODEL", "")
 
 
 # ---------- LLM Config (from backend via A2A) ----------
@@ -52,16 +53,40 @@ def _get_llm_config(ai_config: dict | LLMConfig | None, embedding_config: dict |
         llm = ai_config
     else:
         llm = LLMConfig(
-            provider_type=(ai_config or {}).get("provider_type", "anthropic"),
+            provider_type=(ai_config or {}).get("provider_type") or CONCEPT_LLM_PROVIDER_TYPE,
             base_url=(ai_config or {}).get("base_url") or CONCEPT_LLM_BASE_URL,
             api_key=(ai_config or {}).get("api_key") or CONCEPT_LLM_API_KEY,
             model=(ai_config or {}).get("model") or CONCEPT_LLM_MODEL,
         )
+
+    # 校验必填字段
+    missing = []
+    if not llm.provider_type:
+        missing.append("CONCEPT_LLM_PROVIDER_TYPE")
+    if not llm.base_url:
+        missing.append("CONCEPT_LLM_BASE_URL")
+    if not llm.api_key:
+        missing.append("CONCEPT_LLM_API_KEY")
+    if not llm.model:
+        missing.append("CONCEPT_LLM_MODEL")
+    if missing:
+        raise ValueError(
+            f"概念提取 LLM 配置缺失: {', '.join(missing)}。"
+            f"请在 .env 中配置 CONCEPT_LLM_* 相关环境变量。"
+        )
+
     emb = {
         "base_url": (embedding_config or {}).get("base_url") or CONCEPT_EMBED_BASE_URL,
         "api_key": (embedding_config or {}).get("api_key") or CONCEPT_EMBED_API_KEY,
         "model": (embedding_config or {}).get("model") or CONCEPT_EMBED_MODEL,
     }
+    if not emb["base_url"] or not emb["api_key"] or not emb["model"]:
+        missing_emb = [k for k in ("base_url", "api_key", "model") if not emb[k]]
+        raise ValueError(
+            f"概念提取 Embedding 配置缺失: {', '.join('CONCEPT_EMBED_' + k.upper() for k in missing_emb)}。"
+            f"请在 .env 中配置 CONCEPT_EMBED_* 相关环境变量。"
+        )
+
     return llm, emb
 
 

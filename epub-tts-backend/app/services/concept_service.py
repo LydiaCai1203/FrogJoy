@@ -37,6 +37,19 @@ class ConceptService:
     @classmethod
     def build_concepts(cls, book_id: str, user_id: str, rebuild: bool = False) -> str | None:
         """通过 A2A 协议委托 agent-server 抽概念. 返回 backend task id."""
+        # 校验 LLM 配置
+        missing = []
+        if not settings.concept_llm_provider_type:
+            missing.append("CONCEPT_LLM_PROVIDER_TYPE")
+        if not settings.concept_llm_base_url:
+            missing.append("CONCEPT_LLM_BASE_URL")
+        if not settings.concept_llm_api_key:
+            missing.append("CONCEPT_LLM_API_KEY")
+        if not settings.concept_llm_model:
+            missing.append("CONCEPT_LLM_MODEL")
+        if missing:
+            raise ValueError(f"概念提取 LLM 配置缺失: {', '.join(missing)}，请在 .env 中配置。")
+
         status = IndexService.get_status(book_id, user_id)
         if not status or status["status"] != "parsed":
             raise ValueError("Index not ready, build index first")

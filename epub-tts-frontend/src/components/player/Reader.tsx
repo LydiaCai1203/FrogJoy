@@ -169,9 +169,9 @@ export function Reader({
           ? (isDefinition ? "bg-amber-500 hover:bg-amber-600" : "bg-amber-300 hover:bg-amber-400")
           : (isDefinition ? "bg-violet-500 hover:bg-violet-600" : "bg-violet-300 hover:bg-violet-400");
         const popoverBody =
-          !isDefinition && occurrence.core_sentence
-            ? occurrence.core_sentence
-            : ann.popover.initial_definition;
+          ann.popover.initial_definition ||
+          occurrence.core_sentence ||
+          "暂无释义";
 
         nodes.push(
           <span key={`c-${ann.concept_id}-${m.start}`}>
