@@ -35,7 +35,7 @@ class AnthropicProvider:
         if system:
             body["system"] = system
 
-        with httpx.Client(timeout=httpx.Timeout(120.0)) as client:
+        with httpx.Client(timeout=httpx.Timeout(300.0)) as client:
             resp = client.post(url, headers=headers, json=body)
             if resp.status_code != 200:
                 raise httpx.HTTPStatusError(
@@ -71,7 +71,7 @@ class OpenAIChatProvider:
             "stream": False,
         }
 
-        with httpx.Client(timeout=httpx.Timeout(120.0)) as client:
+        with httpx.Client(timeout=httpx.Timeout(300.0)) as client:
             resp = client.post(url, headers=headers, json=body)
             if resp.status_code != 200:
                 raise httpx.HTTPStatusError(
@@ -102,7 +102,7 @@ class OpenAIResponsesProvider:
             "stream": False,
         }
 
-        with httpx.Client(timeout=httpx.Timeout(120.0)) as client:
+        with httpx.Client(timeout=httpx.Timeout(300.0)) as client:
             resp = client.post(url, headers=headers, json=body)
             if resp.status_code != 200:
                 raise httpx.HTTPStatusError(
