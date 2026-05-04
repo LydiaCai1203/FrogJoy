@@ -99,6 +99,7 @@ class OpenAIResponsesProvider:
         body = {
             "model": config.model,
             "input": input_messages,
+            "max_output_tokens": max_tokens,
             "stream": False,
         }
 

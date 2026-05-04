@@ -767,8 +767,16 @@ def _call_llm(system, prompt, max_tokens=4000, max_retries=5, config: LLMConfig 
             text = service.chat_once(system, prompt, max_tokens)
             if not text or not text.strip():
                 logger.warning(
-                    f"LLM returned empty text: model={cfg.model} "
-                    f"provider={cfg.provider_type} prompt_chars={len(prompt)}"
+                    f"LLM returned empty text (attempt {attempt+1}/{max_retries}): "
+                    f"model={cfg.model} provider={cfg.provider_type} "
+                    f"prompt_chars={len(prompt)} max_tokens={max_tokens}"
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** (attempt + 2))  # 比 JSON 错误更长的退避
+                    continue
+                raise json.JSONDecodeError(
+                    f"LLM returned empty text after {max_retries} attempts",
+                    "", 0,
                 )
             return _parse_json(text)
         except json.JSONDecodeError as e:
