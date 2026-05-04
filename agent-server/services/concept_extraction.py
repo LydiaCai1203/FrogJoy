@@ -839,7 +839,7 @@ def _parse_json(text: str):
         raise
 
 
-_MAX_PHASE1_PROMPT_CHARS = 6000  # 安全阈值，对应约 4000-6000 tokens
+_MAX_PHASE1_PROMPT_CHARS = 20000  # 安全阈值，对应约 12000-15000 tokens
 
 
 def _build_phase1_prompt(toc, chapter, paragraphs, strategy):
