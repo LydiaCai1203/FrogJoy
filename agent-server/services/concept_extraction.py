@@ -774,9 +774,10 @@ def _call_llm(system, prompt, max_tokens=4000, max_retries=5, config: LLMConfig 
                 if attempt < max_retries - 1:
                     time.sleep(2 ** (attempt + 2))  # 比 JSON 错误更长的退避
                     continue
-                raise json.JSONDecodeError(
-                    f"LLM returned empty text after {max_retries} attempts",
-                    "", 0,
+                raise RuntimeError(
+                    f"LLM returned empty text after {max_retries} attempts: "
+                    f"model={cfg.model} provider={cfg.provider_type} "
+                    f"prompt_chars={len(prompt)} max_tokens={max_tokens}"
                 )
             return _parse_json(text)
         except json.JSONDecodeError as e:
@@ -839,7 +840,8 @@ def _parse_json(text: str):
         raise
 
 
-_MAX_PHASE1_PROMPT_CHARS = 20000  # 安全阈值，对应约 12000-15000 tokens
+_MAX_PHASE1_PROMPT_CHARS = 20000  # 输入安全阈值，对应约 12000-15000 tokens
+_MAX_PHASE1_OUTPUT_TOKENS = 12000  # 输出上限，避免长章节概念 JSON 被截断
 
 
 def _build_phase1_prompt(toc, chapter, paragraphs, strategy):
@@ -972,7 +974,7 @@ def _call_phase1_llm(toc, chapter, paragraphs, strategy, config: LLMConfig | Non
         return _call_llm(
             system="你是一个精确的书籍概念抽取助手。",
             prompt=full_prompt,
-            max_tokens=4000,
+            max_tokens=_MAX_PHASE1_OUTPUT_TOKENS,
             config=config,
         )["concepts"]
 
@@ -1017,7 +1019,7 @@ def _call_phase1_llm(toc, chapter, paragraphs, strategy, config: LLMConfig | Non
         return _call_llm(
             system="你是一个精确的书籍概念抽取助手。",
             prompt=batch_prompt,
-            max_tokens=4000,
+            max_tokens=_MAX_PHASE1_OUTPUT_TOKENS,
             config=config,
         )
 

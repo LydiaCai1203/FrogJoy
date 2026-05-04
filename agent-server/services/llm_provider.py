@@ -70,6 +70,8 @@ class OpenAIChatProvider:
             "max_tokens": max_tokens,
             "stream": False,
         }
+        if "deepseek-v4" in config.model.lower():
+            body["thinking"] = {"type": "disabled"}
 
         with httpx.Client(timeout=httpx.Timeout(300.0)) as client:
             resp = client.post(url, headers=headers, json=body)
