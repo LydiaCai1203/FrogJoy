@@ -987,8 +987,7 @@ export function Reader({
                                 setAnnotationOpen(true);
                               });
                         }
-                        // 非 TTS 高亮状态下，插入概念角标
-                        if (anns?.length && (!isSentenceActive || !isPlaying)) {
+                        if (anns?.length) {
                           return renderTextWithAnnotations(text, anns);
                         }
                         return renderSentence(text, index, isSentenceActive, sentenceHighlights);
