@@ -890,7 +890,9 @@ def _build_phase1_prompt(toc, chapter, paragraphs, strategy):
       "aliases": ["原文中实际出现的其它写法, 必须真在本章出现过"],
       "category": "分类",
       "definition_para": 7,
-      "refinement_paras": [12, 19]
+      "refinement_paras": [12, 19],
+      "first_occurrence_para": 5,
+      "key_occurrence_paras": [8, 15]
     }}
   ]
 }}
@@ -898,20 +900,23 @@ def _build_phase1_prompt(toc, chapter, paragraphs, strategy):
 ## 字段说明
 
 - **term / aliases**: 必须真的在原文中出现过 (term 或某个 alias 字面包含在你指定的段落里)
-- **definition_para**: 该段落明确"定义/解释"了此概念。**段落标记 [P07] 写 7**, 不是 pid 字符串。本章无明确定义只有引用就设为 null。
+- **definition_para**: 该段落明确"定义/解释"了此概念。**段落标记 [P07] 写 7**, 不是 pid 字符串。
 - **refinement_paras**: 作者用**解释性语言**对该概念进行补充说明的段落 (如给出新的定义、对比、因果分析等)。**纯叙事性的重复出现不算 refinement** (如角色再次登场、事件中再次提到)。可空数组。
-- 每个概念必须 definition_para 或 refinement_paras 至少有一项非空, 否则不要返回。
+- **first_occurrence_para**: 概念在本章**第一次出现**的段落编号。对文化背景词、专有名词这类作者没有专门解释的术语，记录其首次出现段落。
+- **key_occurrence_paras**: 概念在本章中**最关键的讨论/提及**段落编号数组。对书内主题/现象（如作者命名的核心论点），记录作者讨论最深入的段落。可空数组。
+- **概念存在性要求**: abstract terms/theories 必须有 definition_para 或 refinement_paras 至少一项非空; cultural_context / theme 类允许只用 first_occurrence_para / key_occurrence_paras。
 
 ## 关键约束
 
-1. **段落引用必须诚实**: 你写的 definition_para=7, 服务端会去 [P07] 段落里检查 term 或 alias 是否真出现; 找不到就丢弃这条引用。
+1. **段落引用必须诚实**: 你写的每个段落编号, 服务端会去对应段落里检查 term 或 alias 是否真出现; 找不到就丢弃这条引用。
 2. **aliases 不能是更上位/下位概念**:
    - "向上流动"和"社会流动"是**不同**概念, 不要互列为别名 (前者是后者的子类型)
    - aliases 只放真正的同义不同写, 例如"上向流动" 是 "向上流动" 的别名
-3. **抽取范围要广**: 不光抽抽象术语/理论, **人名 / 地名 / 作品名**这类专有名词, 只要在本章被作者反复提到或承担叙事作用, 也要抽出来 (它们对读者理解很重要, 释义会在后续阶段由系统结合背景补全)。
-3b. **文化背景词**: 额外识别文中**作者默认读者已知、因此未做解释**的文化背景词 ({cultural_guidelines})。判断标准: 该词承载了理解上下文所必需的背景知识, 但作者没有解释它。即使读者可能听过这个名字, 只要不了解其具体含义、立场差异或社会意义就会影响理解, 就应该提取。这类词 category 标为 "cultural_context"。definition_para 设为该词首次出现的段落编号。
-4. **宁少勿多**: 每 10 段 ≤ {quantity} 个高质量概念。没把握就跳过。
-5. **不要返回 mention 类引用** (顺带提及由后续阶段自动补全, 你只管 definition / refinement)。
+3. **抽取范围要广**: 不光抽抽象术语/理论, **人名 / 地名 / 作品名 / 文化背景词 / 书内主题**都要抽。判断标准是: 这个词对读者理解本章内容重要, 且读者可能不知道或需要上下文帮助理解。
+3a. **文化背景词** (category="cultural_context"): 作者默认读者已知但**实际读者可能不懂**的文化/社会/历史/政治背景词。包括: 族群标签(如"苏格兰-爱尔兰人后裔")、政治术语(如"美国梦")、社会阶层术语、宗教/地区文化概念。即使没有专门解释, 也记录 first_occurrence_para。
+3b. **书内主题/现象** (category="theme"): 作者在本章讨论的核心现象、论点或命题, 即使不是通用学术术语(如"乡下人的悲哀")。记录 key_occurrence_paras 中作者讨论最深入的段落。
+4. **宁少勿多**: 每 10 段 ≤ {quantity} 个高质量概念。没把握就跳过。文化背景词和书内主题**独立计数**, 不占用术语的名额。
+5. **不要返回 mention 类引用** (顺带提及由后续阶段自动补全, 你只管有实质讨论的概念)。
 6. **不要写 initial_definition 字段**: 释义会在后续阶段单独生成, 你只管识别和定位。
 
 ## 章节文本
@@ -939,6 +944,8 @@ def _merge_concepts_by_term(concepts: list[dict]) -> list[dict]:
                 "category": c.get("category", "term"),
                 "definition_para": c.get("definition_para"),
                 "refinement_paras": list(c.get("refinement_paras") or []),
+                "first_occurrence_para": c.get("first_occurrence_para"),
+                "key_occurrence_paras": list(c.get("key_occurrence_paras") or []),
             }
         else:
             existing = by_term[term]
@@ -958,9 +965,32 @@ def _merge_concepts_by_term(concepts: list[dict]) -> list[dict]:
             for para in c.get("refinement_paras") or []:
                 if para is not None and para not in existing["refinement_paras"]:
                     existing["refinement_paras"].append(para)
+            # 合并 key_occurrence_paras（去重，保持升序）
+            for para in c.get("key_occurrence_paras") or []:
+                if para is not None and para not in existing["key_occurrence_paras"]:
+                    existing["key_occurrence_paras"].append(para)
+            existing["key_occurrence_paras"].sort()
             # 优先保留最早的 definition_para
             if existing["definition_para"] is None:
                 existing["definition_para"] = c.get("definition_para")
+            # 优先保留最早的 first_occurrence_para（兼容字符串输入）
+            new_first = c.get("first_occurrence_para")
+            if new_first is not None:
+                try:
+                    new_first_int = int(new_first)
+                except (ValueError, TypeError):
+                    new_first_int = None
+                if new_first_int is not None:
+                    existing_first = existing.get("first_occurrence_para")
+                    if existing_first is None:
+                        existing["first_occurrence_para"] = new_first_int
+                    else:
+                        try:
+                            existing_first_int = int(existing_first)
+                        except (ValueError, TypeError):
+                            existing_first_int = None
+                        if existing_first_int is None or new_first_int < existing_first_int:
+                            existing["first_occurrence_para"] = new_first_int
 
     return list(by_term.values())
 
@@ -1063,7 +1093,9 @@ def _synthesize_definitions_batch(
         evs = c.get("evidence") or []
         defs = [e for e in evs if e.get("role") == "definition"]
         refs = [e for e in evs if e.get("role") == "refinement"]
-        return (defs + refs)[:MAX_EV]
+        firsts = [e for e in evs if e.get("role") == "first_occurrence"]
+        keys = [e for e in evs if e.get("role") == "key_occurrence"]
+        return (defs + refs + firsts + keys)[:MAX_EV]
 
     blocks = []
     for i, c in enumerate(concepts, 1):
@@ -1105,13 +1137,14 @@ def _synthesize_definitions_batch(
 
 ## 释义原则
 
-- **抽象术语 / 理论 / 主题**: 综合 evidence 句子提炼"它是什么", 不要照抄原句.
+- **抽象术语 / 理论**: 综合 evidence 句子提炼"它是什么", 不要照抄原句.
 - **专有名词 (人名 / 地名 / 作品名)**: evidence 句子里通常没有定义, 你要**结合书籍背景 + 你自己的常识**告诉读者:
   - 人名: 是谁, 与作者/书的关系或在书中扮演的角色
   - 地名: 在哪, 有何相关背景 (历史/地理/经济)
   - 作品名: 谁写的, 关于什么
 - 有 **父概念** 时, 释义要点出与父概念的差异 (例如父概念是"社会流动"时, "向上流动"要强调"向上"的方向性).
-- **文化背景词 (category=cultural_context)**: 解释该词的文化背景, 包括它是什么、在其所属文化中意味什么、为什么对理解上下文很重要. 不要求使用作者原话.
+- **文化背景词 (category=cultural_context)**: 这是作者默认读者已知但读者可能不懂的背景知识。你要**结合你自己的常识 + 书籍背景**解释它是什么、在其文化中意味什么、为什么对理解上下文很重要。可以大量使用作者原文之外的文化/历史/社会知识。
+- **书内主题/现象 (category=theme)**: 这是作者在书中讨论的核心现象或命题, 不是通用术语。你要解释该主题在书中指的是什么社会现象或问题, 它在书中承担了什么角色。可结合书籍背景知识推断, 不局限于 evidence 原句。
 - **释义要独立可读**, 不要写"作者用此词指代…"这种依赖上下文的话.
 - 若信息实在不足, 就用 evidence 句子里能看出的最小线索写一句中性描述, 不要乱编.
 
@@ -1247,10 +1280,13 @@ def _validate_evidence(concepts: list[dict], paragraphs: list[dict]) -> list[dic
         _try_add(c.get("definition_para"), "definition")
         for r in c.get("refinement_paras") or []:
             _try_add(r, "refinement")
+        _try_add(c.get("first_occurrence_para"), "first_occurrence")
+        for r in c.get("key_occurrence_paras") or []:
+            _try_add(r, "key_occurrence")
         # 旧格式兼容
         for ev_in in c.get("evidence") or []:
             role_in = ev_in.get("role")
-            if role_in not in ("definition", "refinement"):
+            if role_in not in ("definition", "refinement", "first_occurrence", "key_occurrence"):
                 continue
             _try_add(ev_in.get("para") or ev_in.get("pid"), role_in)
 
