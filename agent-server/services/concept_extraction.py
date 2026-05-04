@@ -831,7 +831,11 @@ def _parse_json(text: str):
         raise
 
 
-def _call_phase1_llm(toc, chapter, paragraphs, strategy, config: LLMConfig | None = None):
+_MAX_PHASE1_PROMPT_CHARS = 6000  # 安全阈值，对应约 4000-6000 tokens
+
+
+def _build_phase1_prompt(toc, chapter, paragraphs, strategy):
+    """构造 Phase 1 的 prompt（不含 LLM 调用）"""
     paragraphs_text = "\n\n".join(
         f'[P{p["para_idx"]:02d}]\n{p["text"]}'
         for p in paragraphs
@@ -844,7 +848,7 @@ def _call_phase1_llm(toc, chapter, paragraphs, strategy, config: LLMConfig | Non
     quantity = strategy.get("quantity_hint", 5)
     cultural_guidelines = strategy.get("cultural_context_guidelines", "")
 
-    prompt = f"""你是一个精确的书籍概念抽取助手, 服务于"书的索引库"(Book Language Server).
+    return f"""你是一个精确的书籍概念抽取助手, 服务于"书的索引库"(Book Language Server).
 
 ## 书籍信息
 
@@ -908,12 +912,125 @@ def _call_phase1_llm(toc, chapter, paragraphs, strategy, config: LLMConfig | Non
 
 直接输出 JSON。"""
 
-    return _call_llm(
-        system="你是一个精确的书籍概念抽取助手。",
-        prompt=prompt,
-        max_tokens=4000,
-        config=config,
-    )["concepts"]
+
+def _merge_concepts_by_term(concepts: list[dict]) -> list[dict]:
+    """按 term 合并多个 batch 提取的概念，合并 aliases 和 refinement_paras."""
+    by_term: dict[str, dict] = {}
+
+    for c in concepts:
+        term = (c.get("term") or "").strip()
+        if not term:
+            continue
+
+        if term not in by_term:
+            by_term[term] = {
+                "term": term,
+                "aliases": list(c.get("aliases") or []),
+                "category": c.get("category", "term"),
+                "definition_para": c.get("definition_para"),
+                "refinement_paras": list(c.get("refinement_paras") or []),
+            }
+        else:
+            existing = by_term[term]
+            # 检测 category 冲突
+            new_cat = c.get("category", "term")
+            if existing["category"] != new_cat:
+                logger.warning(
+                    f"Category conflict for term '{term}': "
+                    f"keeping '{existing['category']}', discarding '{new_cat}'"
+                )
+            # 合并 aliases（去重）
+            for alias in c.get("aliases") or []:
+                a = (alias or "").strip()
+                if a and a not in existing["aliases"]:
+                    existing["aliases"].append(a)
+            # 合并 refinement_paras（去重）
+            for para in c.get("refinement_paras") or []:
+                if para is not None and para not in existing["refinement_paras"]:
+                    existing["refinement_paras"].append(para)
+            # 优先保留最早的 definition_para
+            if existing["definition_para"] is None:
+                existing["definition_para"] = c.get("definition_para")
+
+    return list(by_term.values())
+
+
+def _call_phase1_llm(toc, chapter, paragraphs, strategy, config: LLMConfig | None = None):
+    """Phase 1 LLM 调用，自动分段处理超长章节"""
+    # 先尝试完整调用
+    full_prompt = _build_phase1_prompt(toc, chapter, paragraphs, strategy)
+
+    if len(full_prompt) <= _MAX_PHASE1_PROMPT_CHARS:
+        return _call_llm(
+            system="你是一个精确的书籍概念抽取助手。",
+            prompt=full_prompt,
+            max_tokens=4000,
+            config=config,
+        )["concepts"]
+
+    # 超长，需要分段
+    logger.info(
+        f"Chapter '{chapter['chapter_title']}' prompt too long "
+        f"({len(full_prompt)} chars), splitting into batches"
+    )
+
+    # 计算固定部分长度（空段落文本时的 prompt）
+    empty_prompt = _build_phase1_prompt(toc, chapter, [], strategy)
+    fixed_len = len(empty_prompt)
+    max_text_chars = max(_MAX_PHASE1_PROMPT_CHARS - fixed_len, 1500)
+
+    # 按段落分批
+    batches = []
+    current_batch = []
+    current_text_chars = 0
+
+    for p in paragraphs:
+        p_base = f'[P{p["para_idx"]:02d}]\n{p["text"]}'
+        # 非首段前有 \n\n 分隔符
+        p_len = len(p_base) + (2 if current_batch else 0)
+        if current_text_chars + p_len > max_text_chars and current_batch:
+            batches.append(current_batch)
+            current_batch = [p]
+            current_text_chars = len(p_base)
+        else:
+            current_batch.append(p)
+            current_text_chars += p_len
+
+    if current_batch:
+        batches.append(current_batch)
+
+    # 并发调用各 batch
+    def _process_batch(i, batch):
+        batch_prompt = _build_phase1_prompt(toc, chapter, batch, strategy)
+        logger.info(
+            f"Batch {i+1}/{len(batches)} for ch{chapter['chapter_idx']}: "
+            f"prompt={len(batch_prompt)} chars, paragraphs={len(batch)}"
+        )
+        return _call_llm(
+            system="你是一个精确的书籍概念抽取助手。",
+            prompt=batch_prompt,
+            max_tokens=4000,
+            config=config,
+        )
+
+    all_concepts = []
+    with ThreadPoolExecutor(max_workers=min(len(batches), 3)) as executor:
+        futures = {
+            executor.submit(_process_batch, i, batch): i
+            for i, batch in enumerate(batches)
+        }
+        for future in as_completed(futures):
+            result = future.result()
+            all_concepts.extend(result.get("concepts", []))
+
+    # 合并重复概念
+    merged = _merge_concepts_by_term(all_concepts)
+
+    logger.info(
+        f"Chapter '{chapter['chapter_title']}' split into {len(batches)} batches, "
+        f"extracted {len(merged)} unique concepts (raw={len(all_concepts)})"
+    )
+    return merged
 
 
 def _synthesize_definitions_batch(
