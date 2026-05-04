@@ -309,7 +309,17 @@ class ConceptExtractor:
                 max_tokens=2000,
                 config=self._llm_config,
             )
-            logger.info(f"Phase 0 strategy: {json.dumps(result, ensure_ascii=False)[:200]}")
+            logger.info(
+                f"[Phase0] book_type={result.get('book_type')} "
+                f"quantity_hint={result.get('quantity_hint')} "
+                f"categories={result.get('categories')}"
+            )
+            logger.info(
+                f"[Phase0] extract_guidelines={result.get('extract_guidelines', '')[:120]}"
+            )
+            logger.info(
+                f"[Phase0] cultural_guidelines={result.get('cultural_context_guidelines', '')[:120]}"
+            )
             return result
         except Exception as e:
             logger.warning(f"Phase 0 failed, using default strategy: {e}")
@@ -343,25 +353,43 @@ class ConceptExtractor:
             nonlocal done_count, fail_count, abort
             paragraphs = chapter_paragraphs.get(chapter["chapter_idx"])
             if not paragraphs:
+                logger.warning(
+                    f"[Phase1] ch{chapter['chapter_idx']} '{chapter['chapter_title']}' "
+                    f"has no paragraphs, skipping"
+                )
                 return []
+            para_indices = [p["para_idx"] for p in paragraphs]
             try:
                 raw = _call_phase1_llm(toc, chapter, paragraphs, strategy, self._llm_config)
+                raw_terms = [
+                    f"{c.get('term')}({c.get('category','?')})" for c in (raw or [])
+                ]
+                logger.info(
+                    f"[Phase1] ch{chapter['chapter_idx']} '{chapter['chapter_title']}' "
+                    f"paragraphs={para_indices} raw_count={len(raw)} "
+                    f"raw_terms={raw_terms}"
+                )
                 # 服务端硬校验: quote 必须 verbatim, term/alias 必须在 quote 里
                 validated = _validate_evidence(raw, paragraphs)
+                valid_terms = [
+                    f"{c.get('term')}({c.get('category','?')})" for c in validated
+                ]
+                dropped = len(raw) - len(validated)
+                logger.info(
+                    f"[Phase1] ch{chapter['chapter_idx']} validated={len(validated)} "
+                    f"dropped={dropped} valid_terms={valid_terms}"
+                )
                 # 给每条 evidence 打上 chapter_idx (Phase 2 合并/Phase 3 补全要用)
                 for concept in validated:
                     concept["source_chapter_idx"] = chapter["chapter_idx"]
                     concept["source_chapter_title"] = chapter["chapter_title"]
                     for ev in concept["evidence"]:
                         ev["chapter_idx"] = chapter["chapter_idx"]
-                logger.info(
-                    f"Phase 1 ch{chapter['chapter_idx']}: "
-                    f"raw={len(raw)} validated={len(validated)} "
-                    f"from '{chapter['chapter_title']}'"
-                )
                 return validated
             except Exception as e:
-                logger.warning(f"Phase 1 failed for ch{chapter['chapter_idx']}: {e}")
+                logger.warning(
+                    f"[Phase1] ch{chapter['chapter_idx']} failed: {e}", exc_info=True
+                )
                 with done_lock:
                     fail_count += 1
                     if fail_count >= max_failures:
@@ -1010,7 +1038,7 @@ def _call_phase1_llm(toc, chapter, paragraphs, strategy, config: LLMConfig | Non
 
     # 超长，需要分段
     logger.info(
-        f"Chapter '{chapter['chapter_title']}' prompt too long "
+        f"[Phase1] '{chapter['chapter_title']}' prompt too long "
         f"({len(full_prompt)} chars), splitting into batches"
     )
 
@@ -1061,14 +1089,21 @@ def _call_phase1_llm(toc, chapter, paragraphs, strategy, config: LLMConfig | Non
         }
         for future in as_completed(futures):
             result = future.result()
-            all_concepts.extend(result.get("concepts", []))
+            batch_concepts = result.get("concepts", [])
+            batch_terms = [f"{c.get('term')}({c.get('category','?')})" for c in batch_concepts]
+            logger.info(
+                f"[Phase1Batch] '{chapter['chapter_title']}' batch_result="
+                f"{batch_terms}"
+            )
+            all_concepts.extend(batch_concepts)
 
     # 合并重复概念
     merged = _merge_concepts_by_term(all_concepts)
+    merged_terms = [f"{c.get('term')}({c.get('category','?')})" for c in merged]
 
     logger.info(
-        f"Chapter '{chapter['chapter_title']}' split into {len(batches)} batches, "
-        f"extracted {len(merged)} unique concepts (raw={len(all_concepts)})"
+        f"[Phase1] '{chapter['chapter_title']}' batches={len(batches)} "
+        f"raw={len(all_concepts)} merged={len(merged)} merged_terms={merged_terms}"
     )
     return merged
 
@@ -1260,16 +1295,24 @@ def _validate_evidence(concepts: list[dict], paragraphs: list[dict]) -> list[dic
 
         valid_evidence: list[dict] = []
         seen_keys: set[tuple[str, int]] = set()
+        tried_refs: list[str] = []
 
         def _try_add(para_ref, role):
             nonlocal dropped_para_refs
             para = _coerce_para(para_ref)
             if para is None:
+                tried_refs.append(f"{role}={para_ref}(段落未找到)")
                 return
             ev = _build_evidence_from_para(para, term, aliases, role)
             if ev is None:
                 dropped_para_refs += 1
+                tried_refs.append(
+                    f"{role}={para_ref}(段落无term/alias)"
+                )
                 return
+            tried_refs.append(
+                f"{role}={para_ref}(quote_len={ev['char_length']})"
+            )
             key = (ev["pid"], ev["char_offset"])
             if key in seen_keys:
                 return
@@ -1291,6 +1334,10 @@ def _validate_evidence(concepts: list[dict], paragraphs: list[dict]) -> list[dic
             _try_add(ev_in.get("para") or ev_in.get("pid"), role_in)
 
         if not valid_evidence:
+            logger.info(
+                f"[Validate] DROP '{term}' cat={c.get('category','?')} "
+                f"aliases={aliases} tried={tried_refs}"
+            )
             continue
 
         # initial_definition 占位空字符串, Phase 2.5 会基于 evidence 句子合成释义.
@@ -1301,10 +1348,14 @@ def _validate_evidence(concepts: list[dict], paragraphs: list[dict]) -> list[dic
             "initial_definition": "",
             "evidence": valid_evidence,
         })
+        logger.info(
+            f"[Validate] KEEP '{term}' cat={c.get('category','?')} "
+            f"evidence_count={len(valid_evidence)} tried={tried_refs}"
+        )
 
     if dropped_para_refs:
         logger.info(
-            f"[validate] dropped {dropped_para_refs} para refs "
+            f"[Validate] dropped {dropped_para_refs} para refs "
             f"(指定段落里没有 term/alias)"
         )
     return cleaned
@@ -1369,7 +1420,12 @@ def _text_merge(raw_concepts: list[dict]) -> list[dict]:
             for alias in c.get("aliases", []):
                 alias_map[alias.strip().lower()] = term_lower
 
-    return list(merged.values())
+    result = list(merged.values())
+    logger.info(
+        f"[TextMerge] input={len(raw_concepts)} output={len(result)} "
+        f"terms={[c['term'] for c in result]}"
+    )
+    return result
 
 
 def _llm_concept_linker(
@@ -1421,9 +1477,17 @@ def _llm_concept_linker(
             candidate_pairs.append((key[0], key[1], sim))
 
     if not candidate_pairs:
+        logger.info(f"[LLMLinker] no candidate pairs from {n} concepts")
         return concepts
 
-    logger.info(f"LLM linker: {len(candidate_pairs)} candidate pairs from {n} concepts")
+    pair_names = [
+        f"{concepts[i]['term']}~{concepts[j]['term']}(sim={sim:.2f})"
+        for i, j, sim in candidate_pairs
+    ]
+    logger.info(
+        f"[LLMLinker] {len(candidate_pairs)} candidate pairs from {n} concepts: "
+        f"{pair_names}"
+    )
 
     # 2. 分批送 LLM
     verdicts: dict[tuple[int, int], dict] = {}
@@ -1534,6 +1598,10 @@ def _llm_concept_linker(
         if child_obj is not None:
             child_obj["_parent_term"] = parent_rep_term
 
+    final_terms = [c["term"] for c in result]
+    logger.info(
+        f"[LLMLinker] result={len(result)} terms={final_terms}"
+    )
     return result
 
 
